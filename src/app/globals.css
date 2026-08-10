@@ -1,0 +1,305 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------
+   Broadsheet — an editorial ledger palette.
+   Warm newsprint, dense ink, one vermillion signal. Hairline rules do
+   the structural work; there are no drop shadows and no rounded cards.
+   ------------------------------------------------------------------ */
+
+@theme {
+  --color-paper: #f4f0e6;
+  --color-paper-2: #ebe5d7;
+  --color-paper-3: #e0d9c7;
+  --color-ink: #16130f;
+  --color-ink-2: #3d372d;
+  /* #7b7263 measured 4.17:1 on paper — under AA for the small label text it is
+     used for everywhere. #6a6153 lands at ~5.1:1. */
+  --color-muted: #6a6153;
+  --color-rule: #cdc5b2;
+  --color-rule-soft: #ded7c6;
+  --color-signal: #bf3418;
+  --color-signal-2: #93250f;
+  /* Signal is only 3.3:1 against ink; this lighter tint is the one to use for
+     accent TEXT on the dark panels. */
+  --color-signal-3: #e8734f;
+  --color-signal-wash: #f6e2db;
+  --color-ok: #2c6047;
+  --color-ok-wash: #dfe9e2;
+
+  --font-display: var(--font-instrument), 'Iowan Old Style', Georgia, serif;
+  --font-sans: var(--font-archivo), 'Helvetica Neue', Helvetica, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius-none: 0px;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-rule);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv01';
+  }
+
+  /* Paper grain. Fixed so it reads as the surface, not as content. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background: var(--color-signal);
+    color: var(--color-paper);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.015em;
+  }
+
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+  }
+
+  /* Numbers should line up in every table and stat block. */
+  .tnum,
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Small-caps mono label — the connective tissue of the whole layout. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .rule-top {
+    border-top: 1px solid var(--color-rule);
+  }
+
+  .hairline {
+    border: 1px solid var(--color-rule);
+  }
+
+  /* Bordered panel. Flat by design — depth comes from the rule weight. */
+  .panel {
+    border: 1px solid var(--color-rule);
+    background-color: color-mix(in srgb, var(--color-paper) 60%, #fff);
+  }
+
+  .panel-ink {
+    background-color: var(--color-ink);
+    color: var(--color-paper);
+    border: 1px solid var(--color-ink);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6875rem 1.125rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid var(--color-ink);
+    background: var(--color-ink);
+    color: var(--color-paper);
+    cursor: pointer;
+    transition:
+      transform 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    background: var(--color-signal);
+    border-color: var(--color-signal);
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--color-ink);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: translate(0, 0);
+    box-shadow: none;
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-ink);
+    border-color: var(--color-rule);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-ink);
+    border-color: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  .field-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-ink-2);
+    margin-bottom: 0.4rem;
+  }
+
+  /* Underline-only inputs keep the forms feeling like a printed slip. */
+  .field-input {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--color-rule);
+    padding: 0.55rem 0.125rem;
+    font-size: 1rem;
+    color: var(--color-ink);
+    transition: border-color 140ms ease;
+  }
+
+  .field-input::placeholder {
+    color: color-mix(in srgb, var(--color-muted) 70%, transparent);
+  }
+
+  .field-input:focus {
+    outline: none;
+    border-bottom-color: var(--color-signal);
+    border-bottom-width: 2px;
+    padding-bottom: calc(0.55rem - 1px);
+  }
+
+  .field-error {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--color-signal-2);
+    margin-top: 0.35rem;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.45rem;
+    border: 1px solid currentColor;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .data-table th {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--color-ink);
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 0.85rem 0.75rem;
+    border-bottom: 1px solid var(--color-rule-soft);
+    vertical-align: top;
+  }
+
+  .data-table tbody tr:hover {
+    background: color-mix(in srgb, var(--color-signal) 5%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Staggered entrance used once per page load, not on every element. */
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .rise {
+    animation: rise 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes draw {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  .draw-rule {
+    transform-origin: left;
+    animation: draw 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Looping variant for the redirect indicator — a class rather than an inline
+     style so it can be switched off for reduced motion. */
+  .draw-loop {
+    transform-origin: left;
+    animation: draw 1100ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise,
+    .draw-rule,
+    .draw-loop {
+      animation: none;
+    }
+    * {
+      transition-duration: 1ms !important;
+    }
+  }
+}

@@ -1,0 +1,41 @@
+import { getStore } from './store';
+import type { AffiliateLink, Submission, Visit } from './types';
+
+export type LoadResult = {
+  links: AffiliateLink[];
+  submissions: Submission[];
+  visits: Visit[];
+  error: string | null;
+};
+
+/**
+ * Reads everything the admin pages need. A Sheets outage or a bad credential
+ * should degrade to an in-page message, never a 500 — so failures are captured
+ * rather than thrown.
+ */
+export async function loadAll(): Promise<LoadResult> {
+  const store = getStore();
+  try {
+    const [links, submissions, visits] = await Promise.all([
+      store.listLinks(),
+      store.listSubmissions(),
+      store.listVisits(),
+    ]);
+    // Newest first for display. Sorted into new arrays: a store adapter may be
+    // handing back rows it also caches, and sorting those in place would change
+    // which link the public landing page resolves to.
+    return {
+      links: [...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      submissions: [...submissions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      visits,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      links: [],
+      submissions: [],
+      visits: [],
+      error: error instanceof Error ? error.message : 'Unknown storage error',
+    };
+  }
+}
