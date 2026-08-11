@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { google, type sheets_v4 } from 'googleapis';
 import { SHEET_HEADERS, SHEET_TABS } from '../config';
+import { resolveGoogleCredentials } from '../google-credentials';
 import type {
   AffiliateLink,
   NewAffiliateLink,
@@ -28,13 +29,6 @@ type TabName = keyof typeof SHEET_TABS;
 let clientPromise: Promise<sheets_v4.Sheets> | null = null;
 let ensurePromise: Promise<void> | null = null;
 
-function privateKey(): string {
-  const raw = process.env.GOOGLE_PRIVATE_KEY ?? '';
-  // .env files usually carry the key with escaped newlines; some hosts store it
-  // wrapped in quotes. Normalise both.
-  return raw.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
-}
-
 function spreadsheetId(): string {
   const id = process.env.GOOGLE_SHEET_ID?.trim();
   if (!id) throw new StoreConfigError('GOOGLE_SHEET_ID is not set');
@@ -44,14 +38,18 @@ function spreadsheetId(): string {
 function getClient(): Promise<sheets_v4.Sheets> {
   if (!clientPromise) {
     clientPromise = (async () => {
-      const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
-      const key = privateKey();
-      if (!email || !key) {
+      const credentials = resolveGoogleCredentials();
+      if (!credentials) {
         throw new StoreConfigError(
-          'GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY must both be set',
+          'No Google credentials found. Add a service-account.json key file to the project root, ' +
+            'or set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.',
         );
       }
-      const auth = new google.auth.JWT({ email, key, scopes: SCOPES });
+      const auth = new google.auth.JWT({
+        email: credentials.email,
+        key: credentials.privateKey,
+        scopes: SCOPES,
+      });
       await auth.authorize();
       return google.sheets({ version: 'v4', auth });
     })().catch((error) => {

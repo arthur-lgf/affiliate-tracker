@@ -37,17 +37,43 @@ Google Sheets when you're ready; the app switches over automatically.
    **Keys → Add key → Create new key → JSON**. A `.json` file downloads.
 4. **Share the spreadsheet** with the `client_email` from that JSON file, as an
    **Editor**. This step is the one people forget — without it you get a 403.
-5. Copy `.env.example` to `.env.local` and fill in:
+5. Copy `.env.example` to `.env.local` and set the spreadsheet id:
 
 ```bash
-GOOGLE_SHEET_ID=1AbC...            # the long id in the sheet URL
+GOOGLE_SHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
+```
+
+That id is the long string between `/d/` and `/edit` in the sheet URL — **not** the
+number after `#gid=`, which identifies a tab.
+
+6. Give it the credentials, either way you prefer:
+
+**A — the JSON key file** (simplest locally). Drop the file Google gave you into the
+project root as `service-account.json`. Nothing else to configure; it's gitignored.
+Keeping it elsewhere, or reusing one you already have, works too:
+
+```bash
+GOOGLE_SERVICE_ACCOUNT_FILE=../lgf-automation/service-account.json
+```
+
+`GOOGLE_APPLICATION_CREDENTIALS` (Google's own convention) is honoured as well.
+
+**B — environment variables**, for hosts with no filesystem to put a key on, such as
+Vercel. Copy the two fields out of the same JSON file:
+
+```bash
 GOOGLE_SERVICE_ACCOUNT_EMAIL=your-bot@your-project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv...\n-----END PRIVATE KEY-----\n"
 ```
 
 Keep the quotes and the literal `\n` sequences exactly as they appear in the JSON key.
+If both are set, the environment variables win — a deployed environment is never
+silently overridden by a stray file.
 
-6. Restart the dev server. The header will read **Google Sheets connected**.
+7. Restart the dev server. The header will read **Google Sheets connected**.
+
+> Don't commit the key file, and don't put real values in `.env.example` — that file
+> is the template that gets committed. Real values belong in `.env.local`.
 
 ### Sheet layout
 

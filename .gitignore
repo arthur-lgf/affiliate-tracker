@@ -5,6 +5,12 @@ build/
 .env
 .env.local
 .data/
+
+# Google service-account private keys — never commit these.
+service-account.json
+google-service-account.json
+*-service-account.json
+
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store

@@ -1,3 +1,5 @@
+import { resolveGoogleCredentials } from './google-credentials';
+
 /**
  * Slugs that would collide with a real route in the app. A link can never be
  * created with one of these, otherwise `/links` would resolve to a landing page.
@@ -65,12 +67,19 @@ export const SHEET_HEADERS = {
   visits: ['id', 'created_at', 'slug', 'usr', 'referrer', 'user_agent', 'ip'],
 } as const;
 
+/**
+ * Sheets is in play when there's a spreadsheet id AND credentials from either
+ * source (env vars or a service-account JSON key file).
+ */
 export function isSheetsConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_SHEET_ID &&
-      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_PRIVATE_KEY,
-  );
+  if (!process.env.GOOGLE_SHEET_ID?.trim()) return false;
+  try {
+    return resolveGoogleCredentials() !== null;
+  } catch {
+    // A key file that exists but is unreadable/malformed is a configuration
+    // error worth surfacing, not a reason to silently fall back to local JSON.
+    return true;
+  }
 }
 
 /** Visit (page view) logging. On by default; set TRACK_VISITS=false to disable. */
