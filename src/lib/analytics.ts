@@ -20,6 +20,12 @@ export type Insight = {
 
 export type DashboardStats = {
   totalSubmissions: number;
+  /** Leads someone has marked registered, here or in the sheet. */
+  registered: number;
+  /** Everything else — the working list. */
+  pending: number;
+  /** Share of all leads that reached registered. */
+  registrationRate: number;
   totalVisits: number;
   conversion: number;
   activeLinks: number;
@@ -77,6 +83,7 @@ export function buildStats(
   let visitsToday = 0;
   let submissionsLast7 = 0;
   let submissionsPrev7 = 0;
+  let registered = 0;
 
   const submissionsByDay = new Map<string, number>();
   const visitsByDay = new Map<string, number>();
@@ -84,6 +91,7 @@ export function buildStats(
   for (const row of submissions) {
     const key = dayKey(row.createdAt);
     submissionsByDay.set(key, (submissionsByDay.get(key) ?? 0) + 1);
+    if (row.status === 'registered') registered += 1;
     if (key === today) submissionsToday += 1;
     if (key === yesterday) submissionsYesterday += 1;
     if (key >= start7) submissionsLast7 += 1;
@@ -157,6 +165,9 @@ export function buildStats(
 
   return {
     totalSubmissions: submissions.length,
+    registered,
+    pending: submissions.length - registered,
+    registrationRate: safeRate(registered, submissions.length),
     totalVisits: visits.length,
     conversion: safeRate(submissions.length, visits.length),
     activeLinks: links.filter((l) => l.active).length,

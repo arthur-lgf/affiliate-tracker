@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import type {
   AffiliateLink,
   NewAffiliateLink,
@@ -8,6 +9,7 @@ import type {
   NewVisit,
   Store,
   Submission,
+  SubmissionPatch,
   Visit,
 } from '../types';
 import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './errors';
@@ -140,7 +142,10 @@ export function createLocalStore(): Store {
     },
 
     async listSubmissions() {
-      return readFile<Submission>(FILES.submissions);
+      const rows = await readFile<Submission>(FILES.submissions);
+      // Rows written before the column existed have no status at all; they are
+      // pending like any other lead nobody has acted on.
+      return rows.map((row) => ({ ...row, status: normalizeLeadStatus(row.status) }));
     },
 
     async addSubmission(input: NewSubmission) {
@@ -150,10 +155,24 @@ export function createLocalStore(): Store {
           ...input,
           id: randomUUID(),
           createdAt: new Date().toISOString(),
+          // Every lead starts pending the moment it is captured.
+          status: DEFAULT_LEAD_STATUS,
         };
         rows.push(row);
         await writeFile(FILES.submissions, rows);
         return row;
+      });
+    },
+
+    async updateSubmission(id: string, patch: SubmissionPatch) {
+      return withLock(async () => {
+        const rows = await readFile<Submission>(FILES.submissions);
+        const index = rows.findIndex((row) => row.id === id);
+        if (index === -1) throw new StoreNotFoundError('Lead not found');
+        const next: Submission = { ...rows[index]!, ...patch };
+        rows[index] = next;
+        await writeFile(FILES.submissions, rows);
+        return next;
       });
     },
 

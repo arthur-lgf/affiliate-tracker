@@ -35,6 +35,12 @@ export type AffiliateLink = {
 
 export type NewAffiliateLink = Omit<AffiliateLink, 'id' | 'createdAt'>;
 
+/**
+ * Where a lead stands. `pending` is stamped automatically on capture;
+ * `registered` is only ever set by hand. See `lib/status.ts`.
+ */
+export type LeadStatus = 'pending' | 'registered';
+
 export type Submission = {
   id: string;
   createdAt: string;
@@ -50,9 +56,18 @@ export type Submission = {
   referrer: string;
   userAgent: string;
   ip: string;
+  status: LeadStatus;
 };
 
-export type NewSubmission = Omit<Submission, 'id' | 'createdAt'>;
+/**
+ * Status is absent here on purpose: the capture endpoint never chooses it. The
+ * store stamps `pending` on every new row so there is exactly one place that
+ * decides what a brand new lead looks like.
+ */
+export type NewSubmission = Omit<Submission, 'id' | 'createdAt' | 'status'>;
+
+/** The only part of a logged lead the admin surface may change. */
+export type SubmissionPatch = { status: LeadStatus };
 
 export type Visit = {
   id: string;
@@ -77,6 +92,7 @@ export interface Store {
 
   listSubmissions(): Promise<Submission[]>;
   addSubmission(input: NewSubmission): Promise<Submission>;
+  updateSubmission(id: string, patch: SubmissionPatch): Promise<Submission>;
 
   listVisits(): Promise<Visit[]>;
   addVisit(input: NewVisit): Promise<Visit>;

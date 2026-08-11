@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LeadsChart } from '@/components/LeadsChart';
+import { LeadsPanel, type LeadRow } from '@/components/LeadsPanel';
 import {
   buildStats,
+  formatDateTime,
   formatPercent,
   formatRelative,
   initialsOf,
@@ -13,7 +15,12 @@ import { loadAll } from '@/lib/load';
 
 export const dynamic = 'force-dynamic';
 
-const RECENT_LIMIT = 12;
+/**
+ * How many leads are handed to the browser. Enough to filter and work through
+ * without shipping a spreadsheet's worth of names and phone numbers into a
+ * page; the sheet holds the rest.
+ */
+const RECENT_LIMIT = 200;
 
 /** Segment colours for the campaign split, in priority order. */
 const SEGMENT_COLORS = [
@@ -33,7 +40,20 @@ export default async function DashboardPage() {
   }
 
   const stats = buildStats(links, submissions, visits, 30);
-  const recent = submissions.slice(0, RECENT_LIMIT);
+  // Built here rather than exported from LeadsPanel: every runtime export of a
+  // 'use client' module is a client reference and cannot be called on the server.
+  const recent: LeadRow[] = submissions.slice(0, RECENT_LIMIT).map((row) => ({
+    id: row.id,
+    fullName: row.fullName,
+    email: row.email,
+    phone: row.phone,
+    campaign: row.campaign,
+    slug: row.slug,
+    assignee: row.assignee,
+    status: row.status,
+    age: formatRelative(row.createdAt),
+    capturedAt: formatDateTime(row.createdAt),
+  }));
   const hasAnything = links.length > 0 || submissions.length > 0;
 
   if (!hasAnything) {
@@ -97,8 +117,18 @@ export default async function DashboardPage() {
         <LeadsChart series={stats.series} />
       </section>
 
-      {/* Three supporting figures */}
-      <section className="mt-4 grid gap-4 sm:grid-cols-3">
+      {/* Supporting figures */}
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Registered"
+          value={stats.registered.toLocaleString()}
+          note={
+            stats.totalSubmissions > 0
+              ? `${stats.pending.toLocaleString()} still pending`
+              : 'no leads yet'
+          }
+          noteColor={stats.pending > 0 ? 'var(--color-mustard)' : undefined}
+        />
         <StatCard
           label="Landing visits"
           value={stats.totalVisits.toLocaleString()}
@@ -235,74 +265,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* Latest submissions */}
-      <section className="rise panel mt-4 p-6">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 className="font-display text-[22px]">Latest submissions</h2>
-          <span className="text-xs text-sage">
-            {submissions.length > RECENT_LIMIT
-              ? `Latest ${RECENT_LIMIT} of ${submissions.length.toLocaleString()} — the rest are in your sheet`
-              : `${submissions.length.toLocaleString()} in total`}
-          </span>
-        </div>
-
-        {recent.length === 0 ? (
-          <p className="py-10 text-center text-sm text-sage-dim">
-            No leads captured yet. Share a link and they will appear here.
-          </p>
-        ) : (
-          <ul className="mt-2">
-            {/* Stacked on a phone, one row from lg up — fixed-width columns
-                cannot survive a 390px viewport. */}
-            {recent.map((row) => (
-              <li
-                key={row.id}
-                className="divider-row flex flex-col gap-2 py-3.5 lg:flex-row lg:items-center lg:gap-4"
-              >
-                <div className="flex min-w-0 items-start justify-between gap-3 lg:flex-1">
-                  <span className="min-w-0">
-                    <span className="block text-[13.5px] font-medium">{row.fullName || '—'}</span>
-                    <a
-                      href={`mailto:${row.email}`}
-                      className="mt-0.5 block truncate text-[11.5px] text-sage-dim hover:text-cream"
-                    >
-                      {row.email}
-                    </a>
-                    {/* The phone is captured but had nowhere to be read. */}
-                    {row.phone ? (
-                      <a
-                        href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}
-                        className="mt-0.5 block truncate text-[11.5px] text-sage-dim hover:text-cream"
-                      >
-                        {row.phone}
-                      </a>
-                    ) : null}
-                  </span>
-                  <span className="flex-none text-xs text-sage-dim lg:hidden">
-                    {formatRelative(row.createdAt)}
-                  </span>
-                </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 lg:flex-none lg:gap-4">
-                  {/* Campaign names are free text and can be very long — cap the
-                      pill so one row cannot push the whole table sideways. */}
-                  <span
-                    className="pill max-w-[240px] bg-pine-800 px-3 py-1.5 font-normal text-[#d7cfbb]"
-                    title={row.campaign || row.slug}
-                  >
-                    <span className="pill-text">{row.campaign || row.slug}</span>
-                  </span>
-                  <span className="truncate text-[12.5px] text-sage lg:w-[130px]">
-                    {row.assignee || <span className="text-sage-dim">Unassigned</span>}
-                  </span>
-                </div>
-                <span className="hidden text-right text-xs text-sage-dim lg:block lg:w-[80px]">
-                  {formatRelative(row.createdAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <LeadsPanel rows={recent} total={submissions.length} />
     </div>
   );
 }

@@ -63,6 +63,10 @@ export const SHEET_HEADERS = {
     'referrer',
     'user_agent',
     'ip',
+    // Appended, never inserted: an existing spreadsheet already holds rows in
+    // the columns above, and inserting a column here would shift every one of
+    // them out of alignment with its header.
+    'status',
   ],
   visits: ['id', 'created_at', 'slug', 'usr', 'referrer', 'user_agent', 'ip'],
 } as const;

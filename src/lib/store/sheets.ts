@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { google, type sheets_v4 } from 'googleapis';
 import { SHEET_HEADERS, SHEET_TABS } from '../config';
 import { resolveGoogleCredentials } from '../google-credentials';
+import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import type {
   AffiliateLink,
   NewAffiliateLink,
@@ -9,6 +10,7 @@ import type {
   NewVisit,
   Store,
   Submission,
+  SubmissionPatch,
   Visit,
 } from '../types';
 import { normalizeKey } from '../validate';
@@ -78,6 +80,119 @@ function tabRange(tab: TabName, firstRow = 1, lastRow?: number): string {
   return `${SHEET_TABS[tab]}!A${firstRow}:${width}${lastRow ?? ''}`;
 }
 
+/** "Created At" and "created_at" are the same header as far as we're concerned. */
+function normalizeHeaderCell(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+/**
+ * What to do with a header row we found, given the one we expect.
+ *
+ * Pure and exported so the decision can be tested without a spreadsheet — this
+ * is the code that decides whether to write over somebody's live header row, so
+ * "it looked right" is not a good enough standard.
+ *
+ * - `write` — one or more of our columns is blank (a new tab, or an existing
+ *   sheet that predates a column we later added, which is how `status` arrives).
+ *   Writing the full row only fills those blanks, since every non-blank cell has
+ *   already been checked to match.
+ * - `conflict` — a cell holds something else. Somebody has inserted a column or
+ *   rearranged the row, and stamping our layout over it would file every value
+ *   under the wrong heading. Refuse instead.
+ * - `ok` — nothing to do.
+ */
+export function planHeaderRow(
+  actual: string[],
+  expected: readonly string[],
+): { action: 'ok' | 'write' } | { action: 'conflict'; index: number; found: string } {
+  for (let index = 0; index < expected.length; index += 1) {
+    const cell = actual[index];
+    if (cell == null || cell.trim() === '') continue;
+    if (normalizeHeaderCell(cell) !== expected[index]) {
+      return { action: 'conflict', index, found: cell };
+    }
+  }
+  const blank = expected.some((_, index) => (actual[index] ?? '').trim() === '');
+  return { action: blank ? 'write' : 'ok' };
+}
+
+/**
+ * Bring one tab's header row in line with SHEET_HEADERS, filling blanks only.
+ * Returns true when something was written.
+ */
+async function ensureHeaderRow(tab: TabName): Promise<boolean> {
+  const sheets = await getClient();
+  const id = spreadsheetId();
+  const expected = SHEET_HEADERS[tab];
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: id,
+    range: tabRange(tab, 1, 1),
+  });
+  const actual = (res.data.values?.[0] ?? []).map((cell) => (cell == null ? '' : String(cell)));
+
+  const plan = planHeaderRow(actual, expected);
+  if (plan.action === 'conflict') {
+    throw new StoreConfigError(
+      `The "${SHEET_TABS[tab]}" tab does not match the expected layout: column ` +
+        `${columnLetter(plan.index + 1)} is headed "${plan.found}" but should be ` +
+        `"${expected[plan.index]}". Restore that header (or move your own column to the right of ` +
+        'the last one) — writing to a shifted layout would file values under the wrong headings.',
+    );
+  }
+  if (plan.action === 'ok') return false;
+
+  // Anything the user keeps to the right of our last column is outside this
+  // range and left alone.
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: id,
+    range: tabRange(tab, 1, 1),
+    valueInputOption: 'RAW',
+    requestBody: { values: [[...expected]] },
+  });
+  return true;
+}
+
+/**
+ * Turn the Status column into a dropdown so marking a lead registered in the
+ * spreadsheet is a click rather than a guess at the spelling.
+ *
+ * `strict: false` keeps a bulk paste from being rejected outright — anything
+ * unrecognised is flagged in the sheet and read back as pending.
+ */
+async function applyStatusDropdown(): Promise<void> {
+  const sheets = await getClient();
+  const sheetId = await sheetIdForTab('submissions');
+  const column = SHEET_HEADERS.submissions.indexOf('status');
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId(),
+    requestBody: {
+      requests: [
+        {
+          setDataValidation: {
+            // From row 2 down; no end bound, so it covers rows not yet written.
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              startColumnIndex: column,
+              endColumnIndex: column + 1,
+            },
+            rule: {
+              condition: {
+                type: 'ONE_OF_LIST',
+                values: [{ userEnteredValue: 'pending' }, { userEnteredValue: 'registered' }],
+              },
+              inputMessage: 'Set to "registered" once this lead has signed up.',
+              showCustomUi: true,
+              strict: false,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
 /** Create any missing tab and stamp its header row. Runs at most once per process. */
 function ensureTabs(): Promise<void> {
   if (!ensurePromise) {
@@ -106,20 +221,21 @@ function ensureTabs(): Promise<void> {
         });
       }
 
-      // Stamp headers on any tab whose first row is empty (new or pre-existing).
+      let submissionsChanged = false;
       for (const tab of Object.keys(SHEET_TABS) as TabName[]) {
-        const header = await sheets.spreadsheets.values.get({
-          spreadsheetId: id,
-          range: tabRange(tab, 1, 1),
-        });
-        const firstRow = header.data.values?.[0] ?? [];
-        if (firstRow.length === 0) {
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: id,
-            range: tabRange(tab, 1, 1),
-            valueInputOption: 'RAW',
-            requestBody: { values: [[...SHEET_HEADERS[tab]]] },
-          });
+        const written = await ensureHeaderRow(tab);
+        if (tab === 'submissions') submissionsChanged = written;
+      }
+
+      // Only on the run that introduced the column, so an ordinary cold start
+      // doesn't pay for an extra write. The rule persists in the spreadsheet.
+      if (submissionsChanged) {
+        try {
+          await applyStatusDropdown();
+        } catch (error) {
+          // Cosmetic. A sheet without the dropdown still works — free text is
+          // normalised on read.
+          console.warn('[sheets] could not set the status dropdown', error);
         }
       }
     })().catch((error) => {
@@ -257,6 +373,7 @@ function submissionFromRow(row: string[]): Submission {
     referrer,
     userAgent,
     ip,
+    status,
   ] = row;
   return {
     id,
@@ -272,6 +389,10 @@ function submissionFromRow(row: string[]): Submission {
     referrer,
     userAgent,
     ip,
+    // Typed by hand as often as it is written by us — whatever is in the cell
+    // (including nothing, on rows logged before the column existed) is read as
+    // one of the two statuses.
+    status: normalizeLeadStatus(status),
   };
 }
 
@@ -290,8 +411,16 @@ function submissionToRow(row: Submission): string[] {
     row.referrer,
     row.userAgent,
     row.ip,
+    row.status,
   ];
 }
+
+/** A1 range for a single cell in a tab, e.g. `Submissions!N7:N7`. */
+function cellRange(tab: TabName, column: string, rowNumber: number): string {
+  return `${SHEET_TABS[tab]}!${column}${rowNumber}:${column}${rowNumber}`;
+}
+
+const STATUS_COLUMN = columnLetter(SHEET_HEADERS.submissions.indexOf('status') + 1);
 
 function visitFromRow(row: string[]): Visit {
   const [id, createdAt, slug, usr, referrer, userAgent, ip] = row;
@@ -341,18 +470,28 @@ async function findLinkRow(
  * different record. Re-reading column A immediately before the write closes that
  * window; a mismatch aborts instead of destroying someone else's row.
  */
-async function assertRowStillHolds(rowNumber: number, id: string): Promise<void> {
+async function assertRowStillHolds(tab: TabName, rowNumber: number, id: string): Promise<void> {
   const sheets = await getClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
-    range: `${SHEET_TABS.links}!A${rowNumber}:A${rowNumber}`,
+    range: cellRange(tab, 'A', rowNumber),
   });
   const actual = res.data.values?.[0]?.[0];
   if (String(actual ?? '') !== id) {
     throw new StoreConflictError(
-      'That link changed in the sheet while you were editing it. Reload and try again.',
+      'That row moved in the sheet while you were working on it. Reload and try again.',
     );
   }
+}
+
+/** Physical sheet row number for a submission id, or -1. */
+async function findSubmissionRow(
+  id: string,
+): Promise<{ rowNumber: number; current: Submission | null }> {
+  const numbered = await readNumberedRows('submissions');
+  const match = numbered.find((row) => row.cells[0] === id);
+  if (!match) return { rowNumber: -1, current: null };
+  return { rowNumber: match.rowNumber, current: submissionFromRow(match.cells) };
 }
 
 async function sheetIdForTab(tab: TabName): Promise<number> {
@@ -405,7 +544,7 @@ export function createSheetsStore(): Store {
         throw new StoreConflictError('Another link already uses that slug and assignee.');
       }
       const sheets = await getClient();
-      await assertRowStillHolds(rowNumber, id);
+      await assertRowStillHolds('links', rowNumber, id);
       await sheets.spreadsheets.values.update({
         spreadsheetId: spreadsheetId(),
         range: tabRange('links', rowNumber, rowNumber),
@@ -422,7 +561,7 @@ export function createSheetsStore(): Store {
       const sheets = await getClient();
       const tabId = await sheetIdForTab('links');
       // Re-check last, after the extra round trip above widened the window.
-      await assertRowStillHolds(rowNumber, id);
+      await assertRowStillHolds('links', rowNumber, id);
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: spreadsheetId(),
         requestBody: {
@@ -452,9 +591,29 @@ export function createSheetsStore(): Store {
         ...input,
         id: randomUUID(),
         createdAt: new Date().toISOString(),
+        // Every lead starts pending the moment it is captured.
+        status: DEFAULT_LEAD_STATUS,
       };
       await appendRow('submissions', submissionToRow(row));
       return row;
+    },
+
+    async updateSubmission(id: string, patch: SubmissionPatch) {
+      const { rowNumber, current } = await findSubmissionRow(id);
+      if (rowNumber === -1 || !current) throw new StoreNotFoundError('Lead not found');
+      const next: Submission = { ...current, ...patch };
+      const sheets = await getClient();
+      await assertRowStillHolds('submissions', rowNumber, id);
+      // Only the status cell is written. The rest of the row is the record of
+      // what the lead actually submitted, and anything else on it may have been
+      // annotated by hand in the sheet — rewriting the row would revert that.
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: spreadsheetId(),
+        range: cellRange('submissions', STATUS_COLUMN, rowNumber),
+        valueInputOption: 'RAW',
+        requestBody: { values: [[next.status]] },
+      });
+      return next;
     },
 
     async listVisits() {

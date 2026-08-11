@@ -40,6 +40,7 @@ function createUnavailableStore(message: string): Store {
     deleteLink: fail,
     listSubmissions: fail,
     addSubmission: fail,
+    updateSubmission: fail,
     listVisits: fail,
     addVisit: fail,
   };

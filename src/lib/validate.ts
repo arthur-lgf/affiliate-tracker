@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RESERVED_SLUGS } from './config';
+import { LEAD_STATUSES } from './status';
 
 /** Lowercase, url-safe, no leading/trailing dashes. */
 export function normalizeKey(raw: string): string {
@@ -94,6 +95,14 @@ export const submissionInputSchema = z.object({
   phone: z.string().trim().max(40).optional().default(''),
   // Honeypot: real people never fill this in.
   company: z.string().max(200).optional().default(''),
+});
+
+/**
+ * The one field the admin surface may change on a logged lead. Anything a lead
+ * actually typed is a record of what happened and stays as captured.
+ */
+export const submissionPatchSchema = z.object({
+  status: z.enum(LEAD_STATUSES),
 });
 
 export const visitInputSchema = z.object({

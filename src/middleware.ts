@@ -72,7 +72,15 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Admin pages and link management only. /[slug], /api/submissions and
-  // /api/visits are intentionally absent.
-  matcher: ['/', '/links', '/links/:path*', '/api/links', '/api/links/:path*'],
+  // Admin pages, link management and lead status changes only. /[slug],
+  // /api/submissions and /api/visits are intentionally absent.
+  matcher: [
+    '/',
+    '/links',
+    '/links/:path*',
+    '/api/links',
+    '/api/links/:path*',
+    '/api/leads',
+    '/api/leads/:path*',
+  ],
 };

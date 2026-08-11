@@ -80,11 +80,27 @@ silently overridden by a stray file.
 Three tabs, created automatically:
 
 - **Links** — `id, created_at, slug, usr, assignee, assignee_email, campaign, destination, headline, subheadline, cta_label, require_phone, pass_usr_param, active, notes`
-- **Submissions** — `id, created_at, slug, usr, assignee, campaign, full_name, email, phone, destination, referrer, user_agent, ip`
+- **Submissions** — `id, created_at, slug, usr, assignee, campaign, full_name, email, phone, destination, referrer, user_agent, ip, status`
 - **Visits** — `id, created_at, slug, usr, referrer, user_agent, ip`
 
 You can read, filter and pivot these rows in Sheets freely. Don't reorder or rename the
-header columns — the app maps by position.
+header columns — the app maps by position. Adding columns of your own to the *right* of
+the last one is fine; putting one in the middle is refused with an error rather than
+silently filing values under the wrong headings.
+
+## Lead status
+
+Every captured lead is **pending** the moment the form is submitted. Nothing sets it —
+it's what a new lead is. **Registered** is only ever set by a person, either way round:
+
+- **On the dashboard** — click the status pill on any row. It writes straight to the
+  sheet. Filter the list by All / Pending / Registered to work through the backlog.
+- **In the spreadsheet** — column **N** of the Submissions tab, a dropdown. Changing it
+  there shows up on the dashboard on the next load.
+
+The cell is read forgivingly, so `Registered`, `yes` and `done` typed by hand all count;
+anything else (including an empty cell, which is what every row logged before this
+column existed has) reads as pending. A lead is only registered when someone says so.
 
 ## How a link works
 
@@ -110,8 +126,8 @@ and the destination is forwarded exactly as you entered it.
 ## Before you deploy
 
 - **Set `ADMIN_PASSWORD`.** The dashboard lists lead names, emails and phone numbers.
-  With it set, `/`, `/links*` and `/api/links*` require HTTP Basic auth; landing pages
-  and submissions stay public. A production build with no password returns 503 on the
+  With it set, `/`, `/links*`, `/api/links*` and `/api/leads*` require HTTP Basic auth;
+  landing pages and submissions stay public. A production build with no password returns 503 on the
   admin pages rather than exposing them — set `ALLOW_OPEN_ADMIN=true` to override that
   deliberately. Development is always open so `npm run dev` needs no configuration.
 - **Set `NEXT_PUBLIC_BASE_URL`** to your public origin (e.g. `https://go.yourdomain.com`)

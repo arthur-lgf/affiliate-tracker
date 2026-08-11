@@ -1,0 +1,263 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useMemo, useState, useTransition } from 'react';
+import { statusLabel } from '@/lib/status';
+import type { LeadStatus } from '@/lib/types';
+
+/**
+ * One captured lead, as the dashboard needs it.
+ *
+ * `age` and `capturedAt` arrive pre-formatted from the server. Formatting a
+ * relative time in the browser instead would produce a different string a
+ * second after the server produced it, which React reports as a hydration
+ * mismatch. The IP and user agent are logged but deliberately never sent here.
+ */
+export type LeadRow = {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  campaign: string;
+  slug: string;
+  assignee: string;
+  status: LeadStatus;
+  age: string;
+  capturedAt: string;
+};
+
+type Filter = 'all' | 'pending' | 'registered';
+
+const PAGE = 12;
+
+export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const [filter, setFilter] = useState<Filter>('all');
+  const [limit, setLimit] = useState(PAGE);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+
+  /**
+   * Statuses this session has changed, applied over whatever the server last
+   * sent. The toggle flips instantly and the row is re-rendered from the server
+   * a moment later; without this the pill would sit on its old value for the
+   * whole round trip to the spreadsheet, which is not fast.
+   */
+  const [changed, setChanged] = useState<Record<string, LeadStatus>>({});
+
+  const withStatus = useMemo(
+    () => rows.map((row) => ({ ...row, status: changed[row.id] ?? row.status })),
+    [rows, changed],
+  );
+
+  const registeredCount = withStatus.filter((row) => row.status === 'registered').length;
+  const counts = {
+    all: withStatus.length,
+    registered: registeredCount,
+    pending: withStatus.length - registeredCount,
+  };
+
+  const matching = withStatus.filter((row) => filter === 'all' || row.status === filter);
+  const visible = matching.slice(0, limit);
+
+  async function setStatus(row: LeadRow, next: LeadStatus) {
+    setBusyId(row.id);
+    setError(null);
+    setChanged((prev) => ({ ...prev, [row.id]: next }));
+    try {
+      const res = await fetch(`/api/leads/${row.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error ?? `Request failed (${res.status})`);
+      }
+      setAnnouncement(`${row.fullName || row.email} marked ${statusLabel(next).toLowerCase()}.`);
+      startTransition(() => router.refresh());
+    } catch (err) {
+      // Put the pill back where it was — the sheet did not change.
+      setChanged((prev) => {
+        const rest = { ...prev };
+        delete rest[row.id];
+        return rest;
+      });
+      setError(err instanceof Error ? err.message : 'Could not update that lead');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="rise panel mt-4 p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+        <h2 className="font-display text-[22px]">Latest submissions</h2>
+        <span className="text-xs text-sage">
+          {total > rows.length
+            ? `Latest ${rows.length} of ${total.toLocaleString()} — older leads live in your sheet`
+            : `${total.toLocaleString()} in total`}
+        </span>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="py-10 text-center text-sm text-sage-dim">
+          No leads captured yet. Share a link and they will appear here.
+        </p>
+      ) : (
+        <>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {(['all', 'pending', 'registered'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                className="pill-action"
+                aria-pressed={filter === key}
+                data-active={filter === key}
+                onClick={() => setFilter(key)}
+              >
+                {key === 'all' ? 'All' : statusLabel(key)} {counts[key]}
+              </button>
+            ))}
+            <span className="text-[11.5px] text-sage-dim">
+              Pending is automatic — mark a lead registered once they sign up.
+            </span>
+          </div>
+
+          {error ? (
+            <p role="alert" className="field-error mt-3">
+              {error}
+            </p>
+          ) : null}
+
+          {matching.length === 0 ? (
+            <p className="py-10 text-center text-sm text-sage-dim">
+              No {filter} leads in this list.
+            </p>
+          ) : (
+            <ul className="mt-2">
+              {/* Stacked on a phone, one row from lg up — fixed-width columns
+                  cannot survive a 390px viewport. */}
+              {visible.map((row) => (
+                <li
+                  key={row.id}
+                  className="divider-row flex flex-col gap-2 py-3.5 lg:flex-row lg:items-center lg:gap-4"
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-3 lg:flex-1">
+                    <span className="min-w-0">
+                      <span className="block text-[13.5px] font-medium">{row.fullName || '—'}</span>
+                      <a
+                        href={`mailto:${row.email}`}
+                        className="mt-0.5 block truncate text-[11.5px] text-sage-dim hover:text-cream"
+                      >
+                        {row.email}
+                      </a>
+                      {/* The phone is captured but had nowhere to be read. */}
+                      {row.phone ? (
+                        <a
+                          href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}
+                          className="mt-0.5 block truncate text-[11.5px] text-sage-dim hover:text-cream"
+                        >
+                          {row.phone}
+                        </a>
+                      ) : null}
+                    </span>
+                    <span
+                      className="flex-none text-xs text-sage-dim lg:hidden"
+                      title={row.capturedAt}
+                    >
+                      {row.age}
+                    </span>
+                  </div>
+
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 lg:flex-none lg:gap-4">
+                    {/* Campaign names are free text and can be very long — cap the
+                        pill so one row cannot push the whole table sideways. */}
+                    <span
+                      className="pill max-w-[240px] bg-pine-800 px-3 py-1.5 font-normal text-[#d7cfbb]"
+                      title={row.campaign || row.slug}
+                    >
+                      <span className="pill-text">{row.campaign || row.slug}</span>
+                    </span>
+                    <span className="truncate text-[12.5px] text-sage lg:w-[130px]">
+                      {row.assignee || <span className="text-sage-dim">Unassigned</span>}
+                    </span>
+                  </div>
+
+                  <div className="lg:w-[122px] lg:flex-none">
+                    <StatusToggle
+                      row={row}
+                      busy={busyId === row.id}
+                      onToggle={() =>
+                        setStatus(row, row.status === 'registered' ? 'pending' : 'registered')
+                      }
+                    />
+                  </div>
+
+                  <span
+                    className="hidden text-right text-xs text-sage-dim lg:block lg:w-[80px]"
+                    title={row.capturedAt}
+                  >
+                    {row.age}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {matching.length > visible.length ? (
+            <button
+              type="button"
+              className="pill-action mt-4"
+              onClick={() => setLimit((current) => current + PAGE * 2)}
+            >
+              Show {Math.min(PAGE * 2, matching.length - visible.length)} more
+            </button>
+          ) : null}
+
+          <p role="status" aria-live="polite" className="sr-only left-0">
+            {announcement}
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function StatusToggle({
+  row,
+  busy,
+  onToggle,
+}: {
+  row: LeadRow;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  const registered = row.status === 'registered';
+  const who = row.fullName || row.email || 'this lead';
+  return (
+    <button
+      type="button"
+      className="pill-status"
+      data-status={row.status}
+      disabled={busy}
+      onClick={onToggle}
+      /* The visible word starts the accessible name so "click Pending" still
+         works for voice control, and the rest says what clicking will do. */
+      aria-label={`${statusLabel(row.status)} — mark ${who} as ${
+        registered ? 'pending' : 'registered'
+      }`}
+    >
+      <span
+        aria-hidden
+        className="h-1.5 w-1.5 flex-none rounded-full"
+        style={{
+          background: registered ? 'var(--color-pine-900)' : 'var(--color-sage-dim)',
+        }}
+      />
+      {statusLabel(row.status)}
+    </button>
+  );
+}
