@@ -11,19 +11,33 @@ export type PerformanceRow = {
   conversion: number;
 };
 
+export type Insight = {
+  campaign: string;
+  slug: string;
+  visitShare: number;
+  conversion: number;
+} | null;
+
 export type DashboardStats = {
   totalSubmissions: number;
   totalVisits: number;
   conversion: number;
   activeLinks: number;
   totalLinks: number;
+  totalPeople: number;
   submissionsToday: number;
+  submissionsYesterday: number;
+  visitsToday: number;
   submissionsLast7: number;
   submissionsPrev7: number;
   trend7: number | null;
+  /** Change vs yesterday, null when yesterday was empty. */
+  trendDay: number | null;
   series: DayBucket[];
   byAssignee: PerformanceRow[];
   byCampaign: PerformanceRow[];
+  /** The campaign taking a big share of traffic and returning the least. */
+  insight: Insight;
 };
 
 function dayKey(iso: string): string {
@@ -51,13 +65,16 @@ export function buildStats(
   links: AffiliateLink[],
   submissions: Submission[],
   visits: Visit[],
-  days = 14,
+  days = 30,
 ): DashboardStats {
   const today = daysAgoKey(0);
+  const yesterday = daysAgoKey(1);
   const start7 = daysAgoKey(6);
   const startPrev7 = daysAgoKey(13);
 
   let submissionsToday = 0;
+  let submissionsYesterday = 0;
+  let visitsToday = 0;
   let submissionsLast7 = 0;
   let submissionsPrev7 = 0;
 
@@ -68,6 +85,7 @@ export function buildStats(
     const key = dayKey(row.createdAt);
     submissionsByDay.set(key, (submissionsByDay.get(key) ?? 0) + 1);
     if (key === today) submissionsToday += 1;
+    if (key === yesterday) submissionsYesterday += 1;
     if (key >= start7) submissionsLast7 += 1;
     else if (key >= startPrev7) submissionsPrev7 += 1;
   }
@@ -75,6 +93,7 @@ export function buildStats(
   for (const row of visits) {
     const key = dayKey(row.createdAt);
     visitsByDay.set(key, (visitsByDay.get(key) ?? 0) + 1);
+    if (key === today) visitsToday += 1;
   }
 
   const series: DayBucket[] = [];
@@ -134,13 +153,18 @@ export function buildStats(
     (key) => ({ label: campaignNames.get(key) ?? key, sublabel: `/${key}` }),
   );
 
+  const people = new Set(links.filter((l) => l.usr).map((l) => l.usr));
+
   return {
     totalSubmissions: submissions.length,
     totalVisits: visits.length,
     conversion: safeRate(submissions.length, visits.length),
     activeLinks: links.filter((l) => l.active).length,
     totalLinks: links.length,
+    totalPeople: people.size,
     submissionsToday,
+    submissionsYesterday,
+    visitsToday,
     submissionsLast7,
     submissionsPrev7,
     trend7:
@@ -149,9 +173,43 @@ export function buildStats(
           ? null
           : 0
         : (submissionsLast7 - submissionsPrev7) / submissionsPrev7,
+    trendDay:
+      submissionsYesterday === 0
+        ? null
+        : (submissionsToday - submissionsYesterday) / submissionsYesterday,
     series,
     byAssignee,
     byCampaign,
+    insight: findInsight(byCampaign, visits.length),
+  };
+}
+
+/**
+ * The campaign worth a second look: it takes a meaningful share of the traffic
+ * and converts worse than the rest. Returns null until there is enough traffic
+ * for the comparison to mean anything.
+ */
+function findInsight(byCampaign: PerformanceRow[], totalVisits: number): Insight {
+  if (totalVisits < 20 || byCampaign.length < 2) return null;
+
+  const candidates = byCampaign.filter((row) => row.visits >= 10);
+  if (candidates.length < 2) return null;
+
+  const worst = [...candidates].sort((a, b) => a.conversion - b.conversion)[0]!;
+  const rest = candidates.filter((row) => row.key !== worst.key);
+  const restRate = safeRate(
+    rest.reduce((sum, row) => sum + row.submissions, 0),
+    rest.reduce((sum, row) => sum + row.visits, 0),
+  );
+
+  // Only worth surfacing if it is meaningfully behind the others.
+  if (worst.conversion >= restRate * 0.6) return null;
+
+  return {
+    campaign: worst.label,
+    slug: worst.sublabel.replace(/^\//, ''),
+    visitShare: safeRate(worst.visits, totalVisits),
+    conversion: worst.conversion,
   };
 }
 
@@ -221,6 +279,34 @@ export function countsByLink(
 
 export function formatPercent(value: number, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
+}
+
+/** "MS" from "Mark Salvador", "A" from "Arthur". Falls back to a dash. */
+export function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '—';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+/**
+ * Compact age for dense rows ("4 min ago"). Falls back to the absolute UTC
+ * timestamp once something is older than a week, where "8 days ago" stops
+ * being more useful than the date.
+ */
+export function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const seconds = Math.round((Date.now() - then) / 1000);
+
+  if (seconds < 60) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  if (days <= 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return formatDateTime(iso);
 }
 
 export function formatDateTime(iso: string): string {

@@ -7,10 +7,12 @@ export function LinkActions({
   id,
   active,
   label,
+  previewUrl,
 }: {
   id: string;
   active: boolean;
   label: string;
+  previewUrl?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -42,11 +44,22 @@ export function LinkActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {previewUrl ? (
+        <a
+          href={previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="pill-action"
+          title="Open the landing page"
+        >
+          Preview ↗
+        </a>
+      ) : null}
       <button
         type="button"
         disabled={disabled}
         onClick={() => send('PATCH', { active: !active })}
-        className="btn btn-ghost !px-3 !py-1.5 !text-[0.625rem]"
+        className="pill-action"
       >
         {active ? 'Pause' : 'Activate'}
       </button>
@@ -62,11 +75,15 @@ export function LinkActions({
             void send('DELETE');
           }
         }}
-        className="btn btn-ghost !px-3 !py-1.5 !text-[0.625rem] hover:!border-signal hover:!bg-signal"
+        className="pill-action hover:!border-mustard hover:!text-mustard"
       >
         Delete
       </button>
-      {error ? <span className="field-error !mt-0">{error}</span> : null}
+      {error ? (
+        <span role="alert" className="field-error !mt-0 basis-full">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

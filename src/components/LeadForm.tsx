@@ -21,12 +21,6 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
   const beaconSent = useRef(false);
   const doneRef = useRef<HTMLDivElement | null>(null);
 
-  // Move focus to the confirmation so screen-reader users are told what
-  // happened instead of being dropped on <body> mid-redirect.
-  useEffect(() => {
-    if (status === 'redirecting') doneRef.current?.focus();
-  }, [status]);
-
   // Log the page view once, without blocking render. React 18+ dev mode runs
   // effects twice, hence the ref guard.
   useEffect(() => {
@@ -49,13 +43,21 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
     }
   }, [slug, usr]);
 
+  // Move focus to the confirmation so screen-reader users are told what
+  // happened instead of being dropped on <body> mid-redirect.
+  useEffect(() => {
+    if (status === 'redirecting') doneRef.current?.focus();
+  }, [status]);
+
   function validate(): boolean {
     const next: Record<string, string> = {};
     if (fullName.trim().length < 2) next.fullName = 'Please enter your full name';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
       next.email = 'Please enter a valid email address';
     }
-    if (requirePhone && phone.trim().length < 7) next.phone = 'Please enter a phone number';
+    if (requirePhone && phone.replace(/\D/g, '').length < 7) {
+      next.phone = 'Please enter a phone number';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -77,8 +79,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
       if (!res.ok) {
         const fields = (payload.fields ?? {}) as Record<string, string>;
         setErrors(fields);
-        // slug/usr errors belong to the URL, not to anything on screen. Without
-        // surfacing them the visitor sees a form that silently refuses to submit.
+        // slug/usr errors belong to the URL, not to anything on screen.
         const rendered = new Set(['fullName', 'email', 'phone']);
         const unrendered = Object.entries(fields)
           .filter(([key]) => !rendered.has(key))
@@ -115,17 +116,19 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         tabIndex={-1}
         role="status"
         aria-live="polite"
-        className="py-10 text-center outline-none"
+        className="rounded-[18px] border border-cream-300 bg-cream-50 px-6 py-14 text-center outline-none"
       >
-        <div className="mx-auto mb-6 h-px w-24 overflow-hidden bg-rule">
-          <div className="draw-loop h-full w-full bg-signal" />
+        <div className="mx-auto mb-6 h-px w-24 overflow-hidden bg-cream-400">
+          <div className="draw-loop h-full w-full bg-mustard" />
         </div>
-        <p className="font-display text-3xl">Thanks, {fullName.trim().split(' ')[0]}.</p>
-        <p className="mt-2 text-sm text-ink-2">Taking you there now…</p>
+        <p className="font-display text-[32px] leading-tight">
+          Thanks, {fullName.trim().split(' ')[0]}.
+        </p>
+        <p className="mt-2 text-sm text-ink-muted">Taking you there now…</p>
         {redirectUrl ? (
           <a
             href={redirectUrl}
-            className="mt-6 inline-block font-mono text-[0.6875rem] uppercase tracking-[0.14em] underline decoration-rule underline-offset-4 hover:text-signal"
+            className="mt-6 inline-block text-[12.5px] underline underline-offset-4 hover:text-mustard-deep"
           >
             Continue manually ↗
           </a>
@@ -135,16 +138,16 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-7">
+    <form
+      onSubmit={onSubmit}
+      noValidate
+      className="rounded-[18px] border border-cream-300 bg-cream-50 p-6"
+    >
       {formError ? (
         <p
           role="alert"
-          className="border px-4 py-3 text-sm"
-          style={{
-            borderColor: 'var(--color-signal)',
-            background: 'var(--color-signal-wash)',
-            color: 'var(--color-signal-2)',
-          }}
+          className="mb-5 rounded-xl border px-4 py-3 text-sm"
+          style={{ borderColor: '#c9a24a', background: '#faf3e2', color: '#8a5a12' }}
         >
           {formError}
         </p>
@@ -156,7 +159,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
           name="name"
           aria-invalid={Boolean(errors.fullName)}
           aria-describedby={errors.fullName ? 'fullName-error' : undefined}
-          className="field-input"
+          className="field-light"
           value={fullName}
           onChange={(e) => {
             setFullName(e.target.value);
@@ -169,51 +172,56 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         />
       </LeadField>
 
-      <LeadField label="Email address" error={errors.email} htmlFor="email">
-        <input
-          id="email"
-          name="email"
-          aria-invalid={Boolean(errors.email)}
-          aria-describedby={errors.email ? 'email-error' : undefined}
-          type="email"
-          className="field-input"
-          value={email}
-          onChange={(e) => {
-            setEmail(e.target.value);
-            setErrors((prev) => ({ ...prev, email: '' }));
-          }}
-          placeholder="you@example.com"
-          autoComplete="email"
-          inputMode="email"
-          maxLength={160}
-          required
-        />
-      </LeadField>
+      <div className="mt-4">
+        <LeadField label="Email address" error={errors.email} htmlFor="email">
+          <input
+            id="email"
+            name="email"
+            type="email"
+            aria-invalid={Boolean(errors.email)}
+            aria-describedby={errors.email ? 'email-error' : undefined}
+            className="field-light"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setErrors((prev) => ({ ...prev, email: '' }));
+            }}
+            placeholder="you@example.com"
+            autoComplete="email"
+            inputMode="email"
+            maxLength={160}
+            required
+          />
+        </LeadField>
+      </div>
 
-      <LeadField
-        label={requirePhone ? 'Phone number' : 'Phone number (optional)'}
-        error={errors.phone}
-        htmlFor="phone"
-      >
-        <input
-          id="phone"
-          name="tel"
-          aria-invalid={Boolean(errors.phone)}
-          aria-describedby={errors.phone ? 'phone-error' : undefined}
-          type="tel"
-          className="field-input"
-          value={phone}
-          onChange={(e) => {
-            setPhone(e.target.value);
-            setErrors((prev) => ({ ...prev, phone: '' }));
-          }}
-          placeholder="(555) 010-4477"
-          autoComplete="tel"
-          inputMode="tel"
-          maxLength={40}
-          required={requirePhone}
-        />
-      </LeadField>
+      <div className="mt-4">
+        <LeadField
+          label="Phone number"
+          hint={requirePhone ? undefined : 'Optional'}
+          error={errors.phone}
+          htmlFor="phone"
+        >
+          <input
+            id="phone"
+            name="tel"
+            type="tel"
+            aria-invalid={Boolean(errors.phone)}
+            aria-describedby={errors.phone ? 'phone-error' : undefined}
+            className="field-light"
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setErrors((prev) => ({ ...prev, phone: '' }));
+            }}
+            placeholder="(555) 010-4477"
+            autoComplete="tel"
+            inputMode="tel"
+            maxLength={40}
+            required={requirePhone}
+          />
+        </LeadField>
+      </div>
 
       {/* Honeypot — hidden from people, irresistible to bots. Deliberately NOT
           named "company"/"organization": those are autofill categories, and a
@@ -231,13 +239,12 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         />
       </div>
 
-      <button type="submit" className="btn w-full !py-4" disabled={status === 'saving'}>
-        {status === 'saving' ? 'Saving…' : ctaLabel}
+      <button type="submit" className="btn-ink mt-6 w-full" disabled={status === 'saving'}>
+        {status === 'saving' ? 'Saving…' : `${ctaLabel} →`}
       </button>
 
-      <p className="text-center text-xs leading-relaxed text-muted">
-        We only use your details to follow up about this offer. You&rsquo;ll be taken to the offer
-        page right after.
+      <p className="mt-3.5 text-center text-xs leading-relaxed text-ink-faint">
+        We only use your details to follow up about this offer.
       </p>
     </form>
   );
@@ -245,23 +252,28 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
 
 function LeadField({
   label,
+  hint,
   error,
   htmlFor,
   children,
 }: {
   label: string;
+  hint?: string;
   error?: string;
   htmlFor: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <label className="field-label" htmlFor={htmlFor}>
-        {label}
-      </label>
-      {children}
+      <div className="flex items-baseline justify-between gap-3">
+        <label className="label-micro-light" htmlFor={htmlFor}>
+          {label}
+        </label>
+        {hint ? <span className="text-[11.5px] text-ink-faint">{hint}</span> : null}
+      </div>
+      <div className="mt-2">{children}</div>
       {error ? (
-        <span id={`${htmlFor}-error`} role="alert" className="field-error block">
+        <span id={`${htmlFor}-error`} role="alert" className="field-error-light block">
           {error}
         </span>
       ) : null}

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { LeadForm } from '@/components/LeadForm';
+import { initialsOf } from '@/lib/analytics';
 import { resolveLink } from '@/lib/store';
 import { normalizeKey } from '@/lib/validate';
 
@@ -27,7 +28,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
     if (resolved.status === 'ok') {
       return {
         // Absolute: public landing pages must not inherit the admin tool's
-        // "· Affiliate Ledger" title template.
+        // title template.
         title: { absolute: resolved.link.headline || resolved.link.campaign },
         description: resolved.link.subheadline || undefined,
         // A lead-capture interstitial has no business being indexed.
@@ -44,6 +45,12 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   };
 }
 
+const ASSURANCES = [
+  'Under thirty seconds',
+  'Straight to the offer after',
+  'Your details stay with us',
+];
+
 export default async function LandingPage({ params, searchParams }: PageProps) {
   const { slug: rawSlug } = await params;
   const query = await searchParams;
@@ -55,12 +62,10 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
     resolved = await resolveLink(slug, usr);
   } catch {
     return (
-      <Shell>
-        <Notice
-          title="This page is temporarily unavailable"
-          body="We couldn't reach our records just now. Please try again in a moment."
-        />
-      </Shell>
+      <Notice
+        title="This page is temporarily unavailable"
+        body="We couldn't reach our records just now. Please try again in a moment."
+      />
     );
   }
 
@@ -68,12 +73,10 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
 
   if (resolved.status === 'paused') {
     return (
-      <Shell>
-        <Notice
-          title="This offer is paused"
-          body="The link you followed is no longer accepting sign-ups. Please check back later or contact the person who shared it with you."
-        />
-      </Shell>
+      <Notice
+        title="This offer is paused"
+        body="The link you followed is no longer accepting sign-ups. Please check back later or contact the person who shared it with you."
+      />
     );
   }
 
@@ -81,78 +84,64 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
   const headline = link.headline || link.campaign;
   const subheadline =
     link.subheadline ||
-    'Add your details below and we’ll take you straight through to the offer.';
+    'Tell us where to send your matches and we’ll take you straight through to the offer.';
   const ctaLabel = link.ctaLabel || 'Continue to the offer';
 
-  return (
-    <main className="min-h-screen lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-      {/* Editorial side */}
-      <section className="panel-ink relative flex flex-col justify-between overflow-hidden px-6 py-12 sm:px-12 lg:min-h-screen lg:py-16">
-        {/* Oversized ghost numeral for depth */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -right-10 bottom-[-6rem] select-none font-display text-[22rem] leading-none opacity-[0.06]"
-        >
-          ✳
-        </span>
+  // Set the last word of the headline in italic mustard — the one flourish on
+  // an otherwise plain page.
+  const words = headline.trim().split(/\s+/);
+  // Only accent the last word when there is a rest of the headline to contrast
+  // it against — a one-word headline would otherwise be entirely italic mustard.
+  const accentTail = words.length > 1;
+  const lead = accentTail ? words.slice(0, -1).join(' ') : headline;
+  const tail = accentTail ? words[words.length - 1]! : '';
 
-        <div className="relative">
-          <span className="eyebrow" style={{ color: 'var(--color-paper-3)' }}>
-            {/* Don't echo the campaign when the headline already is the campaign. */}
-            {headline === link.campaign ? 'Exclusive offer' : link.campaign}
+  return (
+    <main data-surface="cream" className="min-h-screen bg-cream-100 px-5 py-10 text-ink sm:px-8 sm:py-12">
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-[640px] flex-col sm:min-h-[calc(100vh-6rem)]">
+        <div className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-2.5 text-[12.5px] text-ink-faint">
+            <span aria-hidden className="h-5 w-5 rounded-full bg-mustard" />
+            {link.campaign}
           </span>
-          <h1 className="rise mt-5 max-w-[16ch] font-display text-[3rem] leading-[0.98] sm:text-[4.25rem]">
-            {headline}
+          <span className="text-xs text-ink-faint">One short step</span>
+        </div>
+
+        <div className="rise mt-10">
+          <h1 className="font-display text-[38px] leading-[1.06] tracking-[-0.01em] sm:text-[48px]">
+            {lead}
+            {accentTail ? (
+              <>
+                {' '}
+                <span className="italic" style={{ color: 'var(--color-mustard-deep)' }}>
+                  {tail}
+                </span>
+              </>
+            ) : null}
           </h1>
-          <p
-            className="rise mt-6 max-w-md text-base leading-relaxed"
-            style={{ animationDelay: '120ms', color: 'var(--color-paper-3)' }}
-          >
+          <p className="mt-4 max-w-[460px] text-[15px] leading-[1.65] text-ink-muted">
             {subheadline}
           </p>
         </div>
 
-        <ul className="relative mt-12 space-y-3 lg:mt-0">
-          {[
-            'Takes under 30 seconds',
-            'You go straight to the offer after',
-            'No spam — your details stay with us',
-          ].map((item, index) => (
+        <ul className="rise mt-6 flex flex-wrap gap-2.5" style={{ animationDelay: '90ms' }}>
+          {ASSURANCES.map((item) => (
             <li
               key={item}
-              className="rise flex items-baseline gap-3 border-t pt-3 text-sm"
-              style={{
-                animationDelay: `${200 + index * 80}ms`,
-                borderColor: 'rgba(244,240,230,0.18)',
-                color: 'var(--color-paper-3)',
-              }}
+              className="flex items-center gap-2.5 rounded-full bg-cream-200 px-3.5 py-2.5 text-[12.5px] text-ink-soft"
             >
-              <span className="font-mono text-[0.625rem]" style={{ color: 'var(--color-signal-3)' }}>
-                {String(index + 1).padStart(2, '0')}
+              <span
+                aria-hidden
+                className="flex h-4 w-4 items-center justify-center rounded-full bg-moss text-[9px] font-medium text-pine-900"
+              >
+                ✓
               </span>
               {item}
             </li>
           ))}
         </ul>
 
-        {assigned && link.assignee ? (
-          <p
-            className="relative mt-10 font-mono text-[0.6875rem] uppercase tracking-[0.16em]"
-            style={{ color: 'var(--color-paper-3)' }}
-          >
-            Prepared for you by {link.assignee}
-          </p>
-        ) : null}
-      </section>
-
-      {/* Form side */}
-      <section className="flex items-center justify-center px-6 py-14 sm:px-12">
-        <div className="w-full max-w-md">
-          <div className="mb-8 border-b-[3px] border-ink pb-4">
-            <span className="eyebrow">Your details</span>
-            <h2 className="mt-1 font-display text-3xl leading-tight">Where should we send it?</h2>
-          </div>
-
+        <div className="rise mt-6" style={{ animationDelay: '150ms' }}>
           <LeadForm
             slug={link.slug}
             usr={usr}
@@ -160,25 +149,38 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
             ctaLabel={ctaLabel}
           />
         </div>
-      </section>
-    </main>
-  );
-}
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-20">
-      <div className="w-full max-w-lg text-center">{children}</div>
+        <div className="flex-1" />
+
+        {assigned && link.assignee ? (
+          <div className="mt-8 flex items-center gap-3 border-t border-cream-300 pt-5">
+            <span
+              aria-hidden
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-pine-900 text-[12px] font-medium"
+              style={{ color: 'var(--color-mustard)' }}
+            >
+              {initialsOf(link.assignee)}
+            </span>
+            <span className="text-[12.5px] leading-[1.45] text-ink-faint">
+              Prepared for you by
+              <br />
+              <span className="font-medium text-ink">{link.assignee}</span>
+            </span>
+          </div>
+        ) : null}
+      </div>
     </main>
   );
 }
 
 function Notice({ title, body }: { title: string; body: string }) {
   return (
-    <>
-      <div className="mx-auto mb-8 h-px w-16 bg-signal" />
-      <h1 className="font-display text-4xl leading-tight">{title}</h1>
-      <p className="mt-4 text-sm leading-relaxed text-ink-2">{body}</p>
-    </>
+    <main data-surface="cream" className="flex min-h-screen items-center justify-center bg-cream-100 px-6 py-20 text-ink">
+      <div className="w-full max-w-lg text-center">
+        <div aria-hidden className="mx-auto mb-8 h-1.5 w-1.5 rounded-full bg-mustard" />
+        <h1 className="font-display text-[38px] leading-tight">{title}</h1>
+        <p className="mt-4 text-sm leading-relaxed text-ink-muted">{body}</p>
+      </div>
+    </main>
   );
 }

@@ -2,16 +2,30 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export function CopyLink({ value, compact = false }: { value: string; compact?: boolean }) {
+/**
+ * The shareable URL as a pill, with copy folded into it. On copy failure the
+ * text is selected instead, so there is always a way to get the URL out.
+ */
+export function CopyLink({ value }: { value: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'error'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const textRef = useRef<HTMLElement | null>(null);
+  const textRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
   }, []);
+
+  function selectText() {
+    const node = textRef.current;
+    if (!node) return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
 
   async function copy() {
     try {
@@ -37,53 +51,36 @@ export function CopyLink({ value, compact = false }: { value: string; compact?: 
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setState('idle'), 1800);
     } catch {
-      // Leave the URL selected so it can be copied by hand, and keep the
-      // message up rather than clearing it after a moment.
       setState('error');
       if (timer.current) clearTimeout(timer.current);
       selectText();
     }
   }
 
-  function selectText() {
-    const node = textRef.current;
-    if (!node) return;
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-  }
-
-  const label = state === 'copied' ? 'Copied' : state === 'error' ? 'Select & copy' : 'Copy';
-
   return (
-    <button
-      type="button"
-      onClick={copy}
-      title={value}
-      className="group flex w-full items-center gap-3 border border-rule bg-paper-2/60 px-3 py-2 text-left transition-colors hover:border-ink"
-    >
-      <code
-        ref={textRef}
-        className={`min-w-0 flex-1 truncate font-mono ${compact ? 'text-[0.75rem]' : 'text-[0.8125rem]'}`}
-      >
-        {value}
-      </code>
-      <span
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="flex min-w-0 items-center rounded-full bg-pine-900 px-3.5 py-1.5">
+        <span ref={textRef} className="truncate text-[11.5px] text-sage" title={value}>
+          {value.replace(/^https?:\/\//, '')}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={copy}
         aria-live="polite"
-        className="shrink-0 font-mono text-[0.625rem] uppercase tracking-[0.14em]"
+        className="flex-none rounded-full border border-pine-700 px-3 py-1.5 text-[11px] font-medium transition-colors hover:border-mustard hover:text-mustard"
         style={{
           color:
             state === 'copied'
-              ? 'var(--color-ok)'
+              ? 'var(--color-moss)'
               : state === 'error'
-                ? 'var(--color-signal-2)'
-                : 'var(--color-muted)',
+                ? 'var(--color-mustard)'
+                : 'var(--color-cream)',
+          borderColor: state === 'copied' ? 'var(--color-moss)' : undefined,
         }}
       >
-        {label}
-      </span>
-    </button>
+        {state === 'copied' ? 'Copied' : state === 'error' ? 'Select' : 'Copy'}
+      </button>
+    </div>
   );
 }
