@@ -10,7 +10,7 @@ import type {
   Submission,
   Visit,
 } from '../types';
-import { StoreConflictError, StoreNotFoundError } from './errors';
+import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './errors';
 
 /**
  * Filesystem-backed store used when Google Sheets credentials are absent, so
@@ -57,11 +57,27 @@ async function readFile<T>(file: string): Promise<T[]> {
   }
 }
 
+/** Read-only or non-existent filesystem — i.e. a serverless host. */
+const UNWRITABLE = new Set(['EROFS', 'EACCES', 'EPERM', 'ENOENT']);
+
 async function writeFile<T>(file: string, rows: T[]): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(rows, null, 2), 'utf8');
-  await fs.rename(tmp, file);
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(rows, null, 2), 'utf8');
+    await fs.rename(tmp, file);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? '';
+    if (UNWRITABLE.has(code)) {
+      // A bare "ENOENT: mkdir '/var/task/.data'" tells nobody what to do.
+      throw new StoreConfigError(
+        `Cannot write to ${DATA_DIR} (${code}). This host has no writable filesystem, so the ` +
+          'local file store cannot be used — configure Google Sheets instead by setting ' +
+          'GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY, then redeploy.',
+      );
+    }
+    throw error;
+  }
 }
 
 export function createLocalStore(): Store {

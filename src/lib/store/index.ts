@@ -1,9 +1,57 @@
 import { isSheetsConfigured } from '../config';
 import type { AffiliateLink, Store } from '../types';
+import { StoreConfigError } from './errors';
 import { createLocalStore } from './local';
 import { createSheetsStore } from './sheets';
 
 export { StoreConflictError, StoreNotFoundError, StoreConfigError, statusForError } from './errors';
+
+/**
+ * True on hosts whose filesystem is read-only and thrown away between requests
+ * (Vercel, Lambda, Netlify). The local JSON store cannot work there, so falling
+ * back to it would only produce a confusing `mkdir '/var/task/.data'` error at
+ * the first write.
+ */
+export function isEphemeralFilesystem(): boolean {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.NETLIFY ||
+      process.env.LAMBDA_TASK_ROOT,
+  );
+}
+
+const NOT_CONFIGURED_MESSAGE =
+  'Google Sheets is not configured on this deployment, and the local file store cannot run on a ' +
+  'serverless host. Set GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in ' +
+  'your project settings, then redeploy. (A service-account.json file will not work here — there ' +
+  'is no persistent filesystem.)';
+
+/** Every operation fails the same way, with an actionable message. */
+function createUnavailableStore(message: string): Store {
+  const fail = async (): Promise<never> => {
+    throw new StoreConfigError(message);
+  };
+  return {
+    kind: 'sheets',
+    listLinks: fail,
+    createLink: fail,
+    updateLink: fail,
+    deleteLink: fail,
+    listSubmissions: fail,
+    addSubmission: fail,
+    listVisits: fail,
+    addVisit: fail,
+  };
+}
+
+export type StorageStatus = 'sheets' | 'local' | 'unconfigured';
+
+/** What the UI should report about where data is going. */
+export function storageStatus(): StorageStatus {
+  if (isSheetsConfigured()) return 'sheets';
+  return isEphemeralFilesystem() ? 'unconfigured' : 'local';
+}
 
 let cached: Store | null = null;
 
@@ -13,7 +61,14 @@ let cached: Store | null = null;
  */
 export function getStore(): Store {
   if (!cached) {
-    cached = isSheetsConfigured() ? createSheetsStore() : createLocalStore();
+    if (isSheetsConfigured()) {
+      cached = createSheetsStore();
+    } else if (isEphemeralFilesystem()) {
+      // Fail loudly rather than silently degrading to a store that cannot write.
+      cached = createUnavailableStore(NOT_CONFIGURED_MESSAGE);
+    } else {
+      cached = createLocalStore();
+    }
   }
   return cached;
 }

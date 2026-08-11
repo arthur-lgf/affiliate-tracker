@@ -1,12 +1,19 @@
 import Link from 'next/link';
 import { Nav } from '@/components/Nav';
-import { getStore } from '@/lib/store';
+import { storageStatus } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
 
+const STORAGE_LABEL: Record<string, { text: string; color: string }> = {
+  sheets: { text: 'Google Sheets connected', color: 'var(--color-ok)' },
+  local: { text: 'Local storage mode', color: 'var(--color-muted)' },
+  unconfigured: { text: 'Storage not configured', color: 'var(--color-signal)' },
+};
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const store = getStore();
-  const onSheets = store.kind === 'sheets';
+  const status = storageStatus();
+  const onSheets = status === 'sheets';
+  const badge = STORAGE_LABEL[status]!;
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-[1240px] px-5 sm:px-8">
@@ -18,10 +25,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span
               aria-hidden
               className="inline-block h-1.5 w-1.5 rounded-full"
-              style={{ background: onSheets ? 'var(--color-ok)' : 'var(--color-muted)' }}
+              style={{ background: badge.color }}
             />
-            <span className="eyebrow" style={{ color: onSheets ? 'var(--color-ok)' : undefined }}>
-              {onSheets ? 'Google Sheets connected' : 'Local storage mode'}
+            <span className="eyebrow" style={{ color: badge.color }}>
+              {badge.text}
             </span>
           </span>
         </div>
@@ -48,7 +55,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <footer className="border-t border-rule py-6">
         <p className="eyebrow">
-          Affiliate Ledger — {onSheets ? 'writing to Google Sheets' : 'writing to ./.data'}
+          Affiliate Ledger —{' '}
+          {onSheets
+            ? 'writing to Google Sheets'
+            : status === 'local'
+              ? 'writing to ./.data'
+              : 'no storage configured'}
         </p>
       </footer>
     </div>
