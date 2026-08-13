@@ -116,20 +116,17 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         tabIndex={-1}
         role="status"
         aria-live="polite"
-        className="rounded-[18px] border border-cream-300 bg-cream-50 px-6 py-14 text-center outline-none"
+        className="panel px-6 py-16 text-center outline-none"
       >
-        <div className="mx-auto mb-6 h-px w-24 overflow-hidden bg-cream-400">
-          <div className="draw-loop h-full w-full bg-mustard" />
+        <div className="mx-auto mb-7 h-1.5 w-28 overflow-hidden rounded-full bg-edge-soft">
+          <div className="draw-loop h-full w-full bg-leaf" />
         </div>
-        <p className="font-display text-[32px] leading-tight">
+        <p className="font-display text-[36px] leading-tight">
           Thanks, {fullName.trim().split(' ')[0]}.
         </p>
-        <p className="mt-2 text-sm text-ink-muted">Taking you there now…</p>
+        <p className="mt-3 text-[20px] text-ink-soft">Taking you there now…</p>
         {redirectUrl ? (
-          <a
-            href={redirectUrl}
-            className="mt-6 inline-block text-[12.5px] underline underline-offset-4 hover:text-mustard-deep"
-          >
+          <a href={redirectUrl} className="link-text mt-7 inline-block text-[19px]">
             Continue manually ↗
           </a>
         ) : null}
@@ -138,16 +135,11 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      noValidate
-      className="rounded-[18px] border border-cream-300 bg-cream-50 p-6"
-    >
+    <form onSubmit={onSubmit} noValidate className="panel p-6 sm:p-8">
       {formError ? (
         <p
           role="alert"
-          className="mb-5 rounded-xl border px-4 py-3 text-sm"
-          style={{ borderColor: '#c9a24a', background: '#faf3e2', color: '#8a5a12' }}
+          className="mb-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[19px] font-semibold text-alarm"
         >
           {formError}
         </p>
@@ -159,7 +151,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
           name="name"
           aria-invalid={Boolean(errors.fullName)}
           aria-describedby={errors.fullName ? 'fullName-error' : undefined}
-          className="field-light"
+          className="field"
           value={fullName}
           onChange={(e) => {
             setFullName(e.target.value);
@@ -172,7 +164,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         />
       </LeadField>
 
-      <div className="mt-4">
+      <div className="mt-6">
         <LeadField label="Email address" error={errors.email} htmlFor="email">
           <input
             id="email"
@@ -180,7 +172,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
             type="email"
             aria-invalid={Boolean(errors.email)}
             aria-describedby={errors.email ? 'email-error' : undefined}
-            className="field-light"
+            className="field"
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
@@ -195,7 +187,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         </LeadField>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-6">
         <LeadField
           label="Phone number"
           hint={requirePhone ? undefined : 'Optional'}
@@ -208,7 +200,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
             type="tel"
             aria-invalid={Boolean(errors.phone)}
             aria-describedby={errors.phone ? 'phone-error' : undefined}
-            className="field-light"
+            className="field"
             value={phone}
             onChange={(e) => {
               setPhone(e.target.value);
@@ -239,11 +231,15 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         />
       </div>
 
-      <button type="submit" className="btn-ink mt-6 w-full" disabled={status === 'saving'}>
-        {status === 'saving' ? 'Saving…' : `${ctaLabel} →`}
+      <button
+        type="submit"
+        className="btn-gold mt-8 w-full text-[21px]"
+        disabled={status === 'saving'}
+      >
+        {status === 'saving' ? 'Saving…' : ctaLabel}
       </button>
 
-      <p className="mt-3.5 text-center text-xs leading-relaxed text-ink-faint">
+      <p className="mt-4 text-center text-[18px] leading-relaxed text-ink-soft">
         We only use your details to follow up about this offer.
       </p>
     </form>
@@ -265,15 +261,15 @@ function LeadField({
 }) {
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-3">
-        <label className="label-micro-light" htmlFor={htmlFor}>
+      <div className="flex items-baseline justify-between gap-4">
+        <label className="field-label" htmlFor={htmlFor}>
           {label}
         </label>
-        {hint ? <span className="text-[11.5px] text-ink-faint">{hint}</span> : null}
+        {hint ? <span className="text-[18px] text-ink-soft">{hint}</span> : null}
       </div>
-      <div className="mt-2">{children}</div>
+      <div className="mt-2.5">{children}</div>
       {error ? (
-        <span id={`${htmlFor}-error`} role="alert" className="field-error-light block">
+        <span id={`${htmlFor}-error`} role="alert" className="field-error">
           {error}
         </span>
       ) : null}

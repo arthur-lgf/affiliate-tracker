@@ -29,8 +29,8 @@ export function PersonFilter({
   }
 
   return (
-    <span className="flex items-center gap-2">
-      <label htmlFor="person-filter" className="text-[11.5px] text-sage-dim">
+    <span className="flex min-w-0 items-center gap-3">
+      <label htmlFor="person-filter" className="text-[19px] font-semibold text-ink-soft">
         Person
       </label>
       <select
@@ -38,13 +38,19 @@ export function PersonFilter({
         value={value}
         disabled={pending}
         onChange={(event) => choose(event.target.value)}
-        className="max-w-[220px] cursor-pointer truncate rounded-full border border-pine-700 bg-transparent px-3.5 py-2 text-[11.5px] font-medium text-sage transition-colors hover:bg-pine-850 hover:text-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-mustard)] disabled:opacity-50"
+        className="field max-w-[280px] truncate"
+        /* Overrides rather than a second class: this is the one .field in the
+           app that sits in a filter bar, not in a form. */
+        style={{
+          minHeight: '56px',
+          fontSize: '19px',
+          fontWeight: 600,
+          borderColor: 'var(--color-ink)',
+        }}
       >
-        <option value="" className="bg-pine-850 text-cream">
-          Everyone
-        </option>
+        <option value="">Everyone</option>
         {people.map((person) => (
-          <option key={person.usr} value={person.usr} className="bg-pine-850 text-cream">
+          <option key={person.usr} value={person.usr}>
             {person.name}
           </option>
         ))}

@@ -42,7 +42,7 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
 
   if (targets.length === 0) {
     return (
-      <p className="text-[12.5px] text-sage-dim">
+      <p className="plain">
         Create a link first — an approval is recorded against the link it came through.
       </p>
     );
@@ -88,32 +88,34 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
 
   if (!open) {
     return (
-      <button type="button" className="pill-action" onClick={() => setOpen(true)}>
-        Record an approval
+      <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
+        + Record an approval
       </button>
     );
   }
 
   return (
-    <form onSubmit={submit} className="w-full">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1.6fr)_120px_150px]">
-        <label className="min-w-0">
-          <span className="label-micro block">Link</span>
+    /* w-full so opening the form drops it onto its own row rather than squeezing
+       it into the gap beside the heading. */
+    <form onSubmit={submit} className="panel-sunk mt-2 w-full p-5 sm:p-6">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,160px)_minmax(0,200px)]">
+        <label className="block min-w-0">
+          <span className="field-label mb-2 block">Which link</span>
           <select
             value={targetId}
             onChange={(event) => setTargetId(event.target.value)}
-            className="field-dark mt-1.5 cursor-pointer"
+            className="field"
           >
             {targets.map((target) => (
-              <option key={target.id} value={target.id} className="bg-pine-900 text-cream">
+              <option key={target.id} value={target.id}>
                 {target.label}
               </option>
             ))}
           </select>
         </label>
 
-        <label className="min-w-0">
-          <span className="label-micro block">Payout</span>
+        <label className="block min-w-0">
+          <span className="field-label mb-2 block">Payout</span>
           <input
             type="number"
             inputMode="decimal"
@@ -122,40 +124,41 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             placeholder="0.00"
-            className="field-dark mt-1.5"
+            className="field"
           />
         </label>
 
-        <label className="min-w-0">
-          <span className="label-micro block">Approved on</span>
+        <label className="block min-w-0">
+          <span className="field-label mb-2 block">Approved on</span>
           <input
             type="date"
             required
             value={approvedOn}
             onChange={(event) => setApprovedOn(event.target.value)}
-            className="field-dark mt-1.5"
+            className="field"
           />
         </label>
       </div>
 
-      <label className="mt-3 block">
-        <span className="label-micro block">Note (optional)</span>
+      <label className="mt-5 block">
+        <span className="field-label mb-2 block">Note</span>
         <input
           type="text"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           placeholder="Reference, applicant initials, anything that helps you reconcile"
-          className="field-dark mt-1.5"
+          className="field"
         />
+        <span className="field-note">Optional — only you ever see it.</span>
       </label>
 
-      <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
-        <button type="submit" disabled={busy} className="btn-accent !px-5 !py-2.5 !text-[13px]">
+      <div className="mt-6 flex flex-wrap items-center gap-4">
+        <button type="submit" disabled={busy} className="btn-primary">
           {busy ? 'Saving…' : 'Save approval'}
         </button>
         <button
           type="button"
-          className="pill-action"
+          className="btn-quiet"
           onClick={() => {
             setOpen(false);
             setError(null);
@@ -165,7 +168,7 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
           Close
         </button>
         {done ? (
-          <span role="status" className="text-[12.5px]" style={{ color: 'var(--color-moss)' }}>
+          <span role="status" className="text-[19px] font-semibold text-leaf-text">
             {done}
           </span>
         ) : null}

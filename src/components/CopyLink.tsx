@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * The shareable URL as a pill, with copy folded into it. On copy failure the
- * text is selected instead, so there is always a way to get the URL out.
+ * The shareable URL beside its copy button. On copy failure the text is
+ * selected instead, so there is always a way to get the URL out.
  */
 export function CopyLink({ value }: { value: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'error'>('idle');
@@ -57,30 +57,26 @@ export function CopyLink({ value }: { value: string }) {
     }
   }
 
+  const shown = value.replace(/^https?:\/\//, '');
+  const [path, params] = shown.split('?');
+
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="flex min-w-0 items-center rounded-full bg-pine-900 px-3.5 py-1.5">
-        <span ref={textRef} className="truncate text-[11.5px] text-sage" title={value}>
-          {value.replace(/^https?:\/\//, '')}
+    <>
+      <span className="url-box min-w-0 max-w-full">
+        <span ref={textRef} className="truncate" title={value}>
+          {path}
+          {params ? <span className="text-ink-soft">?{params}</span> : null}
         </span>
       </span>
       <button
         type="button"
         onClick={copy}
+        /* The label changes to report the outcome, so it has to be announced. */
         aria-live="polite"
-        className="flex-none rounded-full border border-pine-700 px-3 py-1.5 text-[11px] font-medium transition-colors hover:border-mustard hover:text-mustard"
-        style={{
-          color:
-            state === 'copied'
-              ? 'var(--color-moss)'
-              : state === 'error'
-                ? 'var(--color-mustard)'
-                : 'var(--color-cream)',
-          borderColor: state === 'copied' ? 'var(--color-moss)' : undefined,
-        }}
+        className={state === 'copied' ? 'btn-outline btn-sm' : 'btn-primary btn-sm'}
       >
-        {state === 'copied' ? 'Copied' : state === 'error' ? 'Select' : 'Copy'}
+        {state === 'copied' ? '✓ Copied' : state === 'error' ? 'Select it' : 'Copy link'}
       </button>
-    </div>
+    </>
   );
 }

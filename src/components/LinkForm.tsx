@@ -55,12 +55,15 @@ export function LinkForm({
   people,
   takenSlugKeys,
   storageLabel,
+  capture,
 }: {
   origin: string;
   people: KnownPerson[];
   /** "slug::usr" of every link that already exists, for the availability check. */
   takenSlugKeys: string[];
   storageLabel: string;
+  /** Whether the capture form is switched on — section 3 only exists if it is. */
+  capture: boolean;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Fields>(EMPTY);
@@ -153,7 +156,6 @@ export function LinkForm({
     }
   }, [values.destination]);
 
-
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -188,12 +190,14 @@ export function LinkForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <div>
-        <h1 className="font-display text-[34px] leading-[1.1]">Create an affiliate link</h1>
-        <p className="mt-2.5 max-w-[520px] text-[13.5px] leading-relaxed text-sage">
-          Pair a destination with the person who owns the traffic. Three fields are required — the
-          rest have defaults you can change later.
+    <form onSubmit={onSubmit} noValidate className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="min-w-0">
+        <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">
+          Create an affiliate link
+        </h1>
+        <p className="mt-3 max-w-[640px] text-[20px] leading-relaxed text-ink-soft">
+          Pair a destination with the person who owns the traffic. Three answers are required — the
+          rest have sensible defaults you can change later.
         </p>
 
         {formError ? (
@@ -201,12 +205,7 @@ export function LinkForm({
             ref={bannerRef}
             tabIndex={-1}
             role="alert"
-            className="mt-5 rounded-xl border px-4 py-3 text-sm outline-none"
-            style={{
-              borderColor: 'var(--color-mustard)',
-              background: 'rgba(227,176,75,0.1)',
-              color: 'var(--color-mustard)',
-            }}
+            className="mt-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[19px] font-semibold text-alarm outline-none"
           >
             {formError}
           </p>
@@ -214,10 +213,10 @@ export function LinkForm({
 
         {/* 1 — the offer */}
         <Step number={1} title="The offer">
-          <div className="grid gap-[18px] sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-2">
             <Field label="Campaign name" error={errors.campaign} required>
               <input
-                className="field-dark"
+                className="field"
                 value={values.campaign}
                 onChange={(e) => onCampaignChange(e.target.value)}
                 placeholder="Cash Back Credit Cards"
@@ -226,15 +225,17 @@ export function LinkForm({
               />
             </Field>
             <Field
-              label="Destination URL"
+              label="Where it sends people"
               error={errors.destination}
               note={
-                destinationOk === false ? undefined : 'Exactly as your affiliate network gave it.'
+                destinationOk === false
+                  ? undefined
+                  : 'Paste it exactly as your affiliate network gave it.'
               }
               required
             >
               <input
-                className="field-dark"
+                className="field"
                 value={values.destination}
                 onChange={(e) => set('destination', e.target.value)}
                 placeholder="https://www.cardratings.com/bestcards/cash-back.php?src=714025"
@@ -244,28 +245,30 @@ export function LinkForm({
                 aria-invalid={destinationOk === false}
               />
               {destinationOk === false ? (
-                <span className="field-error block">Enter a full URL including https://</span>
+                <span className="field-error">Enter a full URL including https://</span>
               ) : null}
             </Field>
           </div>
 
-          <div className="mt-4 grid gap-[18px] sm:grid-cols-2">
-            {/* Not a <label> wrapper: the availability chip must live outside
-                it, or it becomes part of the input's accessible name ("Link
-                slug * Free") and its changes go unannounced. */}
-            <FieldGroup label="Link slug *" error={errors.slug}>
-              <div className="flex items-center gap-2 rounded-[10px] border border-pine-700 bg-pine-900 px-3.5 py-3 focus-within:border-mustard">
+          <div className="mt-6">
+            {/* Not a <label> wrapper: the availability line must live outside it,
+                or it becomes part of the input's accessible name ("Your short
+                link * The slug is free") and its changes go unannounced. */}
+            <FieldGroup label="Your short link *" error={errors.slug}>
+              <div className="field flex items-center gap-0 overflow-hidden p-0 focus-within:border-ink">
                 {/* The origin can be long on a real host — let it shrink so the
                     slug input never collapses to nothing. */}
-                <span className="min-w-0 max-w-[45%] shrink truncate text-[13px] text-sage-dim">
+                <span className="flex h-[60px] min-w-0 max-w-[45%] shrink items-center truncate border-r-2 border-edge bg-paper-sunk px-5 text-[19px] text-ink-soft">
                   {origin.replace(/^https?:\/\//, '')}/
                 </span>
                 <input
                   id="slug-input"
-                  aria-label="Link slug"
+                  aria-label="Your short link"
                   aria-describedby={slug ? 'slug-status' : undefined}
                   aria-invalid={slugTaken}
-                  className="w-full min-w-0 flex-1 border-none bg-transparent p-0 text-sm text-cream outline-none"
+                  /* self-stretch, or the input is a 32px strip floating inside
+                     a 64px box and half the control does not take a click. */
+                  className="h-full w-full min-w-0 flex-1 self-stretch border-none bg-transparent px-5 text-[21px] font-semibold text-ink outline-none"
                   value={values.slug}
                   onChange={(e) => {
                     setTouchedSlug(true);
@@ -281,35 +284,39 @@ export function LinkForm({
                 id="slug-status"
                 role="status"
                 aria-live="polite"
-                className="mt-1.5 flex items-center gap-1.5 text-[11.5px]"
-                style={{ color: slugTaken ? 'var(--color-mustard)' : 'var(--color-moss)' }}
+                className="mt-2 flex items-center gap-2.5 text-[18px] font-semibold"
+                style={{
+                  color: slugTaken ? 'var(--color-alarm)' : 'var(--color-leaf-text)',
+                }}
               >
                 {slug ? (
                   <>
                     <span
                       aria-hidden
-                      className="h-1.5 w-1.5 rounded-full"
+                      className="h-2.5 w-2.5 flex-none rounded-full"
                       style={{
-                        background: slugTaken ? 'var(--color-mustard)' : 'var(--color-moss)',
+                        background: slugTaken ? 'var(--color-alarm)' : 'var(--color-leaf-live)',
                       }}
                     />
-                    {slugTaken ? 'That link already exists' : 'The slug is free'}
+                    {slugTaken ? 'That link already exists' : 'That link is free'}
                   </>
                 ) : null}
               </span>
             </FieldGroup>
+          </div>
 
+          <div className="mt-6">
             <FieldGroup
               label="Pass the tracking key on as"
               error={errors.passUsrParam}
-              note="Appends the person's key to the destination so the merchant can attribute it."
+              note="This adds the person's key to the end of the destination so the merchant knows whose traffic it was."
             >
-              <div className="flex flex-wrap gap-[7px]">
+              <div className="flex flex-wrap gap-3">
                 {PASS_OPTIONS.map((option) => (
                   <button
                     key={option}
                     type="button"
-                    className="pill-action"
+                    className="pill-filter"
                     aria-pressed={values.passUsrParam === option}
                     data-active={values.passUsrParam === option}
                     onClick={() => {
@@ -322,7 +329,7 @@ export function LinkForm({
                 ))}
                 <button
                   type="button"
-                  className="pill-action"
+                  className="pill-filter"
                   aria-pressed={!customParam && values.passUsrParam === ''}
                   data-active={!customParam && values.passUsrParam === ''}
                   onClick={() => {
@@ -336,7 +343,7 @@ export function LinkForm({
                     possible rather than capping it at three presets. */}
                 <button
                   type="button"
-                  className="pill-action"
+                  className="pill-filter border-dashed"
                   aria-pressed={customParam}
                   data-active={customParam}
                   onClick={() => {
@@ -344,12 +351,12 @@ export function LinkForm({
                     if (PASS_OPTIONS.includes(values.passUsrParam)) set('passUsrParam', '');
                   }}
                 >
-                  Something else
+                  Something else…
                 </button>
               </div>
               {customParam ? (
                 <input
-                  className="field-dark mt-2"
+                  className="field mt-4"
                   value={values.passUsrParam}
                   onChange={(e) =>
                     set('passUsrParam', e.target.value.replace(/[^A-Za-z0-9_-]/g, ''))
@@ -365,8 +372,8 @@ export function LinkForm({
         </Step>
 
         {/* 2 — the person */}
-        <Step number={2} title="The person it belongs to">
-          <div className="flex flex-wrap gap-2">
+        <Step number={2} title="Who it belongs to">
+          <div className="flex flex-wrap gap-3.5">
             {people.map((person) => {
               const active = personMode === 'known' && pickedUsr === person.usr;
               return (
@@ -375,63 +382,66 @@ export function LinkForm({
                   type="button"
                   aria-pressed={active}
                   onClick={() => pickPerson(person)}
-                  className={`flex items-center gap-2.5 rounded-full py-2 pl-2 pr-3.5 text-[12.5px] transition-colors ${
-                    active
-                      ? 'bg-cream font-medium text-pine-900'
-                      : 'border border-pine-700 text-[#d7cfbb] hover:border-moss'
-                  }`}
+                  className="pill-filter h-[68px] max-w-full gap-3.5 pl-3.5 pr-6"
+                  data-active={active}
                 >
                   <span
                     aria-hidden
-                    className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium"
+                    className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 text-[17px] font-bold"
                     style={
                       active
-                        ? { background: 'var(--color-pine-900)', color: 'var(--color-mustard)' }
-                        : { background: 'var(--color-pine-800)', color: 'var(--color-moss)' }
+                        ? {
+                            background: 'var(--color-gold)',
+                            borderColor: 'var(--color-gold-edge)',
+                            color: 'var(--color-gold-ink)',
+                          }
+                        : {
+                            background: 'var(--color-leaf-wash)',
+                            borderColor: 'var(--color-leaf-edge)',
+                            color: 'var(--color-leaf-text)',
+                          }
                     }
                   >
                     {initialsOf(person.assignee || person.usr)}
                   </span>
-                  {person.assignee || person.usr}
+                  {/* Names are free text and the pill cannot wrap — truncate
+                      rather than let one long name widen the page. */}
+                  <span className="min-w-0 truncate text-[20px] font-semibold">
+                    {person.assignee || person.usr}
+                  </span>
                 </button>
               );
             })}
             <button
               type="button"
               aria-pressed={personMode === 'new'}
+              data-active={personMode === 'new'}
               onClick={() => {
                 setPersonMode('new');
                 setPickedUsr('');
                 setTouchedUsr(false);
                 setValues((prev) => ({ ...prev, assignee: '', usr: '', assigneeEmail: '' }));
               }}
-              className={`rounded-full px-3.5 py-2.5 text-[12.5px] transition-colors ${
-                personMode === 'new'
-                  ? 'border border-mustard text-mustard'
-                  : 'border border-dashed border-[#3c5a52] text-sage hover:border-mustard hover:text-mustard'
-              }`}
+              className="pill-filter h-[68px] border-dashed px-7 text-[20px]"
             >
-              Add someone new
+              + Add someone new
             </button>
             <button
               type="button"
               aria-pressed={personMode === 'house'}
+              data-active={personMode === 'house'}
               onClick={keepInHouse}
-              className={`rounded-full border px-3.5 py-2.5 text-[12.5px] transition-colors ${
-                personMode === 'house'
-                  ? 'border-cream bg-cream font-medium text-pine-900'
-                  : 'border-pine-700 text-sage hover:text-cream'
-              }`}
+              className="pill-filter h-[68px] px-7 text-[20px]"
             >
               Keep it in house
             </button>
           </div>
 
           {personMode !== 'house' ? (
-            <div className="mt-[18px] grid gap-[18px] sm:grid-cols-2">
-              <Field label="Assignee name" error={errors.assignee}>
+            <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              <Field label="Their name" error={errors.assignee}>
                 <input
-                  className="field-dark"
+                  className="field"
                   value={values.assignee}
                   onChange={(e) => onAssigneeChange(e.target.value)}
                   placeholder="Arthur Reyes"
@@ -439,9 +449,13 @@ export function LinkForm({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="Tracking key" error={errors.usr} note="Appears in the link as ?usr=…">
+              <Field
+                label="Tracking key"
+                error={errors.usr}
+                note="Appears in the link as ?usr=…"
+              >
                 <input
-                  className="field-dark"
+                  className="field"
                   value={values.usr}
                   onChange={(e) => {
                     setTouchedUsr(true);
@@ -455,7 +469,7 @@ export function LinkForm({
               </Field>
               <Field label="Email for their records" error={errors.assigneeEmail}>
                 <input
-                  className="field-dark"
+                  className="field"
                   value={values.assigneeEmail}
                   onChange={(e) => set('assigneeEmail', e.target.value)}
                   placeholder="arthur@example.com"
@@ -468,33 +482,37 @@ export function LinkForm({
           ) : null}
         </Step>
 
-        {/* 3 — the landing page */}
-        <Step number={3} title="What the client sees" aside="Optional">
-          <div className="grid gap-[18px] sm:grid-cols-2">
-            <Field label="Headline" error={errors.headline} note="Defaults to the campaign name.">
-              <input
-                className="field-dark"
-                value={values.headline}
-                onChange={(e) => set('headline', e.target.value)}
-                placeholder="Find your best cash back card"
-                maxLength={160}
-                autoComplete="off"
-              />
-            </Field>
-            <Field label="Button label" error={errors.ctaLabel}>
-              <input
-                className="field-dark"
-                value={values.ctaLabel}
-                onChange={(e) => set('ctaLabel', e.target.value)}
-                placeholder="See my matches"
-                maxLength={60}
-                autoComplete="off"
-              />
-            </Field>
-            <div className="sm:col-span-2">
+        {/* 3 — the landing page. Only exists while the capture form is on;
+            with it off the visitor never sees a page of ours to write copy for. */}
+        {capture ? (
+          <Step number={3} title="What the visitor sees" aside="Optional">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <Field label="Headline" error={errors.headline} note="Left empty, we use the campaign name.">
+                <input
+                  className="field"
+                  value={values.headline}
+                  onChange={(e) => set('headline', e.target.value)}
+                  placeholder="Find your best cash back card"
+                  maxLength={160}
+                  autoComplete="off"
+                />
+              </Field>
+              <Field label="Button label" error={errors.ctaLabel}>
+                <input
+                  className="field"
+                  value={values.ctaLabel}
+                  onChange={(e) => set('ctaLabel', e.target.value)}
+                  placeholder="See my matches"
+                  maxLength={60}
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+
+            <div className="mt-6">
               <Field label="Sub-headline" error={errors.subheadline}>
                 <input
-                  className="field-dark"
+                  className="field"
                   value={values.subheadline}
                   onChange={(e) => set('subheadline', e.target.value)}
                   placeholder="Tell us where to send your matches and we'll take you straight there."
@@ -503,25 +521,32 @@ export function LinkForm({
                 />
               </Field>
             </div>
-          </div>
 
-          <div className="mt-[18px] flex flex-wrap gap-6">
-            <Toggle
-              checked={values.requirePhone}
-              onChange={(v) => set('requirePhone', v)}
-              label="Ask for a phone number"
-            />
-            <Toggle
-              checked={values.active}
-              onChange={(v) => set('active', v)}
-              label="Go live immediately"
-            />
-          </div>
+            <div className="mt-6">
+              <Toggle
+                checked={values.requirePhone}
+                onChange={(v) => set('requirePhone', v)}
+                label="Ask for a phone number"
+                onText="On — name, email and phone"
+                offText="Off — email only"
+              />
+            </div>
+          </Step>
+        ) : null}
 
-          <div className="mt-[18px]">
-            <Field label="Internal notes" error={errors.notes}>
+        {/* 4 — housekeeping */}
+        <Step number={capture ? 4 : 3} title="Before you save">
+          <Toggle
+            checked={values.active}
+            onChange={(v) => set('active', v)}
+            label="Go live immediately"
+            onText="On — the link works as soon as you save"
+            offText="Off — saves paused, you can activate it later"
+          />
+          <div className="mt-6">
+            <Field label="Notes for your team" error={errors.notes}>
               <input
-                className="field-dark"
+                className="field"
                 value={values.notes}
                 onChange={(e) => set('notes', e.target.value)}
                 placeholder="Q3 push — CardRatings"
@@ -532,13 +557,13 @@ export function LinkForm({
           </div>
         </Step>
 
-        <div className="mt-[22px] flex flex-wrap items-center gap-3.5">
-          <button type="submit" className="btn-accent" disabled={submitting}>
+        <div className="mt-7 flex flex-wrap items-center gap-5">
+          <button type="submit" className="btn-primary h-[68px] px-10 text-[22px]" disabled={submitting}>
             {submitting ? 'Creating…' : 'Create the link'}
           </button>
           <button
             type="button"
-            className="btn-quiet"
+            className="btn-outline h-[68px]"
             disabled={submitting}
             onClick={() => {
               setValues(EMPTY);
@@ -546,98 +571,98 @@ export function LinkForm({
               setTouchedUsr(false);
               setPersonMode(people.length === 0 ? 'new' : 'house');
               setPickedUsr('');
+              setCustomParam(false);
               setErrors({});
               setFormError(null);
             }}
           >
-            Reset
+            Start over
           </button>
-          <span className="text-[12.5px] text-sage-dim">{storageLabel}</span>
+          <span className="text-[19px] text-ink-soft">{storageLabel}</span>
         </div>
       </div>
 
       {/* Live preview rail */}
-      <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
-        <div className="panel-cream p-6">
-          <p className="label-micro" style={{ color: 'var(--color-olive)' }}>
-            The link you are making
-          </p>
+      <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+        <div className="panel-sunk p-6 sm:p-7">
+          <h2 className="label-cap">The link you are making</h2>
           {/* anywhere, not break-all: wraps at ? and / before splitting a word */}
-          <p className="mt-3 text-[15px] leading-[1.5]" style={{ overflowWrap: 'anywhere' }}>
+          <p className="mt-3.5 text-[22px] font-bold leading-[1.4]" style={{ overflowWrap: 'anywhere' }}>
             {previewUrl.split('?')[0]}
-            {usr ? <span style={{ color: 'var(--color-olive)' }}>?usr={usr}</span> : null}
+            {usr ? <span className="text-ink-soft">?usr={usr}</span> : null}
           </p>
-          <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
+          <p className="plain mt-3.5">
             {values.destination
-              ? `Forwards to ${values.destination.replace(/^https?:\/\//, '').slice(0, 60)}`
-              : 'Add a destination and this link will forward there after the form.'}
+              ? `Anyone who opens this is forwarded to ${values.destination
+                  .replace(/^https?:\/\//, '')
+                  .slice(0, 48)}${capture ? ' after the form' : ''}.`
+              : 'Add a destination and this link will forward there.'}
           </p>
         </div>
 
-        <div className="panel p-6">
-          <p className="label-micro">What the client will see</p>
-          <div className="mt-3.5 overflow-hidden rounded-xl bg-cream text-ink">
-            <div className="p-[18px]">
-              <p className="text-[12px]" style={{ color: 'var(--color-olive)' }}>
-                {values.campaign || 'Your campaign'}
-              </p>
-              <p className="mt-2 font-display text-[23px] leading-[1.15]">
+        {capture ? (
+          <div className="panel p-6 sm:p-7">
+            <h2 className="label-cap">What the visitor will see</h2>
+            <div className="mt-4 rounded-2xl border-2 border-edge-soft bg-paper-sunk p-6">
+              <p className="text-[17px] text-ink-soft">{values.campaign || 'Your campaign'}</p>
+              <p className="mt-3 font-display text-[28px] font-semibold leading-[1.2]">
                 {values.headline || values.campaign || 'Your headline'}
               </p>
-              <div className="mt-3.5 h-px bg-cream-400" />
-              <p className="mt-3.5 text-[11px] text-ink-faint">Full name</p>
-              <div className="mt-1.5 h-8 rounded-lg border border-cream-400 bg-cream-50" />
-              <p className="mt-2.5 text-[11px] text-ink-faint">Email address</p>
-              <div className="mt-1.5 h-8 rounded-lg border border-cream-400 bg-cream-50" />
+              <p className="mt-4 text-[18px] font-semibold">Full name</p>
+              <div className="mt-2 h-14 rounded-xl border-2 border-edge-field bg-panel" />
+              <p className="mt-4 text-[18px] font-semibold">Email address</p>
+              <div className="mt-2 h-14 rounded-xl border-2 border-edge-field bg-panel" />
               {values.requirePhone ? (
                 <>
-                  <p className="mt-2.5 text-[11px] text-ink-faint">Phone number</p>
-                  <div className="mt-1.5 h-8 rounded-lg border border-cream-400 bg-cream-50" />
+                  <p className="mt-4 text-[18px] font-semibold">Phone number</p>
+                  <div className="mt-2 h-14 rounded-xl border-2 border-edge-field bg-panel" />
                 </>
               ) : null}
-              <div className="mt-3.5 rounded-full bg-mustard px-3 py-2.5 text-center text-[12px] font-medium">
+              <div className="mt-5 flex h-[60px] items-center justify-center rounded-full border-2 border-gold-edge bg-gold text-[20px] font-bold text-gold-ink">
                 {values.ctaLabel || 'Continue to the offer'}
               </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="panel p-6">
-          <p className="label-micro">Before it goes live</p>
-          <Check
-            ok={Boolean(slug) && !slugTaken}
-            pending={!slug}
-            text={
-              !slug
-                ? 'Choose a slug'
-                : slugTaken
-                  ? usr
-                    ? `/${slug}?usr=${usr} already exists`
-                    : `/${slug} already exists`
-                  : 'The slug is free'
-            }
-          />
-          <Check
-            ok={destinationOk === true}
-            pending={destinationOk === null}
-            text={
-              destinationOk === null
-                ? 'Add a destination URL'
-                : destinationOk
-                  ? 'Destination is a valid http(s) URL'
-                  : 'Destination must start with https://'
-            }
-          />
-          <Check
-            ok={Boolean(values.campaign.trim())}
-            pending={!values.campaign.trim()}
-            text={values.campaign.trim() ? 'Campaign named' : 'Name the campaign'}
-          />
-          <Check
-            ok={values.active}
-            pending={false}
-            text={values.active ? 'Goes live on save' : 'Saves paused — activate it later'}
-          />
+        <div className="panel p-6 sm:p-7">
+          <h2 className="label-cap">Before it goes live</h2>
+          <ul className="mt-4 flex flex-col gap-4">
+            <Check
+              ok={Boolean(slug) && !slugTaken}
+              pending={!slug}
+              text={
+                !slug
+                  ? 'Choose a short link'
+                  : slugTaken
+                    ? usr
+                      ? `/${slug}?usr=${usr} already exists`
+                      : `/${slug} already exists`
+                    : 'Short link chosen'
+              }
+            />
+            <Check
+              ok={destinationOk === true}
+              pending={destinationOk === null}
+              text={
+                destinationOk === null
+                  ? 'Add a destination'
+                  : destinationOk
+                    ? 'Destination added'
+                    : 'Destination must start with https://'
+              }
+            />
+            <Check
+              ok={Boolean(values.campaign.trim())}
+              pending={!values.campaign.trim()}
+              text={values.campaign.trim() ? 'Campaign named' : 'Name the campaign'}
+            />
+            <Check
+              ok={values.active}
+              pending={!values.active}
+              text={values.active ? 'Goes live the moment you save' : 'Saves paused — activate it later'}
+            />
+          </ul>
         </div>
       </aside>
     </form>
@@ -656,15 +681,23 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <section className="panel mt-4 p-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-mustard text-[11px] font-medium text-pine-900">
+    <section className="panel mt-6 p-6 sm:p-8">
+      <div className="flex flex-wrap items-center gap-4">
+        <span
+          aria-hidden
+          className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-gold-edge bg-gold text-[21px] font-bold text-gold-ink"
+        >
           {number}
         </span>
-        <h2 className="font-display text-[21px]">{title}</h2>
-        {aside ? <span className="text-xs text-sage-dim">{aside}</span> : null}
+        <h2 className="font-display text-[28px] sm:text-[32px]">
+          {/* The number is decorative in the circle and read here instead, so
+              the heading list still says "Step 1" out loud. */}
+          <span className="sr-only">Step {number}: </span>
+          {title}
+        </h2>
+        {aside ? <span className="chip chip-quiet">{aside}</span> : null}
       </div>
-      <div className="mt-[18px]">{children}</div>
+      <div className="mt-7">{children}</div>
     </section>
   );
 }
@@ -683,18 +716,23 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="label-micro mb-2 block">
+    <label className="block min-w-0">
+      <span className="field-label mb-2.5">
         {label}
-        {required ? <span style={{ color: 'var(--color-mustard)' }}> *</span> : null}
+        {required ? (
+          <span className="text-alarm" title="Required">
+            {' '}
+            *
+          </span>
+        ) : null}
       </span>
       {children}
       {error ? (
-        <span role="alert" className="field-error block">
+        <span role="alert" className="field-error">
           {error}
         </span>
       ) : note ? (
-        <span className="field-note block">{note}</span>
+        <span className="field-note">{note}</span>
       ) : null}
     </label>
   );
@@ -720,71 +758,106 @@ function FieldGroup({
 }) {
   return (
     <fieldset className="block min-w-0 border-0 p-0">
-      <legend className="label-micro mb-2 block p-0">{label}</legend>
+      <legend className="field-label mb-2.5 p-0">{label}</legend>
       {children}
       {error ? (
-        <span role="alert" className="field-error block">
+        <span role="alert" className="field-error">
           {error}
         </span>
       ) : note ? (
-        <span className="field-note block">{note}</span>
+        <span className="field-note">{note}</span>
       ) : null}
     </fieldset>
   );
 }
 
+/**
+ * A switch that also says, in words, which way it is set. The knob alone puts
+ * the whole state on one 30px circle and its position; the line underneath is
+ * what makes it readable without looking closely.
+ */
 function Toggle({
   checked,
   onChange,
   label,
+  onText,
+  offText,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   label: string;
+  onText: string;
+  offText: string;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-[#d7cfbb]">
+    <label className="card-row-lit flex cursor-pointer items-center justify-between gap-5 p-5">
       <input
         type="checkbox"
         className="peer sr-only"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
+      <span className="min-w-0">
+        <span className="block text-[20px] font-semibold">{label}</span>
+        <span
+          className={`mt-0.5 block text-[18px] ${
+            checked ? 'font-semibold text-leaf-text' : 'text-ink-soft'
+          }`}
+        >
+          {checked ? onText : offText}
+        </span>
+      </span>
       <span
         aria-hidden
-        className="flex h-5 w-[34px] flex-none items-center rounded-full px-[3px] transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-mustard)]"
+        className="flex h-[42px] w-[76px] flex-none items-center rounded-full border-2 p-[4px] transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-0 peer-focus-visible:outline-[var(--color-ink)]"
         style={{
-          background: checked ? 'var(--color-mustard)' : 'var(--color-pine-800)',
-          border: `1px solid ${checked ? 'var(--color-mustard)' : 'var(--color-pine-700)'}`,
+          background: checked ? 'var(--color-leaf)' : 'var(--color-panel)',
+          borderColor: checked ? 'var(--color-ink)' : 'var(--color-edge-field)',
           justifyContent: checked ? 'flex-end' : 'flex-start',
+          boxShadow: checked ? undefined : 'none',
         }}
       >
         <span
-          className="h-3.5 w-3.5 rounded-full transition-colors"
-          style={{ background: checked ? 'var(--color-pine-900)' : 'var(--color-sage-dim)' }}
+          className="h-[30px] w-[30px] rounded-full transition-colors"
+          style={{ background: checked ? '#ffffff' : 'var(--color-edge-field)' }}
         />
       </span>
-      {label}
     </label>
   );
 }
 
 function Check({ ok, pending, text }: { ok: boolean; pending: boolean; text: string }) {
-  const color = pending
-    ? 'var(--color-sage-dim)'
-    : ok
-      ? 'var(--color-moss)'
-      : 'var(--color-mustard)';
   return (
-    <p className="mt-3 flex items-center gap-2.5 text-[12.5px] text-[#d7cfbb]">
+    <li className="flex items-center gap-3.5 text-[19px]">
       <span
         aria-hidden
-        className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full text-[10px] font-medium"
-        style={{ background: color, color: 'var(--color-pine-900)' }}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-full border-2 text-[17px] font-bold"
+        style={
+          pending
+            ? {
+                background: 'var(--color-panel)',
+                borderColor: 'var(--color-edge-field)',
+                borderStyle: 'dashed',
+                color: 'var(--color-ink-soft)',
+              }
+            : ok
+              ? {
+                  background: 'var(--color-leaf-wash)',
+                  borderColor: 'var(--color-leaf-live)',
+                  color: 'var(--color-leaf-text)',
+                }
+              : {
+                  background: 'var(--color-alarm-wash)',
+                  borderColor: 'var(--color-alarm)',
+                  color: 'var(--color-alarm)',
+                }
+        }
       >
-        {pending ? '·' : ok ? '✓' : '!'}
+        {pending ? '' : ok ? '✓' : '!'}
       </span>
-      {text}
-    </p>
+      <span className={pending ? 'text-ink-soft' : undefined}>{text}</span>
+      {/* The tick is decorative; this is what a screen reader hears. */}
+      <span className="sr-only">{pending ? '(not done yet)' : ok ? '(done)' : '(needs fixing)'}</span>
+    </li>
   );
 }

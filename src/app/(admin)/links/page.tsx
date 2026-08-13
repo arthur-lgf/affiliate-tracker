@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LinksBrowser, type LinkRow } from '@/components/LinksBrowser';
 import { countsByLink, linkKey } from '@/lib/analytics';
-import { configuredBaseUrl } from '@/lib/config';
+import { captureFormEnabled, configuredBaseUrl } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { originFromHeaders } from '@/lib/request';
 import { affiliateUrl } from '@/lib/url';
@@ -33,20 +33,20 @@ export default async function LinksPage() {
   const people = new Set(links.filter((l) => l.usr).map((l) => l.usr)).size;
 
   return (
-    <div className="mx-auto w-full max-w-[1280px]">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="w-full">
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         <div>
-          <h1 className="font-display text-[34px] leading-none">Affiliate links</h1>
-          <p className="mt-2.5 text-[13px] text-sage">
+          <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">Affiliate links</h1>
+          <p className="mt-2.5 text-[20px] text-ink-soft">
             {links.length === 0
               ? 'Nothing here yet.'
-              : `${links.length} in total · ${live} live, ${links.length - live} paused · assigned across ${people} ${
-                  people === 1 ? 'person' : 'people'
-                }`}
+              : `${links.length} link${links.length === 1 ? '' : 's'} · ${live} live, ${
+                  links.length - live
+                } paused · ${people} ${people === 1 ? 'person' : 'people'}`}
           </p>
         </div>
-        <Link href="/links/new" className="btn-accent !px-5 !py-3 !text-[13px]">
-          New link
+        <Link href="/links/new" className="btn-gold">
+          + New link
         </Link>
       </div>
 
@@ -60,7 +60,9 @@ export default async function LinksPage() {
           />
         </div>
       ) : (
-        <LinksBrowser rows={rows} />
+        // Leads only exist while the capture form is on; with it off the column
+        // would sit at zero forever, which reads as a bug rather than a setting.
+        <LinksBrowser rows={rows} capture={captureFormEnabled()} />
       )}
     </div>
   );

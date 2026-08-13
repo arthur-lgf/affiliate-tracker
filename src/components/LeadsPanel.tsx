@@ -92,10 +92,10 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
   }
 
   return (
-    <section className="rise panel mt-4 p-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-        <h2 className="font-display text-[22px]">Latest submissions</h2>
-        <span className="text-xs text-sage">
+    <section className="rise panel mt-5 p-6 sm:p-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+        <h2 className="font-display text-[32px]">Latest submissions</h2>
+        <span className="text-[19px] text-ink-soft">
           {total > rows.length
             ? `Latest ${rows.length} of ${total.toLocaleString()} — older leads live in your sheet`
             : `${total.toLocaleString()} in total`}
@@ -103,17 +103,17 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
       </div>
 
       {rows.length === 0 ? (
-        <p className="py-10 text-center text-sm text-sage-dim">
+        <p className="py-12 text-center text-[19px] text-ink-soft">
           No leads captured yet. Share a link and they will appear here.
         </p>
       ) : (
         <>
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-3">
             {(['all', 'pending', 'registered'] as const).map((key) => (
               <button
                 key={key}
                 type="button"
-                className="pill-action"
+                className="pill-filter"
                 aria-pressed={filter === key}
                 data-active={filter === key}
                 onClick={() => setFilter(key)}
@@ -121,36 +121,37 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
                 {key === 'all' ? 'All' : statusLabel(key)} {counts[key]}
               </button>
             ))}
-            <span className="text-[11.5px] text-sage-dim">
-              Pending is automatic — mark a lead registered once they sign up.
-            </span>
           </div>
+          <p className="plain mt-3">
+            Every lead starts <strong>pending</strong>. Mark one registered once they have signed
+            up — here, or in column N of the sheet.
+          </p>
 
           {error ? (
-            <p role="alert" className="field-error mt-3">
+            <p role="alert" className="field-error">
               {error}
             </p>
           ) : null}
 
           {matching.length === 0 ? (
-            <p className="py-10 text-center text-sm text-sage-dim">
+            <p className="py-12 text-center text-[19px] text-ink-soft">
               No {filter} leads in this list.
             </p>
           ) : (
-            <ul className="mt-2">
+            <ul className="mt-5 flex flex-col gap-4">
               {/* Stacked on a phone, one row from lg up — fixed-width columns
                   cannot survive a 390px viewport. */}
               {visible.map((row) => (
                 <li
                   key={row.id}
-                  className="divider-row flex flex-col gap-2 py-3.5 lg:flex-row lg:items-center lg:gap-4"
+                  className="card-row flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:gap-6"
                 >
-                  <div className="flex min-w-0 items-start justify-between gap-3 lg:flex-1">
+                  <div className="flex min-w-0 items-start justify-between gap-4 lg:flex-1">
                     <span className="min-w-0">
-                      <span className="block text-[13.5px] font-medium">{row.fullName || '—'}</span>
+                      <span className="block text-[21px] font-semibold">{row.fullName || '—'}</span>
                       <a
                         href={`mailto:${row.email}`}
-                        className="mt-0.5 block truncate text-[11.5px] text-sage-dim hover:text-cream"
+                        className="link-text mt-1 block truncate text-[18px]"
                       >
                         {row.email}
                       </a>
@@ -158,35 +159,35 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
                       {row.phone ? (
                         <a
                           href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}
-                          className="mt-0.5 block truncate text-[11.5px] text-sage-dim hover:text-cream"
+                          className="link-text mt-1 block truncate text-[18px]"
                         >
                           {row.phone}
                         </a>
                       ) : null}
                     </span>
                     <span
-                      className="flex-none text-xs text-sage-dim lg:hidden"
+                      className="flex-none text-[18px] text-ink-soft lg:hidden"
                       title={row.capturedAt}
                     >
                       {row.age}
                     </span>
                   </div>
 
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 lg:flex-none lg:gap-4">
-                    {/* Campaign names are free text and can be very long — cap the
-                        pill so one row cannot push the whole table sideways. */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 lg:flex-none">
+                    {/* Campaign names are free text and can be very long — cap
+                        it so one row cannot push the whole panel sideways. */}
                     <span
-                      className="pill max-w-[240px] bg-pine-800 px-3 py-1.5 font-normal text-[#d7cfbb]"
+                      className="chip chip-quiet max-w-[260px]"
                       title={row.campaign || row.slug}
                     >
-                      <span className="pill-text">{row.campaign || row.slug}</span>
+                      <span className="block min-w-0 truncate">{row.campaign || row.slug}</span>
                     </span>
-                    <span className="truncate text-[12.5px] text-sage lg:w-[130px]">
-                      {row.assignee || <span className="text-sage-dim">Unassigned</span>}
+                    <span className="truncate text-[18px] text-ink-soft lg:w-[150px]">
+                      {row.assignee || 'Unassigned'}
                     </span>
                   </div>
 
-                  <div className="lg:w-[122px] lg:flex-none">
+                  <div className="lg:w-[150px] lg:flex-none">
                     <StatusToggle
                       row={row}
                       busy={busyId === row.id}
@@ -197,7 +198,7 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
                   </div>
 
                   <span
-                    className="hidden text-right text-xs text-sage-dim lg:block lg:w-[80px]"
+                    className="hidden text-right text-[18px] text-ink-soft lg:block lg:w-[110px]"
                     title={row.capturedAt}
                   >
                     {row.age}
@@ -210,7 +211,7 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
           {matching.length > visible.length ? (
             <button
               type="button"
-              className="pill-action mt-4"
+              className="btn-quiet btn-sm mt-5"
               onClick={() => setLimit((current) => current + PAGE * 2)}
             >
               Show {Math.min(PAGE * 2, matching.length - visible.length)} more
@@ -252,9 +253,9 @@ function StatusToggle({
     >
       <span
         aria-hidden
-        className="h-1.5 w-1.5 flex-none rounded-full"
+        className="h-2.5 w-2.5 flex-none rounded-full"
         style={{
-          background: registered ? 'var(--color-pine-900)' : 'var(--color-sage-dim)',
+          background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)',
         }}
       />
       {statusLabel(row.status)}

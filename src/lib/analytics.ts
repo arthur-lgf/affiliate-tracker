@@ -335,14 +335,31 @@ export type EarningsRow = {
  */
 export type GroupBy = 'person' | 'card';
 
-export type EarningsDay = { date: string; label: string; visits: number; approved: number };
+/**
+ * One bar group in the chart. Weeks rather than days: thirty daily bars on a
+ * traffic level of single figures is thirty hairlines and one spike, which
+ * carries no information you can read. A week is wide enough to label and to
+ * put a number on.
+ */
+export type EarningsWeek = {
+  /** First day in the bucket, YYYY-MM-DD. */
+  start: string;
+  /** Last day in the bucket, inclusive. */
+  end: string;
+  /** "Jul 16", or "This week" for the bucket ending today. */
+  label: string;
+  /** "16–22 Jul" — the span spelled out, for the table and the tooltip. */
+  range: string;
+  visits: number;
+  approved: number;
+};
 
 export type EarningsView = {
   rows: EarningsRow[];
   totals: { visits: number; approved: number; earnings: number; approvalRate: number };
   /** Everyone who has a link, a visit or an approval — the filter's options. */
   people: { usr: string; name: string }[];
-  series: EarningsDay[];
+  series: EarningsWeek[];
 };
 
 /**
@@ -530,16 +547,33 @@ export function buildEarnings(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { rows: list, totals, people, series: buildEarningsSeries(visits, conversions, usr) };
+  return { rows: list, totals, people, series: buildEarningsWeeks(visits, conversions, usr) };
 }
 
-/** Fixed 30-day daily shape for the chart. Follows the person filter, not the period. */
-export function buildEarningsSeries(
+/** "Jul 16" — UTC, to match every other date in the app. */
+function shortDay(key: string): string {
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * Five rolling weeks for the chart, oldest first, the last one ending today.
+ *
+ * Rolling like the period filters, so the newest bar is always a full seven
+ * days rather than collapsing to almost nothing on a Monday. Follows the person
+ * filter but not the period — the shape of the last five weeks is the context
+ * you read the selected window against, so narrowing to "Today" should not also
+ * shrink the chart to a single bar.
+ */
+export function buildEarningsWeeks(
   visits: Visit[],
   conversions: Conversion[],
   usr = '',
-  days = 30,
-): EarningsDay[] {
+  weeks = 5,
+): EarningsWeek[] {
   const matchesPerson = (rowUsr: string) => !usr || (rowUsr || HOUSE_KEY) === usr;
   const visitsByDay = new Map<string, number>();
   const approvedByDay = new Map<string, number>();
@@ -551,22 +585,31 @@ export function buildEarningsSeries(
   }
   for (const row of conversions) {
     if (!matchesPerson(row.usr)) continue;
+    // Approvals are bucketed by their approval date, visits by the click —
+    // the same split the tables use, so a bar and a row cannot disagree.
     const key = row.approvedOn.slice(0, 10);
     approvedByDay.set(key, (approvedByDay.get(key) ?? 0) + 1);
   }
 
-  const series: EarningsDay[] = [];
-  for (let i = days - 1; i >= 0; i -= 1) {
-    const key = daysAgoKey(i);
+  const series: EarningsWeek[] = [];
+  for (let week = weeks - 1; week >= 0; week -= 1) {
+    const startOffset = week * 7 + 6;
+    const start = daysAgoKey(startOffset);
+    const end = daysAgoKey(week * 7);
+    let visitCount = 0;
+    let approvedCount = 0;
+    for (let day = startOffset; day >= week * 7; day -= 1) {
+      const key = daysAgoKey(day);
+      visitCount += visitsByDay.get(key) ?? 0;
+      approvedCount += approvedByDay.get(key) ?? 0;
+    }
     series.push({
-      date: key,
-      label: new Date(`${key}T00:00:00Z`).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-      }),
-      visits: visitsByDay.get(key) ?? 0,
-      approved: approvedByDay.get(key) ?? 0,
+      start,
+      end,
+      label: week === 0 ? 'This week' : shortDay(start),
+      range: `${shortDay(start)} – ${shortDay(end)}`,
+      visits: visitCount,
+      approved: approvedCount,
     });
   }
   return series;
@@ -611,6 +654,21 @@ export function formatRelative(iso: string): string {
   const days = Math.round(hours / 24);
   if (days <= 7) return `${days} day${days === 1 ? '' : 's'} ago`;
   return formatDateTime(iso);
+}
+
+/**
+ * "13 Aug 2026" from a YYYY-MM-DD day key. An approval date is read, not
+ * sorted, so it is spelled out rather than left as an ISO string.
+ */
+export function formatDay(key: string): string {
+  const date = new Date(`${key.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return key;
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 export function formatDateTime(iso: string): string {

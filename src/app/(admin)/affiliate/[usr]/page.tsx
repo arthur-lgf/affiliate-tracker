@@ -7,6 +7,7 @@ import { ErrorPanel } from '@/components/ErrorPanel';
 import {
   buildEarnings,
   describeConversions,
+  formatDay,
   formatMoney,
   formatPercent,
   HOUSE_KEY,
@@ -94,165 +95,171 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
     <div className="w-full">
       <Link
         href={period === 'month' ? '/' : `/?period=${period}`}
-        className="text-[12.5px] text-sage transition-colors hover:text-cream"
+        className="btn-quiet btn-sm"
       >
-        ← All people
+        ← Back to all people
       </Link>
 
-      <div className="rise mt-4 flex flex-wrap items-center gap-3.5">
-        <span aria-hidden className="disc h-[46px] w-[46px] flex-none text-[14px]">
-          {usr ? initialsOf(name) : '—'}
-        </span>
-        <div className="min-w-0">
-          <h1 className="font-display text-[30px] leading-tight">{name}</h1>
-          <p className="mt-0.5 text-[12px] text-sage-dim">
-            {usr ? `usr=${usr}` : 'clicks that arrived with no usr'} ·{' '}
-            {theirLinks.length} link{theirLinks.length === 1 ? '' : 's'}
-          </p>
+      <div className="rise mt-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-5">
+        <div className="flex min-w-0 items-center gap-5">
+          <span aria-hidden className="disc h-20 w-20 flex-none text-[26px]">
+            {usr ? initialsOf(name) : '—'}
+          </span>
+          <div className="min-w-0">
+            {/* A tracking key can be one long unbreakable word, and the avatar
+                has already taken 80px of a 320px screen. */}
+            <h1 className="font-display leading-[1.05] text-[clamp(1.625rem,6vw,2.875rem)]">
+              {name}
+            </h1>
+            <p className="mt-1.5 text-[20px] text-ink-soft">
+              {usr ? `Tracking key usr=${usr}` : 'Clicks that arrived with no usr'} ·{' '}
+              {theirLinks.length} link{theirLinks.length === 1 ? '' : 's'}
+            </p>
+          </div>
         </div>
+
+        {/* Period filter — same windows as the dashboard, kept in the URL. */}
+        <nav aria-label="Period" className="flex flex-wrap gap-3">
+          {PERIODS.map((option) => (
+            <Link
+              key={option.key}
+              href={
+                option.key === 'month'
+                  ? `/affiliate/${encodeURIComponent(personKey)}`
+                  : `/affiliate/${encodeURIComponent(personKey)}?period=${option.key}`
+              }
+              className="pill-filter"
+              data-active={option.key === period}
+              aria-current={option.key === period ? 'page' : undefined}
+            >
+              {option.label}
+            </Link>
+          ))}
+        </nav>
       </div>
 
-      {/* Period filter — same windows as the dashboard, kept in the URL. */}
-      <section className="rise mt-4 flex flex-wrap gap-2">
-        {PERIODS.map((option) => (
-          <Link
-            key={option.key}
-            href={
-              option.key === 'month'
-                ? `/affiliate/${encodeURIComponent(personKey)}`
-                : `/affiliate/${encodeURIComponent(personKey)}?period=${option.key}`
-            }
-            className="pill-action"
-            data-active={option.key === period}
-            aria-current={option.key === period ? 'page' : undefined}
-          >
-            {option.label}
-          </Link>
-        ))}
-      </section>
-
-      <section className="rise panel mt-4 grid gap-8 p-6 sm:p-7 lg:grid-cols-[330px_1fr] lg:gap-8">
-        <div>
-          <p className="label-micro">Earnings · {periodLabel}</p>
-          <p className="tnum mt-4 font-display text-[62px] leading-[0.9] sm:text-[72px]">
+      <section className="rise panel mt-5 grid gap-10 p-6 sm:p-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <h2 className="label-cap">
+            {usr ? `${name.split(' ')[0]}'s earnings` : 'House earnings'} ·{' '}
+            {periodLabel.toLowerCase()}
+          </h2>
+          {/* See the dashboard hero: clamped so a long total cannot widen the page. */}
+          <p className="tnum mt-4 font-display leading-[0.95] text-[clamp(2rem,9vw,5.125rem)]">
             {formatMoney(view.totals.earnings)}
           </p>
-          <div className="mt-5 flex flex-wrap items-center gap-2.5">
-            <span className="pill bg-mustard px-3 py-1.5 text-pine-900">
-              {view.totals.approved} approved
-            </span>
-            <span className="text-[12.5px] text-sage">
+          <div className="mt-5 flex flex-wrap items-center gap-4">
+            <span className="chip chip-gold">{view.totals.approved} approved</span>
+            <span className="text-[20px] text-ink-soft">
               from {view.totals.visits.toLocaleString()} visit
               {view.totals.visits === 1 ? '' : 's'}
+              {view.rows.length > 0
+                ? `, across ${view.rows.length} card${view.rows.length === 1 ? '' : 's'}`
+                : ''}
             </span>
           </div>
-          <p className="mt-6 max-w-[270px] text-[13px] leading-relaxed text-sage">
+          <p className="plain-note mt-6">
             {view.rows.length === 0
-              ? 'Nothing in this window. Try a longer period.'
-              : `Across ${view.rows.length} card${view.rows.length === 1 ? '' : 's'}.`}
+              ? 'Nothing landed in this window. Try a longer period — the numbers below follow the same dates.'
+              : `Everything here is ${usr ? `${name}'s` : 'house'} traffic only. Visits count when the click happens, approvals on the day they were approved.`}
           </p>
         </div>
 
         <EarningsChart series={view.series} />
       </section>
 
-      {/* Per card — the reason this page exists */}
-      <section className="rise panel mt-4 p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-          <h2 className="font-display text-[22px]">By card</h2>
-          <span className="text-xs text-sage">{periodLabel}</span>
+      {/* Per card — the reason this page exists. Cards rather than a table:
+          three or four numbers per row reads better stacked than columned. */}
+      <section className="rise panel mt-5 p-6 sm:p-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+          <h2 className="font-display text-[32px]">Card by card</h2>
+          <span className="text-[19px] text-ink-soft">{periodLabel}</span>
         </div>
 
         {view.rows.length === 0 ? (
-          <p className="py-10 text-center text-sm text-sage-dim">
+          <p className="py-12 text-center text-[19px] text-ink-soft">
             No visits or approvals in this window.
           </p>
         ) : (
-          <div className="mt-4 -mx-2 overflow-x-auto px-2">
-            <table className="w-full min-w-[480px] border-collapse text-left">
-              <thead>
-                <tr className="border-b border-pine-line">
-                  <Th>Card</Th>
-                  <Th align="right">Visits</Th>
-                  <Th align="right">Approved</Th>
-                  <Th align="right">Total earnings</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.rows.map((row) => (
-                  <tr key={row.key} className="border-b border-pine-line last:border-0">
-                    <td className="max-w-[320px] py-3.5 pr-4">
-                      <span className="block truncate text-[13.5px] font-medium" title={row.card}>
-                        {row.card}
-                      </span>
-                    </td>
-                    <td className="tnum py-3.5 pr-4 text-right text-[13.5px]">
-                      {row.visits.toLocaleString()}
-                    </td>
-                    <td className="py-3.5 pr-4 text-right">
-                      <span className="tnum block text-[13.5px]">{row.approved}</span>
-                      {row.visits > 0 && row.approved > 0 ? (
-                        <span className="mt-0.5 block text-[11px] text-sage-dim">
-                          {formatPercent(row.approvalRate, 1)}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="tnum py-3.5 text-right font-display text-xl">
-                      {formatMoney(row.earnings)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t border-pine-700">
-                  <td className="py-3.5 text-[12.5px] text-sage">Total</td>
-                  <td className="tnum py-3.5 pr-4 text-right text-[13.5px]">
-                    {view.totals.visits.toLocaleString()}
-                  </td>
-                  <td className="tnum py-3.5 pr-4 text-right text-[13.5px]">
-                    {view.totals.approved.toLocaleString()}
-                  </td>
-                  <td
-                    className="tnum py-3.5 text-right font-display text-xl"
-                    style={{ color: 'var(--color-mustard)' }}
+          <>
+            <ul className="mt-5 flex flex-col gap-4">
+              {view.rows.map((row) => {
+                const earned = row.earnings > 0;
+                return (
+                  <li
+                    key={row.key}
+                    className={`${
+                      earned ? 'card-row-lit' : 'card-row'
+                    } grid gap-x-6 gap-y-4 p-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_130px_170px_200px] lg:items-center`}
                   >
-                    {formatMoney(view.totals.earnings)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-[24px] font-semibold" title={row.card}>
+                        {row.card}
+                      </p>
+                      <p className="mt-0.5 text-[18px] text-ink-soft">
+                        {row.approved > 0
+                          ? `Earning · ${formatPercent(row.approvalRate, 1)} approved`
+                          : 'No approvals yet'}
+                      </p>
+                    </div>
+                    <CardStat label="Visits" value={row.visits.toLocaleString()} />
+                    <CardStat label="Approved" value={row.approved.toLocaleString()} muted={row.approved === 0} />
+                    <CardStat
+                      label="Earnings"
+                      value={formatMoney(row.earnings)}
+                      muted={!earned}
+                      display
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="mt-5 grid gap-x-6 gap-y-2 border-t-2 border-edge px-1 pt-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_130px_170px_200px] lg:items-center">
+              <p className="text-[21px] font-bold">
+                Total across {view.rows.length} card{view.rows.length === 1 ? '' : 's'}
+              </p>
+              <CardStat label="Visits" value={view.totals.visits.toLocaleString()} />
+              <CardStat label="Approved" value={view.totals.approved.toLocaleString()} />
+              <div className="lg:text-right">
+                <span className="label-cap block">Earnings</span>
+                <span className="mark tnum mt-1 inline-block font-display text-[32px] font-bold">
+                  {formatMoney(view.totals.earnings)}
+                </span>
+              </div>
+            </div>
+          </>
         )}
       </section>
 
       {/* Their approvals, all time — the rows behind the earnings figure */}
-      <section className="rise panel mt-4 p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-          <h2 className="font-display text-[22px]">Their approvals</h2>
-          <span className="text-xs text-sage">all time</span>
+      <section className="rise panel mt-5 p-6 sm:p-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+          <h2 className="font-display text-[32px]">{usr ? `${name}'s approvals` : 'House approvals'}</h2>
+          <span className="text-[19px] text-ink-soft">All time</span>
         </div>
 
         {theirApprovals.length === 0 ? (
-          <p className="py-8 text-center text-sm text-sage-dim">
+          <p className="py-10 text-center text-[19px] text-ink-soft">
             None recorded for {name} yet.
           </p>
         ) : (
-          <ul className="mt-2">
+          <ul className="mt-5 flex flex-col gap-4">
             {theirApprovals.map((row) => (
               <li
                 key={row.id}
-                className="divider-row flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-[13px]"
+                className="card-row-lit flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{row.card}</span>
+                  <span className="block truncate text-[22px] font-semibold">{row.card}</span>
                   {row.notes ? (
-                    <span className="mt-0.5 block truncate text-[11.5px] text-sage-dim">
+                    <span className="mt-0.5 block truncate text-[18px] text-ink-soft">
                       {row.notes}
                     </span>
                   ) : null}
                 </span>
-                <span className="text-[12px] text-sage-dim">{row.approvedOn}</span>
-                <span className="tnum w-[86px] text-right font-display text-lg">
+                <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>
+                <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
                   {formatMoney(row.amount)}
                 </span>
                 <DeleteApproval id={row.id} label={`${name} · ${row.card}`} />
@@ -265,15 +272,27 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   );
 }
 
-function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+function CardStat({
+  label,
+  value,
+  muted = false,
+  display = false,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+  display?: boolean;
+}) {
   return (
-    <th
-      scope="col"
-      className={`label-micro pb-2.5 pr-4 font-medium ${
-        align === 'right' ? 'text-right last:pr-0' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
+    <div className="lg:text-right">
+      <span className="label-cap block">{label}</span>
+      <span
+        className={`tnum mt-1 block font-semibold ${
+          display ? 'font-display text-[32px]' : 'text-[30px]'
+        } ${muted ? 'text-ink-dim' : 'text-ink'}`}
+      >
+        {value}
+      </span>
+    </div>
   );
 }

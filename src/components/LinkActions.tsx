@@ -43,14 +43,13 @@ export function LinkActions({
   const disabled = busy || pending;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <>
       {previewUrl ? (
         <a
           href={previewUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="pill-action"
-          title="Open the landing page"
+          className="btn-outline btn-sm"
         >
           Preview ↗
         </a>
@@ -59,7 +58,8 @@ export function LinkActions({
         type="button"
         disabled={disabled}
         onClick={() => send('PATCH', { active: !active })}
-        className="pill-action"
+        className="btn-quiet btn-sm"
+        aria-label={`${active ? 'Pause' : 'Activate'} the link for ${label}`}
       >
         {active ? 'Pause' : 'Activate'}
       </button>
@@ -75,15 +75,16 @@ export function LinkActions({
             void send('DELETE');
           }
         }}
-        className="pill-action hover:!border-mustard hover:!text-mustard"
+        className="btn-danger btn-sm"
+        aria-label={`Delete the link for ${label}`}
       >
         Delete
       </button>
       {error ? (
-        <span role="alert" className="field-error !mt-0 basis-full">
+        <span role="alert" className="field-error basis-full">
           {error}
         </span>
       ) : null}
-    </div>
+    </>
   );
 }

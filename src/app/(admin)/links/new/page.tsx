@@ -2,7 +2,7 @@ import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 import { LinkForm, type KnownPerson } from '@/components/LinkForm';
 import { linkKey } from '@/lib/analytics';
-import { configuredBaseUrl } from '@/lib/config';
+import { captureFormEnabled, configuredBaseUrl } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { originFromHeaders } from '@/lib/request';
 import { storageStatus } from '@/lib/store';
@@ -34,12 +34,15 @@ export default async function NewLinkPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1280px]">
+    <div className="w-full">
       <LinkForm
         origin={origin}
         people={[...seen.values()]}
         takenSlugKeys={links.map(linkKey)}
         storageLabel={STORAGE_NOTE[storageStatus()]}
+        /* With the capture form hidden the visitor never sees a page of ours,
+           so there is nothing to write copy for. */
+        capture={captureFormEnabled()}
       />
     </div>
   );

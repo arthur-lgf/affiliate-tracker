@@ -1,54 +1,66 @@
 @import 'tailwindcss';
 
 /* ------------------------------------------------------------------
-   Almanac — deep pine & cream, mustard accent.
-   Instrument Serif for numbers and headings, DM Sans for everything
-   else, no monospace anywhere. Soft radii: pills for controls, 14-16px
-   for panels, 10px for inputs.
+   Ledger — paper & ink.
 
-   The admin surface is dark pine; the public capture page is the same
-   palette inverted to cream, so both read as one product.
+   Light throughout: ink on paper at 14:1, Source Serif for figures and
+   Public Sans for interface. Four rules the whole surface obeys:
+
+     1. Nothing under 17px. Uppercase micro-labels bottom out at 16px.
+     2. Every edge is 2px. A 1px hairline disappears at this contrast.
+     3. Every control is at least 52px tall, most are 56-68px.
+     4. Gold is a fill sitting behind dark text, never text itself —
+        #F0C24B on paper is 1.4:1. `--color-gold-deep` is the gold you
+        are allowed to set type in.
+
+   Admin and the public capture page are the same palette, so there is
+   no second surface to keep in step.
    ------------------------------------------------------------------ */
 
 @theme {
-  /* Pine — the dark surface stack */
-  --color-pine-950: #0a1714;
-  --color-pine-900: #0e211c;
-  --color-pine-850: #16302a;
-  --color-pine-800: #1d3a33;
-  --color-pine-700: #2a453e;
-  --color-pine-line: #1c3b34;
-  --color-pine-row: #1f3b34;
-  --color-pine-hover: #1a3630;
+  /* Paper — the surface stack, lightest at the top of a card */
+  --color-panel: #ffffff;
+  --color-paper-card: #f9f7f1;
+  --color-paper-sunk: #f4f1e8;
+  --color-paper: #efebe0;
 
-  /* Cream — the light surface stack */
-  --color-cream: #f2ede0;
-  --color-cream-50: #fbf8f0;
-  --color-cream-100: #f4efe4;
-  --color-cream-200: #eae3d2;
-  --color-cream-300: #e4dcc8;
-  --color-cream-400: #ddd6c4;
-  --color-cream-500: #cfc6ae;
+  /* Edges */
+  --color-edge-faint: #ede8dc;
+  --color-edge-soft: #e4dece;
+  --color-edge: #d9d2c2;
+  --color-edge-strong: #c9c1af;
+  /* Inputs carry a darker edge: 2.9:1 on white, so the box itself is
+     visible as a control and not just as a gap in the layout. */
+  --color-edge-field: #a9a091;
 
-  /* Sage — muted text on pine */
-  --color-sage: #a9b8ae;
-  --color-sage-dim: #93a79c;
+  /* Ink. -dim is for large figures and metadata; it holds 5.9:1 on white
+     and 4.9:1 on paper, so it is still body-text legal. */
+  --color-ink: #14261e;
+  --color-ink-soft: #3e5148;
+  --color-ink-dim: #59685f;
 
-  /* Accents */
-  --color-mustard: #e3b04b;
-  --color-mustard-bright: #efc167;
-  --color-mustard-deep: #a07a1e;
-  --color-olive: #7a6a3f;
-  --color-moss: #86a97f;
+  /* Leaf — the green. -text is the one safe on the wash. */
+  --color-leaf: #1e4b39;
+  --color-leaf-bar: #2e6b4f;
+  --color-leaf-live: #1b6b45;
+  --color-leaf-text: #1b4a36;
+  --color-leaf-wash: #e7efe9;
+  --color-leaf-edge: #c4dacd;
 
-  /* Ink — text on cream */
-  --color-ink: #0e211c;
-  --color-ink-soft: #38473f;
-  --color-ink-muted: #4f5f56;
-  --color-ink-faint: #5f6f66;
+  /* Gold */
+  --color-gold: #f0c24b;
+  --color-gold-edge: #c89a15;
+  --color-gold-ink: #2b1f02;
+  --color-gold-deep: #8a5e06;
+  --color-gold-wash: #f5d98a;
+  --color-gold-faint: #f2e3bb;
 
-  --font-display: var(--font-instrument), Georgia, 'Times New Roman', serif;
-  --font-sans: var(--font-dm-sans), Helvetica, Arial, sans-serif;
+  /* Alarm — destructive actions and errors */
+  --color-alarm: #8a2f1f;
+  --color-alarm-wash: #fdf3f0;
+
+  --font-display: var(--font-source-serif), Georgia, 'Times New Roman', serif;
+  --font-sans: var(--font-public-sans), 'Helvetica Neue', Arial, sans-serif;
 }
 
 @layer base {
@@ -58,390 +70,481 @@
   }
 
   body {
-    background-color: var(--color-pine-900);
-    color: var(--color-cream);
-    font-family: var(--font-sans);
-  }
-
-  /* The canvas follows the page. Admin is pine; the public capture and error
-     pages are cream, and without this the body colour shows through as a dark
-     band below short pages and in the overscroll area on iOS. */
-  html:has([data-surface='cream']),
-  html:has([data-surface='cream']) body {
-    background-color: var(--color-cream-100);
+    background-color: var(--color-paper);
     color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* The floor. Every size in the app is set relative to reading this
+       comfortably, not to fitting more in. */
+    font-size: 17px;
+    line-height: 1.5;
   }
 
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
-    font-weight: 400;
-    letter-spacing: -0.01em;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   ::selection {
-    background: var(--color-mustard);
-    color: var(--color-pine-900);
+    background: var(--color-gold);
+    color: var(--color-gold-ink);
   }
 
-  /* Numbers are set in Instrument Serif at display sizes throughout; keeping
-     them tabular stops columns of figures from jittering. */
+  /* A 2px ink edge with a 4px gold ring outside it. The ink half does the
+     work on gold and green fills, the gold half on paper and white — so
+     the indicator survives every surface in the app. */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 0;
+    box-shadow: 0 0 0 6px var(--color-gold);
+  }
+
+  /* Gold on gold is 1.4:1. On the gold controls the ring goes green. */
+  .btn-gold:focus-visible,
+  .chip-gold:focus-visible {
+    box-shadow: 0 0 0 6px var(--color-leaf);
+  }
+
   .tnum {
     font-variant-numeric: tabular-nums;
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--color-mustard);
-    outline-offset: 2px;
-  }
-
-  /* Mustard on cream is ~1.8:1 — far under the 3:1 a focus indicator needs.
-     On the light surfaces the ring goes ink. */
-  [data-surface='cream'] :focus-visible {
-    outline-color: var(--color-ink);
   }
 }
 
 @layer components {
   /* ---- Labels -------------------------------------------------- */
 
-  /* The small caps label. DM Sans, not mono — this direction has no mono. */
-  .label-micro {
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.14em;
+  /* The uppercase caption above a figure. 16px is the floor for caps —
+     letter-spaced small caps lose legibility faster than lowercase. */
+  .label-cap {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
-    color: var(--color-sage);
+    color: var(--color-ink-soft);
+    line-height: 1.3;
   }
 
-  .label-micro-light {
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-    color: var(--color-ink-faint);
+  /* The plain-English line that sits under a label. Every metric gets one:
+     the jargon stays, and this says the same thing again in words. */
+  .plain {
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--color-ink-soft);
+  }
+
+  /* A longer explanation, called out with a green rule. */
+  .plain-note {
+    background: var(--color-paper-sunk);
+    border-left: 6px solid var(--color-leaf);
+    border-radius: 10px;
+    padding: 18px 20px;
+    font-size: 19px;
+    line-height: 1.6;
+    color: #2c3f35;
   }
 
   /* ---- Surfaces ------------------------------------------------ */
 
   .panel {
-    background-color: var(--color-pine-850);
+    background: var(--color-panel);
+    border: 2px solid var(--color-edge);
+    border-radius: 20px;
+  }
+
+  .panel-sunk {
+    background: var(--color-paper-sunk);
+    border: 2px solid var(--color-edge);
+    border-radius: 20px;
+  }
+
+  /* A row inside a panel. -lit is the same card carrying a figure worth
+     looking at, so it lifts off the white. */
+  .card-row {
+    background: var(--color-panel);
+    border: 2px solid var(--color-edge-soft);
     border-radius: 16px;
   }
 
-  .panel-sm {
-    background-color: var(--color-pine-850);
-    border-radius: 14px;
-  }
-
-  /* Cream panel on a pine page — used for the one thing that should pull
-     the eye away from everything else. */
-  .panel-cream {
-    background-color: var(--color-cream);
-    color: var(--color-ink);
+  .card-row-lit {
+    background: var(--color-paper-card);
+    border: 2px solid var(--color-edge-soft);
     border-radius: 16px;
   }
 
-  /* ---- Pills & buttons ----------------------------------------- */
+  .divider-row {
+    border-bottom: 2px solid var(--color-edge-faint);
+  }
 
-  .pill {
+  /* The highlighter behind a total. A gradient rather than a background so
+     it sits under the baseline like a marker stroke. */
+  .mark {
+    background: linear-gradient(transparent 62%, var(--color-gold-wash) 62%);
+  }
+
+  /* ---- Buttons ------------------------------------------------- */
+  /* All of them are at least 52px and carry a 2px edge. */
+
+  .btn-primary,
+  .btn-gold,
+  .btn-outline,
+  .btn-quiet,
+  .btn-danger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 10px;
+    min-height: 60px;
+    padding: 0 30px;
     border-radius: 999px;
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  /* text-overflow does not apply to a flex container, so a capped .pill clips
-     mid-word and centres the remains. This puts the text in its own block. */
-  .pill-text {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .btn-accent {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 14px 24px;
-    border-radius: 999px;
-    background: var(--color-mustard);
-    color: var(--color-pine-900);
-    font-size: 13.5px;
-    font-weight: 500;
-    border: 1px solid var(--color-mustard);
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
     cursor: pointer;
-    transition: background-color 140ms ease;
+    border: 2px solid transparent;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
   }
 
-  .btn-accent:hover:not(:disabled) {
-    background: var(--color-mustard-bright);
-    border-color: var(--color-mustard-bright);
+  .btn-primary {
+    background: var(--color-leaf);
+    border-color: var(--color-leaf);
+    color: #ffffff;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #17402f;
+    border-color: #17402f;
+  }
+
+  .btn-gold {
+    background: var(--color-gold);
+    border-color: var(--color-gold-edge);
+    color: var(--color-gold-ink);
+    font-weight: 700;
+  }
+
+  .btn-gold:hover:not(:disabled) {
+    background: #eeb833;
+  }
+
+  /* The considered second action — an outline you can actually see. */
+  .btn-outline {
+    background: var(--color-panel);
+    border-color: var(--color-ink);
+    color: var(--color-ink);
+  }
+
+  .btn-outline:hover:not(:disabled) {
+    background: var(--color-paper-sunk);
   }
 
   .btn-quiet {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 13px 22px;
-    border-radius: 999px;
-    border: 1px solid var(--color-pine-700);
-    background: transparent;
-    color: #d7cfbb;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background-color 140ms ease,
-      color 140ms ease,
-      border-color 140ms ease;
+    background: var(--color-panel);
+    border-color: var(--color-edge);
+    color: var(--color-ink);
   }
 
   .btn-quiet:hover:not(:disabled) {
-    background: var(--color-pine-850);
-    color: var(--color-cream);
+    background: var(--color-paper-sunk);
+    border-color: var(--color-edge-strong);
   }
 
-  .btn-ink {
+  .btn-danger {
+    background: var(--color-panel);
+    border-color: var(--color-alarm);
+    color: var(--color-alarm);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: var(--color-alarm-wash);
+  }
+
+  .btn-primary:disabled,
+  .btn-gold:disabled,
+  .btn-outline:disabled,
+  .btn-quiet:disabled,
+  .btn-danger:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* Row-level actions: same shapes, one size down but still 52px. */
+  .btn-sm {
+    min-height: 52px;
+    padding: 0 24px;
+    font-size: 18px;
+  }
+
+  /* ---- Filters & tabs ------------------------------------------ */
+
+  /* A period / status filter. Selected is ink, so "which one is on" never
+     depends on telling two greys apart. */
+  .pill-filter {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 16px 24px;
+    gap: 9px;
+    min-height: 56px;
+    padding: 0 26px;
     border-radius: 999px;
-    background: var(--color-pine-900);
-    color: var(--color-cream);
-    font-size: 14px;
+    border: 2px solid var(--color-edge);
+    background: var(--color-panel);
+    color: var(--color-ink);
+    font-size: 19px;
     font-weight: 500;
-    border: 1px solid var(--color-pine-900);
+    line-height: 1.2;
+    white-space: nowrap;
     cursor: pointer;
-    transition: background-color 140ms ease;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease;
   }
 
-  .btn-ink:hover:not(:disabled) {
-    background: var(--color-pine-850);
+  /* :not([data-active]) so hovering the selected pill cannot repaint it as
+     unselected while the pointer rests on it. */
+  .pill-filter:hover:not(:disabled):not([data-active='true']) {
+    background: var(--color-paper-sunk);
+    border-color: var(--color-edge-strong);
   }
 
-  .btn-accent:disabled,
-  .btn-quiet:disabled,
-  .btn-ink:disabled {
-    opacity: 0.5;
+  .pill-filter[data-active='true'] {
+    background: var(--color-ink);
+    border-color: var(--color-ink);
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .pill-filter:disabled {
+    opacity: 0.55;
     cursor: not-allowed;
   }
 
-  /* Small pill used for row-level actions and filters. */
-  .pill-action {
+  /* Top-level navigation. Active is green rather than ink, so it reads as
+     "where you are" and not as "a filter that is switched on". */
+  .pill-tab {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 8px 14px;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 26px;
     border-radius: 999px;
-    border: 1px solid var(--color-pine-700);
-    background: transparent;
-    color: var(--color-sage);
-    font-size: 11.5px;
+    border: 2px solid var(--color-edge);
+    background: var(--color-panel);
+    color: var(--color-ink);
+    font-size: 19px;
     font-weight: 500;
-    cursor: pointer;
     white-space: nowrap;
     transition:
       background-color 140ms ease,
-      color 140ms ease,
-      border-color 140ms ease;
+      border-color 140ms ease,
+      color 140ms ease;
   }
 
-  /* :not([data-active]) so hover cannot repaint the selected pill as
-     unselected while the pointer rests on it. */
-  .pill-action:hover:not(:disabled):not([data-active='true']) {
-    background: var(--color-pine-850);
-    color: var(--color-cream);
+  .pill-tab:hover:not([aria-current='page']) {
+    background: var(--color-paper-sunk);
+    border-color: var(--color-edge-strong);
   }
 
-  .pill-action[data-active='true'] {
-    background: var(--color-cream);
-    border-color: var(--color-cream);
-    color: var(--color-pine-900);
+  .pill-tab[aria-current='page'] {
+    background: var(--color-leaf);
+    border-color: var(--color-leaf);
+    color: #ffffff;
+    font-weight: 600;
   }
 
-  .pill-action[data-active='true']:hover:not(:disabled) {
-    background: #fff;
-    border-color: #fff;
-  }
-
-  .pill-action:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* A table row that opens something. The whole row lights up, but only the
-     cell holding the link is clickable — a row-wide click target would swallow
-     any other control that later lands in the row. */
-  .row-link:hover {
-    background: var(--color-pine-hover);
-  }
-
-  .row-link-arrow {
-    opacity: 0;
-    transition:
-      opacity 140ms ease,
-      transform 140ms ease;
-    display: inline-block;
-  }
-
-  .row-link:hover .row-link-arrow,
-  .row-link a:focus-visible .row-link-arrow {
-    opacity: 1;
-    transform: translateX(2px);
-  }
-
-  /* Lead status. Mustard is the "look at this" colour and cream is "selected",
-     so a registered lead gets moss — done, settled, not asking for anything. */
+  /* Lead status, which is also the control that changes it. Registered is
+     green — settled, not asking for anything. Gold is reserved for things that
+     want your attention, and a finished lead does not. */
   .pill-status {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 7px 13px;
+    gap: 10px;
+    min-height: 52px;
+    padding: 0 20px;
     border-radius: 999px;
-    border: 1px solid var(--color-pine-700);
-    background: transparent;
-    color: var(--color-sage);
-    font-size: 11.5px;
-    font-weight: 500;
-    line-height: 1;
-    cursor: pointer;
+    border: 2px solid var(--color-edge);
+    background: var(--color-panel);
+    color: var(--color-ink);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.2;
     white-space: nowrap;
+    cursor: pointer;
     transition:
       background-color 140ms ease,
-      color 140ms ease,
-      border-color 140ms ease;
+      border-color 140ms ease,
+      color 140ms ease;
   }
 
   .pill-status:hover:not(:disabled) {
-    background: var(--color-pine-800);
-    color: var(--color-cream);
+    background: var(--color-paper-sunk);
+    border-color: var(--color-edge-strong);
   }
 
   .pill-status[data-status='registered'] {
-    background: var(--color-moss);
-    border-color: var(--color-moss);
-    color: var(--color-pine-900);
+    background: var(--color-leaf-wash);
+    border-color: var(--color-leaf-live);
+    color: var(--color-leaf-text);
   }
 
   .pill-status[data-status='registered']:hover:not(:disabled) {
-    background: #9ab993;
-    border-color: #9ab993;
-    color: var(--color-pine-900);
+    background: #dbe8df;
   }
 
   .pill-status:disabled {
-    opacity: 0.55;
+    opacity: 0.6;
     cursor: wait;
+  }
+
+  /* ---- Chips --------------------------------------------------- */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 38px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 2px solid var(--color-edge);
+    background: var(--color-panel);
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .chip-live {
+    background: var(--color-leaf-wash);
+    border-color: var(--color-leaf-live);
+    color: var(--color-leaf-text);
+  }
+
+  .chip-quiet {
+    background: var(--color-paper-sunk);
+    border-color: var(--color-edge);
+    color: var(--color-ink-soft);
+  }
+
+  .chip-gold {
+    min-height: 48px;
+    padding: 0 20px;
+    background: var(--color-gold);
+    border-color: var(--color-gold-edge);
+    color: var(--color-gold-ink);
+    font-size: 19px;
+    font-weight: 700;
   }
 
   /* ---- Inputs -------------------------------------------------- */
 
-  .field-dark {
+  .field {
     width: 100%;
     box-sizing: border-box;
-    background: var(--color-pine-900);
-    border: 1px solid var(--color-pine-700);
-    border-radius: 10px;
-    padding: 12px 14px;
-    font-size: 14px;
-    color: var(--color-cream);
-    outline: none;
-    transition: border-color 140ms ease;
-  }
-
-  .field-dark::placeholder {
-    color: var(--color-sage-dim);
-  }
-
-  .field-dark:focus {
-    border-color: var(--color-mustard);
-  }
-
-  .field-light {
-    width: 100%;
-    box-sizing: border-box;
-    background: #fff;
-    border: 1px solid var(--color-cream-400);
-    border-radius: 10px;
-    padding: 14px;
-    font-size: 15px;
+    min-height: 64px;
+    background: var(--color-panel);
+    border: 2px solid var(--color-edge-field);
+    border-radius: 14px;
+    padding: 0 20px;
+    font-size: 21px;
+    font-family: inherit;
     color: var(--color-ink);
     outline: none;
     transition: border-color 140ms ease;
   }
 
-  /* No opacity: ink-faint is 5.31:1 on white by itself, but compositing it at
-     0.75 drops the placeholder to 3.19:1, under AA for text. */
-  .field-light::placeholder {
-    color: var(--color-ink-faint);
+  /* No opacity: compositing the placeholder colour would drop it under AA. */
+  .field::placeholder {
+    color: var(--color-ink-dim);
     opacity: 1;
   }
 
-  .field-light:focus {
-    border-color: var(--color-mustard-deep);
+  .field:focus {
+    border-color: var(--color-ink);
+  }
+
+  .field:disabled {
+    background: var(--color-paper-sunk);
+    cursor: not-allowed;
+  }
+
+  /* A select needs room for the chevron the platform draws. */
+  select.field {
+    padding-right: 14px;
+    cursor: pointer;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--color-ink);
   }
 
   .field-note {
-    margin-top: 6px;
-    font-size: 11.5px;
+    display: block;
+    margin-top: 8px;
+    font-size: 18px;
     line-height: 1.5;
-    color: var(--color-sage-dim);
+    color: var(--color-ink-soft);
   }
 
   .field-error {
-    margin-top: 6px;
-    font-size: 11.5px;
+    display: block;
+    margin-top: 8px;
+    font-size: 18px;
     line-height: 1.5;
-    color: var(--color-mustard);
-  }
-
-  .field-error-light {
-    margin-top: 6px;
-    font-size: 11.5px;
-    line-height: 1.5;
-    color: #9a3412;
+    font-weight: 600;
+    color: var(--color-alarm);
   }
 
   /* ---- Bits ---------------------------------------------------- */
 
-  /* Circular avatar/rank token. */
+  /* Initials token. Green wash rather than a photo — there are no photos. */
   .disc {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    background: var(--color-pine-800);
-    border: 1px solid var(--color-pine-700);
-    color: var(--color-moss);
-    font-weight: 500;
     flex: none;
+    border-radius: 50%;
+    background: var(--color-leaf-wash);
+    border: 2px solid var(--color-leaf-edge);
+    color: var(--color-leaf-text);
+    font-weight: 700;
   }
 
-  .row-card {
-    background: var(--color-pine-850);
-    border-radius: 14px;
-    transition: background-color 140ms ease;
+  /* The browser-chrome-ish box that shows a shareable URL. */
+  .url-box {
+    display: flex;
+    align-items: center;
+    min-height: 56px;
+    padding: 0 18px;
+    border-radius: 12px;
+    background: var(--color-paper-sunk);
+    border: 2px solid var(--color-edge-soft);
+    font-size: 18px;
+    color: var(--color-ink);
   }
 
-  .row-card:hover {
-    background: var(--color-pine-hover);
+  /* A text link inside prose, as opposed to the pills and buttons. */
+  .link-text {
+    color: var(--color-leaf);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
   }
 
-  .divider-row {
-    border-bottom: 1px solid var(--color-pine-row);
+  .link-text:hover {
+    color: var(--color-gold-deep);
   }
 }
 

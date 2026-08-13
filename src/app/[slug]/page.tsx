@@ -79,7 +79,7 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
     return (
       <Notice
         title="This offer is paused"
-        body="The link you followed is no longer accepting sign-ups. Please check back later or contact the person who shared it with you."
+        body="The link you followed is no longer accepting sign-ups. Please check back later, or contact the person who shared it with you."
       />
     );
   }
@@ -107,52 +107,48 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
     'Tell us where to send your matches and we’ll take you straight through to the offer.';
   const ctaLabel = link.ctaLabel || 'Continue to the offer';
 
-  // Set the last word of the headline in italic mustard — the one flourish on
-  // an otherwise plain page.
+  // Set the last word of the headline in italic gold — the one flourish on an
+  // otherwise plain page. gold-deep, not gold: #F0C24B as type on paper is
+  // 1.4:1, which is a decoration rather than a word.
   const words = headline.trim().split(/\s+/);
   // Only accent the last word when there is a rest of the headline to contrast
-  // it against — a one-word headline would otherwise be entirely italic mustard.
+  // it against — a one-word headline would otherwise be entirely italic gold.
   const accentTail = words.length > 1;
   const lead = accentTail ? words.slice(0, -1).join(' ') : headline;
   const tail = accentTail ? words[words.length - 1]! : '';
 
   return (
-    <main data-surface="cream" className="min-h-screen bg-cream-100 px-5 py-10 text-ink sm:px-8 sm:py-12">
-      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-[640px] flex-col sm:min-h-[calc(100vh-6rem)]">
-        <div className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-2.5 text-[12.5px] text-ink-faint">
-            <span aria-hidden className="h-5 w-5 rounded-full bg-mustard" />
+    <main className="min-h-screen bg-paper px-5 py-10 sm:px-8 sm:py-14">
+      <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-[680px] flex-col sm:min-h-[calc(100vh-7rem)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <span className="flex items-center gap-3 text-[18px] text-ink-soft">
+            <span aria-hidden className="h-7 w-7 rounded-full border-2 border-ink bg-gold" />
             {link.campaign}
           </span>
-          <span className="text-xs text-ink-faint">One short step</span>
+          <span className="text-[18px] text-ink-soft">One short step</span>
         </div>
 
         <div className="rise mt-10">
-          <h1 className="font-display text-[38px] leading-[1.06] tracking-[-0.01em] sm:text-[48px]">
+          <h1 className="font-display text-[42px] leading-[1.05] sm:text-[54px]">
             {lead}
             {accentTail ? (
               <>
                 {' '}
-                <span className="italic" style={{ color: 'var(--color-mustard-deep)' }}>
-                  {tail}
-                </span>
+                <span className="italic text-gold-deep">{tail}</span>
               </>
             ) : null}
           </h1>
-          <p className="mt-4 max-w-[460px] text-[15px] leading-[1.65] text-ink-muted">
+          <p className="mt-5 max-w-[540px] text-[21px] leading-[1.6] text-ink-soft">
             {subheadline}
           </p>
         </div>
 
-        <ul className="rise mt-6 flex flex-wrap gap-2.5" style={{ animationDelay: '90ms' }}>
+        <ul className="rise mt-7 flex flex-wrap gap-3" style={{ animationDelay: '90ms' }}>
           {ASSURANCES.map((item) => (
-            <li
-              key={item}
-              className="flex items-center gap-2.5 rounded-full bg-cream-200 px-3.5 py-2.5 text-[12.5px] text-ink-soft"
-            >
+            <li key={item} className="chip chip-quiet min-h-[48px] font-normal">
               <span
                 aria-hidden
-                className="flex h-4 w-4 items-center justify-center rounded-full bg-moss text-[9px] font-medium text-pine-900"
+                className="flex h-7 w-7 flex-none items-center justify-center rounded-full border-2 border-leaf-live bg-leaf-wash text-[16px] font-bold text-leaf-text"
               >
                 ✓
               </span>
@@ -161,30 +157,21 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
           ))}
         </ul>
 
-        <div className="rise mt-6" style={{ animationDelay: '150ms' }}>
-          <LeadForm
-            slug={link.slug}
-            usr={usr}
-            requirePhone={link.requirePhone}
-            ctaLabel={ctaLabel}
-          />
+        <div className="rise mt-7" style={{ animationDelay: '150ms' }}>
+          <LeadForm slug={link.slug} usr={usr} requirePhone={link.requirePhone} ctaLabel={ctaLabel} />
         </div>
 
         <div className="flex-1" />
 
         {assigned && link.assignee ? (
-          <div className="mt-8 flex items-center gap-3 border-t border-cream-300 pt-5">
-            <span
-              aria-hidden
-              className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-pine-900 text-[12px] font-medium"
-              style={{ color: 'var(--color-mustard)' }}
-            >
+          <div className="mt-10 flex items-center gap-4 border-t-2 border-edge pt-6">
+            <span aria-hidden className="disc h-12 w-12 text-[17px]">
               {initialsOf(link.assignee)}
             </span>
-            <span className="text-[12.5px] leading-[1.45] text-ink-faint">
+            <span className="text-[18px] leading-[1.5] text-ink-soft">
               Prepared for you by
               <br />
-              <span className="font-medium text-ink">{link.assignee}</span>
+              <span className="font-semibold text-ink">{link.assignee}</span>
             </span>
           </div>
         ) : null}
@@ -195,11 +182,11 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
 
 function Notice({ title, body }: { title: string; body: string }) {
   return (
-    <main data-surface="cream" className="flex min-h-screen items-center justify-center bg-cream-100 px-6 py-20 text-ink">
-      <div className="w-full max-w-lg text-center">
-        <div aria-hidden className="mx-auto mb-8 h-1.5 w-1.5 rounded-full bg-mustard" />
-        <h1 className="font-display text-[38px] leading-tight">{title}</h1>
-        <p className="mt-4 text-sm leading-relaxed text-ink-muted">{body}</p>
+    <main className="flex min-h-screen items-center justify-center bg-paper px-6 py-20">
+      <div className="w-full max-w-xl text-center">
+        <div aria-hidden className="mx-auto mb-8 h-3 w-3 rounded-full border-2 border-ink bg-gold" />
+        <h1 className="font-display text-[42px] leading-tight">{title}</h1>
+        <p className="mt-5 text-[21px] leading-relaxed text-ink-soft">{body}</p>
       </div>
     </main>
   );

@@ -12,8 +12,9 @@ http://localhost:3000/cashback?usr=arthur                                     �
 
 | Page | Path | What it does |
 | --- | --- | --- |
-| Dashboard | `/` | Totals, 14-day chart, leaderboards by assignee and campaign, recent submissions |
-| Affiliate links | `/links` | Every link with its shareable URL, assignee, visits, leads, conversion; pause / delete |
+| Dashboard | `/` | Earnings, a five-week chart, one row per person, recorded approvals |
+| One person | `/affiliate/<usr>` | The same numbers broken down per card, and the approvals behind them |
+| Affiliate links | `/links` | Every link with its shareable URL, assignee and visits; pause / delete |
 | Create link | `/links/new` | Build a link: destination + slug + assignee, with a live URL preview |
 | Landing page | `/<slug>?usr=<person>` | The client's fill-up form, then a redirect to the destination |
 
@@ -101,6 +102,13 @@ than forwarding, and an unknown slug is a 404.
 **The capture form is hidden, not deleted.** Set `CAPTURE_FORM=on` and the landing page,
 its form, the Submissions tab and the leads panel all come back with their data intact.
 
+Two parts of the admin surface follow that switch rather than sitting at zero while it is
+off: the **Leads** and **Turned into leads** columns on `/links`, and the **What the
+visitor sees** step on `/links/new` (headline, sub-headline, button label). With no
+landing page there is nothing to write copy for and no lead to count. Turn the form back
+on and both reappear; links created meanwhile just fall back to the campaign name for
+their headline.
+
 ## Dashboard
 
 One row per person: **Person · Visits · Approved · Total earnings**, with everyone's
@@ -123,6 +131,30 @@ sheet is refused rather than applied to whatever shifted into that slot.
 - Filter by **Today / 7 days / 30 days / All time** and by **person**. Both live in the
   URL, so a filtered view can be bookmarked or shared. The periods are rolling windows,
   not calendar ones — "7 days" is the last seven days including today.
+- **The chart is five rolling weeks**, and follows the person filter but not the period:
+  the shape of the last five weeks is the context you read the selected window against,
+  so narrowing to "Today" should not also shrink the chart to one bar. Every bar carries
+  its own number, and a week with nothing draws a flat stub rather than nothing at all.
+
+## How it looks
+
+Light throughout — ink on paper at 14:1, Source Serif for figures and Public Sans for
+interface. Four rules the whole surface obeys, and they are worth keeping if you edit it:
+
+1. **Nothing under 17px.** Uppercase micro-labels bottom out at 16px.
+2. **Every edge is 2px.** A 1px hairline disappears at this contrast.
+3. **Every control is at least 52px tall**, most are 56–68px.
+4. **Gold is a fill behind dark text, never text itself** — `#F0C24B` on paper is 1.4:1.
+   `--color-gold-deep` is the gold you are allowed to set type in.
+
+Keyboard focus is a 2px ink edge with a 4px gold ring outside it: the ink half does the
+work on the gold and green fills, the gold half on paper and white, so one indicator
+survives every surface. Every metric carries a plain-English line under its label — the
+jargon stays and the sentence says it again in words.
+
+Tokens live in `src/app/globals.css`. Prefer the component classes there (`.panel`,
+`.btn-primary`, `.pill-filter`, `.field`, `.plain`) over re-deriving a control from
+utilities, or the sizes and the focus ring drift apart.
 
 Visits are bucketed by when the click happened, approvals by their approval date. An
 approval that lands three weeks after the click counts in the week it was approved,

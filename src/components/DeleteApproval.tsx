@@ -35,13 +35,13 @@ export function DeleteApproval({ id, label }: { id: string; label: string }) {
         type="button"
         disabled={busy}
         onClick={remove}
-        className="pill-action hover:!border-mustard hover:!text-mustard"
+        className="btn-danger btn-sm"
         aria-label={`Remove the approval for ${label}`}
       >
-        Remove
+        {busy ? 'Removing…' : 'Remove'}
       </button>
       {error ? (
-        <span role="alert" className="field-error !mt-0 basis-full">
+        <span role="alert" className="field-error basis-full">
           {error}
         </span>
       ) : null}

@@ -9,9 +9,9 @@ import { PersonFilter } from '@/components/PersonFilter';
 import {
   affiliateHref,
   buildEarnings,
-  buildStats,
   describeConversions,
   formatDateTime,
+  formatDay,
   formatMoney,
   formatPercent,
   formatRelative,
@@ -104,7 +104,6 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         capturedAt: formatDateTime(row.createdAt),
       }))
     : [];
-  const stats = capture ? buildStats(links, submissions, visits, 30) : null;
 
   return (
     <div className="w-full">
@@ -112,73 +111,87 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
       {/* Filters. Links rather than client state: the filter lives in the URL, so
           a view can be bookmarked and the table stays server-rendered. */}
-      <section className="rise flex flex-wrap items-center gap-x-3 gap-y-2.5">
-        <span className="flex flex-wrap gap-2">
-          {PERIODS.map((option) => {
-            const params = new URLSearchParams();
-            if (option.key !== 'month') params.set('period', option.key);
-            if (usr) params.set('usr', usr);
-            const search = params.toString();
-            return (
-              <Link
-                key={option.key}
-                href={search ? `/?${search}` : '/'}
-                className="pill-action"
-                data-active={option.key === period}
-                aria-current={option.key === period ? 'page' : undefined}
-              >
-                {option.label}
-              </Link>
-            );
-          })}
-        </span>
+      <section className="rise flex flex-wrap items-center gap-x-3 gap-y-3">
+        <span className="text-[19px] font-semibold text-ink-soft">Show me</span>
+        {PERIODS.map((option) => {
+          const params = new URLSearchParams();
+          if (option.key !== 'month') params.set('period', option.key);
+          if (usr) params.set('usr', usr);
+          const search = params.toString();
+          return (
+            <Link
+              key={option.key}
+              href={search ? `/?${search}` : '/'}
+              className="pill-filter"
+              data-active={option.key === period}
+              aria-current={option.key === period ? 'page' : undefined}
+            >
+              {option.label}
+            </Link>
+          );
+        })}
+        <span aria-hidden className="mx-2 hidden h-9 w-0.5 bg-edge lg:block" />
         <PersonFilter people={view.people} value={usr} />
       </section>
 
       {/* Hero — earnings for the selected window */}
-      <section className="rise panel mt-4 grid gap-8 p-6 sm:p-7 lg:grid-cols-[330px_1fr] lg:gap-8">
-        <div>
-          <p className="label-micro">
-            Total earnings · {periodLabel}
-            {person ? ` · ${person.name}` : ''}
-          </p>
-          <p className="tnum mt-4 font-display text-[62px] leading-[0.9] sm:text-[78px]">
+      <section className="rise panel mt-5 grid gap-10 p-6 sm:p-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <h2 className="label-cap">
+            {person ? `${person.name}'s earnings` : 'Total earnings'} · {periodLabel.toLowerCase()}
+          </h2>
+          {/* Clamped, not stepped: a money figure is one unbreakable token, so
+              the type has to scale with the box or a seven-figure total pushes
+              the whole page sideways on a phone. */}
+          <p className="tnum mt-4 font-display leading-[0.95] text-[clamp(2rem,9vw,5.125rem)]">
             {formatMoney(view.totals.earnings)}
           </p>
-          <div className="mt-5 flex flex-wrap items-center gap-2.5">
-            <span className="pill bg-mustard px-3 py-1.5 text-pine-900">
+          <div className="mt-5 flex flex-wrap items-center gap-4">
+            <span className="chip chip-gold">
               {view.totals.approved} approved
             </span>
-            <span className="text-[12.5px] text-sage">
+            <span className="text-[20px] text-ink-soft">
               from {view.totals.visits.toLocaleString()} visit
               {view.totals.visits === 1 ? '' : 's'}
             </span>
           </div>
-          <p className="mt-6 max-w-[270px] text-[13px] leading-relaxed text-sage">
-            Visits are counted the moment someone follows a link. Approvals are recorded here or in
-            the Conversions tab of your sheet.
+
+          <p className="plain-note mt-6">
+            A <strong>visit</strong> is counted the moment someone opens one of your links. An{' '}
+            <strong>approval</strong> is a visit the merchant agreed to pay you for.
           </p>
+
+          <Link
+            href={usr ? affiliateHref(usr, period) : '#who-is-earning'}
+            className="btn-outline btn-sm mt-6"
+          >
+            {usr && person ? `See ${person.name}'s cards` : 'See where it came from'}
+          </Link>
         </div>
 
         <EarningsChart series={view.series} />
       </section>
 
-      {/* Supporting figures */}
-      <section className="mt-4 grid gap-4 sm:grid-cols-3">
+      {/* Supporting figures. Each one says in words what it counts. */}
+      <section className="mt-5 grid gap-5 lg:grid-cols-3">
         <StatCard
           label="Visits"
           value={view.totals.visits.toLocaleString()}
-          note={periodLabel.toLowerCase()}
+          unit={`in ${periodLabel.toLowerCase()}`}
+          plain="People who opened one of your links."
         />
         <StatCard
           label="Approved"
           value={view.totals.approved.toLocaleString()}
-          note={
+          unit={
             view.totals.visits > 0
-              ? `${formatPercent(view.totals.approvalRate, 1)} of visits`
+              ? `of ${view.totals.visits.toLocaleString()} visits — ${formatPercent(
+                  view.totals.approvalRate,
+                  1,
+                )}`
               : 'no visits yet'
           }
-          noteColor="var(--color-moss)"
+          plain="Visits the merchant agreed to pay for."
           delay={40}
         />
         <StatCard
@@ -188,99 +201,111 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               ? formatMoney(view.totals.earnings / view.totals.approved)
               : '—'
           }
-          note={view.totals.approved > 0 ? 'average payout' : 'nothing approved yet'}
+          unit={view.totals.approved > 0 ? '' : 'nothing approved yet'}
+          plain="Average payout each time one is approved."
           delay={80}
         />
       </section>
 
       {/* The table */}
-      <section className="rise panel mt-4 p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-          <h2 className="font-display text-[22px]">Who is earning</h2>
-          <span className="text-xs text-sage">
-            {view.rows.length} {view.rows.length === 1 ? 'person' : 'people'} · {periodLabel} · open
-            one for its cards
+      <section id="who-is-earning" className="rise panel mt-5 p-6 sm:p-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+          <h2 className="font-display text-[32px]">Who is earning</h2>
+          <span className="text-[19px] text-ink-soft">
+            {view.rows.length} {view.rows.length === 1 ? 'person' : 'people'} ·{' '}
+            {periodLabel.toLowerCase()}
           </span>
         </div>
+        <p className="plain mt-2">
+          One row per person. Open a row to see the cards behind their numbers.
+        </p>
 
         {view.rows.length === 0 ? (
-          <p className="py-10 text-center text-sm text-sage-dim">
+          <p className="py-12 text-center text-[19px] text-ink-soft">
             Nothing in this window. Try a longer period{usr ? ' or everyone' : ''}.
           </p>
         ) : (
-          // Wide content scrolls inside its own container so the page never does.
-          <div className="mt-4 -mx-2 overflow-x-auto px-2">
-            <table className="w-full min-w-[480px] border-collapse text-left">
+          // Wide content scrolls inside its own container so the page never
+          // does. `relative` matters: an absolutely positioned descendant (an
+          // sr-only label, say) would otherwise resolve against the document
+          // and stretch it to the table's full 760px on a phone.
+          <div className="relative -mx-2 mt-5 overflow-x-auto px-2">
+            <table className="w-full min-w-[760px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-pine-line">
+                <tr className="border-b-2 border-edge">
                   <Th>Person</Th>
                   <Th align="right">Visits</Th>
                   <Th align="right">Approved</Th>
                   <Th align="right">Total earnings</Th>
+                  {/* Deliberately empty: every button in the column carries its
+                      own "Open <person>" label, so a header here would only
+                      repeat itself once per row. */}
+                  <th className="pb-3" />
+
                 </tr>
               </thead>
               <tbody>
                 {view.rows.map((row) => (
-                  <tr
-                    key={row.key}
-                    className="row-link border-b border-pine-line last:border-0"
-                  >
-                    <td className="py-3.5 pr-4">
-                      {/* The whole name cell is the link into their own page —
-                          the row is the thing you want to click, not a word. */}
-                      <Link
-                        href={affiliateHref(row.usr, period)}
-                        className="flex items-center gap-2.5 rounded-lg"
-                      >
-                        <span aria-hidden className="disc h-[30px] w-[30px] flex-none text-[10.5px]">
+                  <tr key={row.key} className="divider-row last:border-0">
+                    <td className="py-5 pr-4">
+                      <div className="flex items-center gap-4.5">
+                        <span aria-hidden className="disc h-14 w-14 text-[19px]">
                           {row.usr ? initialsOf(row.person) : '—'}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-[13.5px] font-medium">
+                          <span className="block truncate text-[23px] font-semibold">
                             {row.person}
-                            <span aria-hidden className="row-link-arrow ml-1.5 text-sage-dim">
-                              →
-                            </span>
                           </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-sage-dim">
+                          <span className="mt-1 block truncate text-[18px] text-ink-soft">
                             {row.cardCount} card{row.cardCount === 1 ? '' : 's'}
                             {row.usr ? ` · usr=${row.usr}` : ' · no usr'}
                           </span>
                         </span>
-                      </Link>
+                      </div>
                     </td>
-                    <td className="tnum py-3.5 pr-4 text-right text-[13.5px]">
+                    <td className="tnum py-5 pr-4 text-right text-[28px] font-semibold">
                       {row.visits.toLocaleString()}
                     </td>
-                    <td className="py-3.5 pr-4 text-right">
-                      <span className="tnum block text-[13.5px]">{row.approved}</span>
+                    <td className="py-5 pr-4 text-right">
+                      <span className="tnum block text-[28px] font-semibold">{row.approved}</span>
                       {row.visits > 0 && row.approved > 0 ? (
-                        <span className="mt-0.5 block text-[11px] text-sage-dim">
-                          {formatPercent(row.approvalRate, 1)}
+                        <span className="mt-0.5 block text-[17px] text-ink-soft">
+                          {formatPercent(row.approvalRate, 1)} of visits
                         </span>
                       ) : null}
                     </td>
-                    <td className="tnum py-3.5 text-right font-display text-xl">
+                    <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
                       {formatMoney(row.earnings)}
+                    </td>
+                    <td className="py-5 text-right">
+                      {/* One link per row rather than a whole-row target: the
+                          thing you can click is then something you can see. */}
+                      <Link
+                        href={affiliateHref(row.usr, period)}
+                        className="btn-outline btn-sm"
+                        aria-label={`Open ${row.person}`}
+                      >
+                        Open
+                      </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-pine-700">
-                  <td className="py-3.5 text-[12.5px] text-sage">Total</td>
-                  <td className="tnum py-3.5 pr-4 text-right text-[13.5px]">
+                <tr className="border-t-2 border-edge-strong">
+                  <td className="py-5 text-[21px] font-bold">Total</td>
+                  <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
                     {view.totals.visits.toLocaleString()}
                   </td>
-                  <td className="tnum py-3.5 pr-4 text-right text-[13.5px]">
+                  <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
                     {view.totals.approved.toLocaleString()}
                   </td>
-                  <td
-                    className="tnum py-3.5 text-right font-display text-xl"
-                    style={{ color: 'var(--color-mustard)' }}
-                  >
-                    {formatMoney(view.totals.earnings)}
+                  <td className="py-5 pr-4 text-right">
+                    <span className="mark tnum font-display text-[30px] font-bold">
+                      {formatMoney(view.totals.earnings)}
+                    </span>
                   </td>
+                  <td />
                 </tr>
               </tfoot>
             </table>
@@ -289,37 +314,33 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       </section>
 
       {/* Recording approvals */}
-      <section className="rise panel mt-4 p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-          <h2 className="font-display text-[22px]">Approvals</h2>
-          <span className="text-xs text-sage">
-            {conversions.length} recorded · all time
-          </span>
-        </div>
-
-        <div className="mt-4">
+      <section className="rise panel mt-5 p-6 sm:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div>
+            <h2 className="font-display text-[32px]">Approvals</h2>
+            <p className="plain mt-1">
+              {conversions.length} recorded · all time. Nothing adds these on its own.
+            </p>
+          </div>
           <ConversionForm targets={targets} />
         </div>
 
         {recentApprovals.length > 0 ? (
-          <ul className="mt-5">
+          <ul className="mt-6 flex flex-col gap-4">
             {recentApprovals.map((row) => (
               <li
                 key={row.id}
-                className="divider-row flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-[13px]"
+                className="card-row-lit flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">
-                    {row.person} · {row.card}
+                  <span className="block truncate text-[22px] font-semibold">{row.person}</span>
+                  <span className="mt-0.5 block truncate text-[18px] text-ink-soft">
+                    {row.card}
+                    {row.notes ? ` · ${row.notes}` : ''}
                   </span>
-                  {row.notes ? (
-                    <span className="mt-0.5 block truncate text-[11.5px] text-sage-dim">
-                      {row.notes}
-                    </span>
-                  ) : null}
                 </span>
-                <span className="text-[12px] text-sage-dim">{row.approvedOn}</span>
-                <span className="tnum w-[86px] text-right font-display text-lg">
+                <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>
+                <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
                   {formatMoney(row.amount)}
                 </span>
                 <DeleteApproval id={row.id} label={`${row.person} · ${row.card}`} />
@@ -327,14 +348,15 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             ))}
           </ul>
         ) : (
-          <p className="mt-5 text-[12.5px] text-sage-dim">
-            None recorded yet. Add them here, or type them straight into the Conversions tab.
+          <p className="plain mt-6">
+            None recorded yet. Add one here, or type it straight into the Conversions tab of your
+            sheet.
           </p>
         )}
       </section>
 
       {/* Lead capture, only while the form is switched on */}
-      {capture && stats ? <LeadsPanel rows={leadRows} total={submissions.length} /> : null}
+      {capture ? <LeadsPanel rows={leadRows} total={submissions.length} /> : null}
     </div>
   );
 }
@@ -343,9 +365,7 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return (
     <th
       scope="col"
-      className={`label-micro pb-2.5 font-medium ${align === 'right' ? 'text-right' : 'text-left'} ${
-        align === 'right' ? 'pr-4 last:pr-0' : 'pr-4'
-      }`}
+      className={`label-cap pb-3 pr-4 ${align === 'right' ? 'text-right' : 'text-left'}`}
     >
       {children}
     </th>
@@ -355,25 +375,24 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
 function StatCard({
   label,
   value,
-  note,
-  noteColor,
+  unit,
+  plain,
   delay = 0,
 }: {
   label: string;
   value: string;
-  note: string;
-  noteColor?: string;
+  unit: string;
+  plain: string;
   delay?: number;
 }) {
   return (
-    <div className="rise panel-sm p-5" style={{ animationDelay: `${delay}ms` }}>
-      <p className="label-micro">{label}</p>
-      <div className="mt-2.5 flex flex-wrap items-baseline gap-3">
-        <span className="tnum font-display text-[38px] leading-none">{value}</span>
-        <span className="text-[12.5px]" style={{ color: noteColor ?? 'var(--color-sage)' }}>
-          {note}
-        </span>
+    <div className="rise panel p-6 sm:p-7" style={{ animationDelay: `${delay}ms` }}>
+      <h3 className="label-cap">{label}</h3>
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="tnum font-display text-[52px] leading-none sm:text-[58px]">{value}</span>
+        {unit ? <span className="text-[19px] text-ink-soft">{unit}</span> : null}
       </div>
+      <p className="plain mt-3">{plain}</p>
     </div>
   );
 }
