@@ -107,10 +107,9 @@ export const submissionPatchSchema = z.object({
 
 /** An approved application, recorded by hand on the dashboard or in the sheet. */
 export const conversionInputSchema = z.object({
+  // slug + usr identify the link, and the link supplies the person and the card.
   slug: slugSchema,
   usr: usrSchema.optional().default(''),
-  assignee: z.string().trim().max(120).optional().default(''),
-  card: z.string().trim().min(1, 'Card name is required').max(120),
   // Coerced because it arrives as a string from a number input, and the sheet
   // may hold it either way.
   amount: z.coerce

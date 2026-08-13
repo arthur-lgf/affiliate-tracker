@@ -359,15 +359,19 @@ export function affiliateHref(usr: string, period?: Period): string {
   return period && period !== 'month' ? `${base}?period=${period}` : base;
 }
 
-/** usr → display name, newest link wins so a rename shows the current name. */
-function nameIndex(links: AffiliateLink[], conversions: Conversion[]): Map<string, string> {
+/**
+ * usr → display name, newest link wins so a rename shows the current name.
+ *
+ * Links are the only source: a conversion stores just the tracking key, so a
+ * person whose links have all been deleted shows as their bare `usr` rather
+ * than a name frozen at the time of the sale. That is the honest reading — the
+ * name lives in one place and one place only.
+ */
+function nameIndex(links: AffiliateLink[]): Map<string, string> {
   const names = new Map<string, string>();
   const newestFirst = [...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   for (const link of newestFirst) {
     if (link.usr && link.assignee && !names.has(link.usr)) names.set(link.usr, link.assignee);
-  }
-  for (const row of conversions) {
-    if (row.usr && row.assignee && !names.has(row.usr)) names.set(row.usr, row.assignee);
   }
   return names;
 }
@@ -389,6 +393,34 @@ function cardIndex(links: AffiliateLink[]): { exact: Map<string, string>; bySlug
   return { exact, bySlug };
 }
 
+type CardIndex = ReturnType<typeof cardIndex>;
+
+/** The card a row belongs to: its own link, else any link on the same slug, else the slug. */
+function cardFor(cards: CardIndex, row: { slug: string; usr: string }): string {
+  return cards.exact.get(linkKey(row)) ?? cards.bySlug.get(row.slug) ?? row.slug;
+}
+
+/** A conversion with the person and card its link supplies, for display. */
+export type ConversionView = Conversion & { person: string; card: string };
+
+/**
+ * Decorate raw conversions for listing. The name and card are resolved through
+ * the links here rather than stored on the row, so a list and the table above it
+ * can never label the same sale differently.
+ */
+export function describeConversions(
+  links: AffiliateLink[],
+  conversions: Conversion[],
+): ConversionView[] {
+  const names = nameIndex(links);
+  const cards = cardIndex(links);
+  return conversions.map((row) => ({
+    ...row,
+    person: row.usr ? names.get(row.usr) ?? row.usr : 'House',
+    card: cardFor(cards, row),
+  }));
+}
+
 /**
  * Visits, approvals and earnings rolled up per person per card.
  *
@@ -408,7 +440,7 @@ export function buildEarnings(
     groupBy = 'person',
   }: { period?: Period; usr?: string; groupBy?: GroupBy } = {},
 ): EarningsView {
-  const names = nameIndex(links, conversions);
+  const names = nameIndex(links);
   const cards = cardIndex(links);
   const start = periodStart(period);
   const matchesPerson = (rowUsr: string) => !usr || (rowUsr || HOUSE_KEY) === usr;
@@ -447,16 +479,17 @@ export function buildEarnings(
     if (!matchesPerson(visit.usr)) continue;
     const day = dayKey(visit.createdAt);
     if (start && day < start) continue;
-    const card =
-      cards.exact.get(linkKey(visit)) ?? cards.bySlug.get(visit.slug) ?? visit.slug;
-    rowFor(visit.usr, card).visits += 1;
+    rowFor(visit.usr, cardFor(cards, visit)).visits += 1;
   }
 
   for (const conversion of conversions) {
     if (!matchesPerson(conversion.usr)) continue;
     const day = conversion.approvedOn.slice(0, 10);
     if (start && day < start) continue;
-    const card = conversion.card || cards.exact.get(linkKey(conversion)) || conversion.slug;
+    // The card comes from the link the sale came through — the row itself only
+    // stores (slug, usr). Renaming a campaign therefore renames its historic
+    // earnings too, which is the trade for having one name in one place.
+    const card = cardFor(cards, conversion);
     const row = rowFor(conversion.usr, card);
     row.approved += 1;
     row.earnings += conversion.amount;

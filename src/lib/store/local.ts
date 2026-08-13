@@ -2,6 +2,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
+import { conversionFromCells, conversionToCells } from './conversion-row';
+import { makeRowId, parseRowId, rowFingerprint } from './row-id';
+
+/**
+ * On disk a conversion has no id — the JSON mirrors the sheet's columns exactly,
+ * so the same row reads the same way whichever store is active.
+ */
+type StoredConversion = Omit<Conversion, 'id'>;
 import type {
   AffiliateLink,
   Conversion,
@@ -180,29 +188,39 @@ export function createLocalStore(): Store {
     },
 
     async listConversions() {
-      return readFile<Conversion>(FILES.conversions);
+      const rows = await readFile<StoredConversion>(FILES.conversions);
+      // Same addressing as the sheet: position plus a fingerprint of the
+      // content, so the two stores behave identically.
+      return rows.map((row, index) => {
+        const cells = conversionToCells(row);
+        return conversionFromCells(cells, makeRowId(index, cells));
+      });
     },
 
     async addConversion(input: NewConversion) {
       return withLock(async () => {
-        const rows = await readFile<Conversion>(FILES.conversions);
-        const row: Conversion = {
-          ...input,
-          id: randomUUID(),
-          createdAt: new Date().toISOString(),
-        };
+        const rows = await readFile<StoredConversion>(FILES.conversions);
+        const row: StoredConversion = { ...input, createdAt: new Date().toISOString() };
         rows.push(row);
         await writeFile(FILES.conversions, rows);
-        return row;
+        const cells = conversionToCells(row);
+        return conversionFromCells(cells, makeRowId(rows.length - 1, cells));
       });
     },
 
     async deleteConversion(id: string) {
       return withLock(async () => {
-        const rows = await readFile<Conversion>(FILES.conversions);
-        const next = rows.filter((row) => row.id !== id);
-        if (next.length === rows.length) throw new StoreNotFoundError('Approval not found');
-        await writeFile(FILES.conversions, next);
+        const target = parseRowId(id);
+        if (!target) throw new StoreNotFoundError('Approval not found');
+        const rows = await readFile<StoredConversion>(FILES.conversions);
+        const row = rows[target.position];
+        if (!row || rowFingerprint(conversionToCells(row)) !== target.fingerprint) {
+          throw new StoreConflictError(
+            'That approval changed while the page was open. Reload and try again.',
+          );
+        }
+        rows.splice(target.position, 1);
+        await writeFile(FILES.conversions, rows);
       });
     },
 

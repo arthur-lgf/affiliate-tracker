@@ -6,6 +6,7 @@ import { EarningsChart } from '@/components/EarningsChart';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import {
   buildEarnings,
+  describeConversions,
   formatMoney,
   formatPercent,
   HOUSE_KEY,
@@ -82,9 +83,10 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   const name = person?.name ?? usr;
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '30 days';
 
-  const theirApprovals = conversions
-    .filter((row) => (row.usr || HOUSE_KEY) === personKey)
-    .slice(0, RECENT_APPROVALS);
+  const theirApprovals = describeConversions(
+    links,
+    conversions.filter((row) => (row.usr || HOUSE_KEY) === personKey).slice(0, RECENT_APPROVALS),
+  );
 
   const theirLinks = links.filter((link) => (link.usr || HOUSE_KEY) === personKey);
 

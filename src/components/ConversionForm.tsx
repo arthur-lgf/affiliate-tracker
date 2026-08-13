@@ -61,11 +61,11 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
       const res = await fetch('/api/conversions', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        // Just the link — the person and the card are read back through it, so
+        // they are never stored twice and never disagree.
         body: JSON.stringify({
           slug: target.slug,
           usr: target.usr,
-          assignee: target.assignee,
-          card: target.card,
           amount: amount.trim() === '' ? 0 : amount,
           approvedOn,
           notes,

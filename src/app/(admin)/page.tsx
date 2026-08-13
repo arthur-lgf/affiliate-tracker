@@ -10,6 +10,7 @@ import {
   affiliateHref,
   buildEarnings,
   buildStats,
+  describeConversions,
   formatDateTime,
   formatMoney,
   formatPercent,
@@ -86,7 +87,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     label: `${link.assignee || 'House'} · ${link.campaign || link.slug}`,
   }));
 
-  const recentApprovals = conversions.slice(0, RECENT_APPROVALS);
+  // Person and card are resolved through each row's link, not stored on it.
+  const recentApprovals = describeConversions(links, conversions.slice(0, RECENT_APPROVALS));
 
   const leadRows: LeadRow[] = capture
     ? submissions.slice(0, RECENT_LIMIT).map((row) => ({
@@ -308,7 +310,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">
-                    {row.assignee || 'House'} · {row.card}
+                    {row.person} · {row.card}
                   </span>
                   {row.notes ? (
                     <span className="mt-0.5 block truncate text-[11.5px] text-sage-dim">
@@ -320,7 +322,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 <span className="tnum w-[86px] text-right font-display text-lg">
                   {formatMoney(row.amount)}
                 </span>
-                <DeleteApproval id={row.id} label={`${row.assignee || 'House'} · ${row.card}`} />
+                <DeleteApproval id={row.id} label={`${row.person} · ${row.card}`} />
               </li>
             ))}
           </ul>

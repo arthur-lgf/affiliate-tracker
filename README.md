@@ -81,7 +81,7 @@ Three tabs, created automatically:
 
 - **Links** — `id, created_at, slug, usr, assignee, assignee_email, campaign, destination, headline, subheadline, cta_label, require_phone, pass_usr_param, active, notes`
 - **Visits** — `id, created_at, slug, usr, referrer, user_agent, ip`
-- **Conversions** — `id, created_at, approved_on, slug, usr, assignee, card, amount, notes`
+- **Conversions** — `created_at, approved_on, slug, usr, amount, notes`
 - **Submissions** — `id, created_at, slug, usr, assignee, campaign, full_name, email, phone, destination, referrer, user_agent, ip, status` (only written while the capture form is on)
 
 You can read, filter and pivot these rows in Sheets freely. Don't reorder or rename the
@@ -112,6 +112,14 @@ disagree — they are the same rollup grouped one level apart.
 - **Approved** and **Total earnings** come from the Conversions tab. Nothing produces
   them automatically — record them with *Record an approval*, or type them into the
   tab. That is also the shape a network postback would write if one is wired up later.
+
+A conversion row stores only `slug` + `usr` — the link those point at supplies the
+person's name and the card, so neither is written twice and they can never disagree.
+Renaming a campaign therefore renames its historic earnings too, and deleting a link
+leaves its old sales showing the bare slug and tracking key. That is the trade for one
+name in one place. The tab has **no id column**: a row is addressed by its position plus
+a fingerprint of its contents, so a Remove clicked after someone inserted a row in the
+sheet is refused rather than applied to whatever shifted into that slot.
 - Filter by **Today / 7 days / 30 days / All time** and by **person**. Both live in the
   URL, so a filtered view can be bookmarked or shared. The periods are rolling windows,
   not calendar ones — "7 days" is the last seven days including today.

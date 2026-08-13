@@ -86,19 +86,22 @@ export type NewVisit = Omit<Visit, 'id' | 'createdAt'>;
  *
  * Keyed to a link (slug + usr) rather than to a visitor: with the capture form
  * off there is no lead row to attach it to, and the affiliate network reports by
- * tracking key, not by person. `card` is captured on the row rather than read
- * through the link, so renaming a campaign later doesn't silently rewrite what
- * historic earnings were credited to.
+ * tracking key, not by person. The person's name and the card are NOT stored —
+ * the link that (slug, usr) points at already holds both, and a second copy is
+ * just a second version of the truth waiting to disagree with the first.
  */
 export type Conversion = {
+  /**
+   * Derived, never stored: `"<row>:<fingerprint>"`. The tab has no id column —
+   * it is meant to be typed into — so a row is addressed by where it sits plus
+   * a hash of what it says. See store/row-id.ts.
+   */
   id: string;
   createdAt: string;
   /** Date the application was approved (YYYY-MM-DD) — what every figure is bucketed by. */
   approvedOn: string;
   slug: string;
   usr: string;
-  assignee: string;
-  card: string;
   /** Payout in whole currency units. */
   amount: number;
   notes: string;

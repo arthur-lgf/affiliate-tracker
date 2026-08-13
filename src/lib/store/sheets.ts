@@ -3,9 +3,10 @@ import { google, type sheets_v4 } from 'googleapis';
 import { SHEET_HEADERS, SHEET_TABS } from '../config';
 import { resolveGoogleCredentials } from '../google-credentials';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
+import { conversionFromCells, conversionToCells } from './conversion-row';
+import { makeRowId, parseRowId, rowFingerprint } from './row-id';
 import type {
   AffiliateLink,
-  Conversion,
   NewAffiliateLink,
   NewConversion,
   NewSubmission,
@@ -138,8 +139,11 @@ async function ensureHeaderRow(tab: TabName): Promise<boolean> {
     throw new StoreConfigError(
       `The "${SHEET_TABS[tab]}" tab does not match the expected layout: column ` +
         `${columnLetter(plan.index + 1)} is headed "${plan.found}" but should be ` +
-        `"${expected[plan.index]}". Restore that header (or move your own column to the right of ` +
-        'the last one) — writing to a shifted layout would file values under the wrong headings.',
+        `"${expected[plan.index]}". Restore that header, or move your own column to the right of ` +
+        `the last one. If this tab was created by an earlier version of the app and holds nothing ` +
+        `you need, delete the whole "${SHEET_TABS[tab]}" tab and it will be recreated. ` +
+        'Writing to a shifted layout would file values under the wrong headings, so this is ' +
+        'refused rather than guessed.',
     );
   }
   if (plan.action === 'ok') return false;
@@ -424,50 +428,6 @@ function cellRange(tab: TabName, column: string, rowNumber: number): string {
 
 const STATUS_COLUMN = columnLetter(SHEET_HEADERS.submissions.indexOf('status') + 1);
 
-/**
- * Amounts are typed by hand as often as they are written by us, so "1,250.00",
- * "$1,250" and "1 250" all have to land on the same number. Anything that isn't
- * a number at all reads as 0 rather than NaN — a bad cell must not poison a
- * whole earnings column.
- */
-function amountFromCell(value: string): number {
-  const cleaned = (value ?? '').replace(/[^0-9.-]/g, '');
-  const parsed = Number.parseFloat(cleaned);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function conversionFromRow(row: string[]): Conversion {
-  const [id, createdAt, approvedOn, slug, usr, assignee, card, amount, notes] = row;
-  return {
-    id,
-    createdAt,
-    // Fall back to the row's own creation date so a blank approval date still
-    // buckets somewhere sensible instead of dropping out of every period.
-    approvedOn: (approvedOn || createdAt || '').slice(0, 10),
-    slug: normalizeKey(slug),
-    usr: normalizeKey(usr),
-    assignee,
-    card,
-    amount: amountFromCell(amount),
-    notes,
-  };
-}
-
-function conversionToRow(row: Conversion): string[] {
-  return [
-    row.id,
-    row.createdAt,
-    row.approvedOn,
-    row.slug,
-    row.usr,
-    row.assignee,
-    row.card,
-    // Written bare so the cell stays a number in the sheet and SUM works.
-    String(row.amount),
-    row.notes,
-  ];
-}
-
 function visitFromRow(row: string[]): Visit {
   const [id, createdAt, slug, usr, referrer, userAgent, ip] = row;
   return { id, createdAt, slug, usr, referrer, userAgent, ip };
@@ -663,27 +623,41 @@ export function createSheetsStore(): Store {
     },
 
     async listConversions() {
-      return (await readRows('conversions')).map(conversionFromRow);
+      const numbered = await readNumberedRows('conversions');
+      return numbered.map((row) =>
+        conversionFromCells(row.cells, makeRowId(row.rowNumber, row.cells)),
+      );
     },
 
     async addConversion(input: NewConversion) {
-      const row: Conversion = {
-        ...input,
-        id: randomUUID(),
-        createdAt: new Date().toISOString(),
-      };
-      await appendRow('conversions', conversionToRow(row));
-      return row;
+      const cells = conversionToCells({ ...input, createdAt: new Date().toISOString() });
+      await appendRow('conversions', cells);
+      // The row number is only known after a re-read; the caller uses the
+      // returned row for a confirmation message, not for addressing.
+      return conversionFromCells(cells, '');
     },
 
     async deleteConversion(id: string) {
-      const numbered = await readNumberedRows('conversions');
-      const match = numbered.find((row) => row.cells[0] === id);
-      if (!match) throw new StoreNotFoundError('Approval not found');
+      const target = parseRowId(id);
+      if (!target) throw new StoreNotFoundError('Approval not found');
+
       const sheets = await getClient();
+      // Resolved before the content check so that check is the last thing to
+      // happen before the delete, keeping the window between them as small as
+      // it can be.
       const tabId = await sheetIdForTab('conversions');
-      // Re-check last, after the extra round trip above widened the window.
-      await assertRowStillHolds('conversions', match.rowNumber, id);
+
+      const numbered = await readNumberedRows('conversions');
+      const match = numbered.find((row) => row.rowNumber === target.position);
+      // The fingerprint is the guard: with no id column, position alone would
+      // happily delete whatever row has shifted into that slot since the page
+      // was rendered.
+      if (!match || rowFingerprint(match.cells) !== target.fingerprint) {
+        throw new StoreConflictError(
+          'That approval changed in the sheet while the page was open. Reload and try again.',
+        );
+      }
+
       await sheets.spreadsheets.batchUpdate({
         spreadsheetId: spreadsheetId(),
         requestBody: {

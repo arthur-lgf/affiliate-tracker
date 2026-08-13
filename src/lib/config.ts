@@ -77,17 +77,7 @@ export const SHEET_HEADERS = {
    * the tab, which is also the shape a network postback would write if one is
    * wired up later.
    */
-  conversions: [
-    'id',
-    'created_at',
-    'approved_on',
-    'slug',
-    'usr',
-    'assignee',
-    'card',
-    'amount',
-    'notes',
-  ],
+  conversions: ['created_at', 'approved_on', 'slug', 'usr', 'amount', 'notes'],
 } as const;
 
 /**
