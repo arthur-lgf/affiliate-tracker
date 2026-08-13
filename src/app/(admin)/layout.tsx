@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { MobileTabs, Nav } from '@/components/Nav';
+import { SignOutButton } from '@/components/SignOutButton';
+import { authConfigured } from '@/lib/auth';
 import { storageStatus } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
@@ -55,6 +57,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               />
               {badge.text}
             </span>
+            {/* Only when there is a session to end. With no password set the
+                admin surface is open and "Sign out" would do nothing. */}
+            {authConfigured() ? <SignOutButton /> : null}
           </div>
         </div>
       </header>

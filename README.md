@@ -16,6 +16,7 @@ http://localhost:3000/cashback?usr=arthur                                     �
 | One person | `/affiliate/<usr>` | The same numbers broken down per card, and the approvals behind them |
 | Affiliate links | `/links` | Every link with its shareable URL, assignee and visits; pause / delete |
 | Create link | `/links/new` | Build a link: destination + slug + assignee, with a live URL preview |
+| Sign in | `/login` | Username and password, once a password is set |
 | Landing page | `/<slug>?usr=<person>` | The client's fill-up form, then a redirect to the destination |
 
 ## Run it
@@ -163,6 +164,32 @@ which is when it was actually earned — so a period can show approvals with no 
 A click carrying an unknown `?usr=` gets its own row rather than being credited to
 someone else. A row you don't recognise means a stale link is in circulation.
 
+## Signing in
+
+Set `ADMIN_PASSWORD` and the admin surface asks for a **username and password** at
+`/login`. `ADMIN_USER` is the username and defaults to `admin`. That pair *is* the
+account — there is no user table, no sign-up, no password reset, and no third-party
+sign-in button, because there is nobody to sign up and no identity provider to defer to.
+
+A successful sign-in sets a signed, `httpOnly` cookie that lasts `SESSION_HOURS` (default
+12). It is signed with `ADMIN_PASSWORD`, so **changing the password signs everyone out** —
+which is what you want when someone leaves. Set `SESSION_SECRET` only if you need
+sessions to survive a password change instead.
+
+Following a gated link while signed out remembers where you were going, so
+`/affiliate/mark?period=week` lands there after you sign in rather than dumping you on the
+dashboard. Only paths on this site are honoured: `//evil.example`, `https://evil.example`
+and `/\evil.example` all collapse to `/`, or the sign-in form would be an open redirect
+with a password prompt attached.
+
+Sign-in is rate limited to **8 attempts per IP per 10 minutes**, and a wrong username and
+a wrong password give the same message — saying which half was wrong tells an attacker
+when they have found the username.
+
+**HTTP Basic still works** for `curl -u user:pass` and any script written against the old
+behaviour. What no longer happens is the browser's own credential box: no
+`WWW-Authenticate` challenge is sent, so a browser gets the sign-in page instead.
+
 ## Lead status
 
 *Only applies while `CAPTURE_FORM=on`.*
@@ -204,9 +231,10 @@ and the destination is forwarded exactly as you entered it.
 
 - **Set `ADMIN_PASSWORD`.** The dashboard lists lead names, emails and phone numbers.
   With it set, `/`, `/links*`, `/affiliate/*`, `/api/links*`, `/api/leads*` and
-  `/api/conversions*` require HTTP Basic auth; affiliate links stay public. A production build with no password returns 503 on the
-  admin pages rather than exposing them — set `ALLOW_OPEN_ADMIN=true` to override that
-  deliberately. Development is always open so `npm run dev` needs no configuration.
+  `/api/conversions*` send you to `/login`; affiliate links stay public. A production
+  build with no password returns 503 on the admin pages rather than exposing them — set
+  `ALLOW_OPEN_ADMIN=true` to override that deliberately. Development is always open so
+  `npm run dev` needs no configuration.
 - **Set `NEXT_PUBLIC_BASE_URL`** to your public origin (e.g. `https://go.yourdomain.com`)
   so the copyable links aren't `localhost`.
 - Landing pages are marked `noindex` — they're interstitials, not content.
