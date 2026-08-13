@@ -81,6 +81,31 @@ export type Visit = {
 
 export type NewVisit = Omit<Visit, 'id' | 'createdAt'>;
 
+/**
+ * An approved application and what it paid.
+ *
+ * Keyed to a link (slug + usr) rather than to a visitor: with the capture form
+ * off there is no lead row to attach it to, and the affiliate network reports by
+ * tracking key, not by person. `card` is captured on the row rather than read
+ * through the link, so renaming a campaign later doesn't silently rewrite what
+ * historic earnings were credited to.
+ */
+export type Conversion = {
+  id: string;
+  createdAt: string;
+  /** Date the application was approved (YYYY-MM-DD) — what every figure is bucketed by. */
+  approvedOn: string;
+  slug: string;
+  usr: string;
+  assignee: string;
+  card: string;
+  /** Payout in whole currency units. */
+  amount: number;
+  notes: string;
+};
+
+export type NewConversion = Omit<Conversion, 'id' | 'createdAt'>;
+
 export interface Store {
   /** Which backend is actually serving requests — surfaced in the UI. */
   readonly kind: 'sheets' | 'local';
@@ -96,4 +121,8 @@ export interface Store {
 
   listVisits(): Promise<Visit[]>;
   addVisit(input: NewVisit): Promise<Visit>;
+
+  listConversions(): Promise<Conversion[]>;
+  addConversion(input: NewConversion): Promise<Conversion>;
+  deleteConversion(id: string): Promise<void>;
 }

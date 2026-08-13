@@ -282,6 +282,27 @@
     cursor: not-allowed;
   }
 
+  /* A table row that opens something. The whole row lights up, but only the
+     cell holding the link is clickable — a row-wide click target would swallow
+     any other control that later lands in the row. */
+  .row-link:hover {
+    background: var(--color-pine-hover);
+  }
+
+  .row-link-arrow {
+    opacity: 0;
+    transition:
+      opacity 140ms ease,
+      transform 140ms ease;
+    display: inline-block;
+  }
+
+  .row-link:hover .row-link-arrow,
+  .row-link a:focus-visible .row-link-arrow {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+
   /* Lead status. Mustard is the "look at this" colour and cream is "selected",
      so a registered lead gets moss — done, settled, not asking for anything. */
   .pill-status {

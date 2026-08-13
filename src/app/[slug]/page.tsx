@@ -1,8 +1,12 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
+import { notFound, redirect } from 'next/navigation';
 import { LeadForm } from '@/components/LeadForm';
 import { initialsOf } from '@/lib/analytics';
+import { captureFormEnabled } from '@/lib/config';
 import { resolveLink } from '@/lib/store';
+import { destinationUrl } from '@/lib/url';
+import { logVisit } from '@/lib/visit-log';
 import { normalizeKey } from '@/lib/validate';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +85,22 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
   }
 
   const { link, assigned } = resolved;
+
+  // Pass-through: no interstitial, straight to the merchant.
+  //
+  // Deliberately outside the try/catch above — redirect() signals by throwing,
+  // so a catch around it would swallow the redirect and render the error notice
+  // instead of forwarding the visitor.
+  if (!captureFormEnabled()) {
+    // Only a key that exists in the Links tab is ever appended to the merchant
+    // URL — a visitor must not be able to inject an arbitrary value into it.
+    const attributionKey = assigned ? usr : link.usr;
+    // The raw ?usr= is what gets logged, so an unknown or stale key shows up on
+    // the dashboard rather than being quietly folded into the house row.
+    await logVisit({ headers: await headers() }, { slug: link.slug, usr });
+    redirect(destinationUrl(link, attributionKey));
+  }
+
   const headline = link.headline || link.campaign;
   const subheadline =
     link.subheadline ||

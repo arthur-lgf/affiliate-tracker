@@ -5,7 +5,9 @@ import { resolveGoogleCredentials } from '../google-credentials';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import type {
   AffiliateLink,
+  Conversion,
   NewAffiliateLink,
+  NewConversion,
   NewSubmission,
   NewVisit,
   Store,
@@ -422,6 +424,50 @@ function cellRange(tab: TabName, column: string, rowNumber: number): string {
 
 const STATUS_COLUMN = columnLetter(SHEET_HEADERS.submissions.indexOf('status') + 1);
 
+/**
+ * Amounts are typed by hand as often as they are written by us, so "1,250.00",
+ * "$1,250" and "1 250" all have to land on the same number. Anything that isn't
+ * a number at all reads as 0 rather than NaN — a bad cell must not poison a
+ * whole earnings column.
+ */
+function amountFromCell(value: string): number {
+  const cleaned = (value ?? '').replace(/[^0-9.-]/g, '');
+  const parsed = Number.parseFloat(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function conversionFromRow(row: string[]): Conversion {
+  const [id, createdAt, approvedOn, slug, usr, assignee, card, amount, notes] = row;
+  return {
+    id,
+    createdAt,
+    // Fall back to the row's own creation date so a blank approval date still
+    // buckets somewhere sensible instead of dropping out of every period.
+    approvedOn: (approvedOn || createdAt || '').slice(0, 10),
+    slug: normalizeKey(slug),
+    usr: normalizeKey(usr),
+    assignee,
+    card,
+    amount: amountFromCell(amount),
+    notes,
+  };
+}
+
+function conversionToRow(row: Conversion): string[] {
+  return [
+    row.id,
+    row.createdAt,
+    row.approvedOn,
+    row.slug,
+    row.usr,
+    row.assignee,
+    row.card,
+    // Written bare so the cell stays a number in the sheet and SUM works.
+    String(row.amount),
+    row.notes,
+  ];
+}
+
 function visitFromRow(row: string[]): Visit {
   const [id, createdAt, slug, usr, referrer, userAgent, ip] = row;
   return { id, createdAt, slug, usr, referrer, userAgent, ip };
@@ -614,6 +660,47 @@ export function createSheetsStore(): Store {
         requestBody: { values: [[next.status]] },
       });
       return next;
+    },
+
+    async listConversions() {
+      return (await readRows('conversions')).map(conversionFromRow);
+    },
+
+    async addConversion(input: NewConversion) {
+      const row: Conversion = {
+        ...input,
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+      };
+      await appendRow('conversions', conversionToRow(row));
+      return row;
+    },
+
+    async deleteConversion(id: string) {
+      const numbered = await readNumberedRows('conversions');
+      const match = numbered.find((row) => row.cells[0] === id);
+      if (!match) throw new StoreNotFoundError('Approval not found');
+      const sheets = await getClient();
+      const tabId = await sheetIdForTab('conversions');
+      // Re-check last, after the extra round trip above widened the window.
+      await assertRowStillHolds('conversions', match.rowNumber, id);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId(),
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: tabId,
+                  dimension: 'ROWS',
+                  startIndex: match.rowNumber - 1, // 0-based, inclusive
+                  endIndex: match.rowNumber, // exclusive
+                },
+              },
+            },
+          ],
+        },
+      });
     },
 
     async listVisits() {

@@ -43,6 +43,9 @@ function createUnavailableStore(message: string): Store {
     updateSubmission: fail,
     listVisits: fail,
     addVisit: fail,
+    listConversions: fail,
+    addConversion: fail,
+    deleteConversion: fail,
   };
 }
 

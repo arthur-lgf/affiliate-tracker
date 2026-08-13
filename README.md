@@ -80,15 +80,52 @@ silently overridden by a stray file.
 Three tabs, created automatically:
 
 - **Links** — `id, created_at, slug, usr, assignee, assignee_email, campaign, destination, headline, subheadline, cta_label, require_phone, pass_usr_param, active, notes`
-- **Submissions** — `id, created_at, slug, usr, assignee, campaign, full_name, email, phone, destination, referrer, user_agent, ip, status`
 - **Visits** — `id, created_at, slug, usr, referrer, user_agent, ip`
+- **Conversions** — `id, created_at, approved_on, slug, usr, assignee, card, amount, notes`
+- **Submissions** — `id, created_at, slug, usr, assignee, campaign, full_name, email, phone, destination, referrer, user_agent, ip, status` (only written while the capture form is on)
 
 You can read, filter and pivot these rows in Sheets freely. Don't reorder or rename the
 header columns — the app maps by position. Adding columns of your own to the *right* of
 the last one is fine; putting one in the middle is refused with an error rather than
 silently filing values under the wrong headings.
 
+## What a click does
+
+A visit is recorded server-side and the visitor is **forwarded straight to the
+destination** — no interstitial, no form. `pass_usr_param` still appends the assignee's
+key, so `/cashback?usr=arthur` lands on `…?src=714025&subid=arthur`.
+
+Paused and unknown links are unchanged: a paused link shows the paused notice rather
+than forwarding, and an unknown slug is a 404.
+
+**The capture form is hidden, not deleted.** Set `CAPTURE_FORM=on` and the landing page,
+its form, the Submissions tab and the leads panel all come back with their data intact.
+
+## Dashboard
+
+One row per person: **Person · Visits · Approved · Total earnings**, with everyone's
+cards folded together. **Click a person** to open their own page, which breaks the same
+numbers down **per card** and lists the approvals behind them. The two views cannot
+disagree — they are the same rollup grouped one level apart.
+
+- **Visits** are counted when the click happens.
+- **Approved** and **Total earnings** come from the Conversions tab. Nothing produces
+  them automatically — record them with *Record an approval*, or type them into the
+  tab. That is also the shape a network postback would write if one is wired up later.
+- Filter by **Today / 7 days / 30 days / All time** and by **person**. Both live in the
+  URL, so a filtered view can be bookmarked or shared. The periods are rolling windows,
+  not calendar ones — "7 days" is the last seven days including today.
+
+Visits are bucketed by when the click happened, approvals by their approval date. An
+approval that lands three weeks after the click counts in the week it was approved,
+which is when it was actually earned — so a period can show approvals with no visits.
+
+A click carrying an unknown `?usr=` gets its own row rather than being credited to
+someone else. A row you don't recognise means a stale link is in circulation.
+
 ## Lead status
+
+*Only applies while `CAPTURE_FORM=on`.*
 
 Every captured lead is **pending** the moment the form is submitted. Nothing sets it —
 it's what a new lead is. **Registered** is only ever set by a person, either way round:
@@ -126,8 +163,8 @@ and the destination is forwarded exactly as you entered it.
 ## Before you deploy
 
 - **Set `ADMIN_PASSWORD`.** The dashboard lists lead names, emails and phone numbers.
-  With it set, `/`, `/links*`, `/api/links*` and `/api/leads*` require HTTP Basic auth;
-  landing pages and submissions stay public. A production build with no password returns 503 on the
+  With it set, `/`, `/links*`, `/affiliate/*`, `/api/links*`, `/api/leads*` and
+  `/api/conversions*` require HTTP Basic auth; affiliate links stay public. A production build with no password returns 503 on the
   admin pages rather than exposing them — set `ALLOW_OPEN_ADMIN=true` to override that
   deliberately. Development is always open so `npm run dev` needs no configuration.
 - **Set `NEXT_PUBLIC_BASE_URL`** to your public origin (e.g. `https://go.yourdomain.com`)

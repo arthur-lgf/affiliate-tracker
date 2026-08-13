@@ -1,4 +1,4 @@
-import type { AffiliateLink, Submission, Visit } from './types';
+import type { AffiliateLink, Conversion, Submission, Visit } from './types';
 
 export type DayBucket = { date: string; label: string; submissions: number; visits: number };
 
@@ -286,6 +286,266 @@ export function countsByLink(
     if (entry) entry.submissions += 1;
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Performance: one row per person per card                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Rolling windows, not calendar ones. "Week" is the last 7 days including
+ * today, not Monday-to-now — so a figure never collapses to almost nothing just
+ * because it happens to be Monday morning. The labels say days for that reason.
+ */
+export type Period = 'day' | 'week' | 'month' | 'all';
+
+export const PERIODS: { key: Period; label: string; days: number | null }[] = [
+  { key: 'day', label: 'Today', days: 1 },
+  { key: 'week', label: '7 days', days: 7 },
+  { key: 'month', label: '30 days', days: 30 },
+  { key: 'all', label: 'All time', days: null },
+];
+
+/** Earliest day key included by a period, or '' for all time. */
+export function periodStart(period: Period): string {
+  const days = PERIODS.find((p) => p.key === period)?.days ?? null;
+  if (days === null) return '';
+  return daysAgoKey(days - 1);
+}
+
+export type EarningsRow = {
+  key: string;
+  usr: string;
+  /** Display name for the assignee, or the house label. */
+  person: string;
+  /** The card, when grouping by card. Empty when grouping by person. */
+  card: string;
+  /** How many distinct cards are folded into this row. Person grouping only. */
+  cardCount: number;
+  visits: number;
+  approved: number;
+  earnings: number;
+  /** Approvals per visit, clamped — approvals can be logged without a tracked click. */
+  approvalRate: number;
+};
+
+/**
+ * Person rows on the dashboard, card rows on a person's own page. Same numbers,
+ * one level apart — so the two views can never disagree about a total.
+ */
+export type GroupBy = 'person' | 'card';
+
+export type EarningsDay = { date: string; label: string; visits: number; approved: number };
+
+export type EarningsView = {
+  rows: EarningsRow[];
+  totals: { visits: number; approved: number; earnings: number; approvalRate: number };
+  /** Everyone who has a link, a visit or an approval — the filter's options. */
+  people: { usr: string; name: string }[];
+  series: EarningsDay[];
+};
+
+/**
+ * Stands in for "no usr" wherever a key is needed — in a URL as well as in a
+ * map. The underscore is what makes it collision-proof: normalizeKey turns any
+ * non-alphanumeric into a dash, so no real tracking key can ever be `_house`.
+ */
+export const HOUSE_KEY = '_house';
+const HOUSE_LABEL = 'Unassigned / house';
+
+/** The URL for one person's own earnings page. */
+export function affiliateHref(usr: string, period?: Period): string {
+  const base = `/affiliate/${encodeURIComponent(usr || HOUSE_KEY)}`;
+  return period && period !== 'month' ? `${base}?period=${period}` : base;
+}
+
+/** usr → display name, newest link wins so a rename shows the current name. */
+function nameIndex(links: AffiliateLink[], conversions: Conversion[]): Map<string, string> {
+  const names = new Map<string, string>();
+  const newestFirst = [...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  for (const link of newestFirst) {
+    if (link.usr && link.assignee && !names.has(link.usr)) names.set(link.usr, link.assignee);
+  }
+  for (const row of conversions) {
+    if (row.usr && row.assignee && !names.has(row.usr)) names.set(row.usr, row.assignee);
+  }
+  return names;
+}
+
+/**
+ * slug+usr → card name. Falls back to any link on the same slug, so a click that
+ * arrived with an unknown ?usr= (which the landing page serves from the house
+ * row) still reports under the campaign it actually saw rather than a bare slug.
+ */
+function cardIndex(links: AffiliateLink[]): { exact: Map<string, string>; bySlug: Map<string, string> } {
+  const exact = new Map<string, string>();
+  const bySlug = new Map<string, string>();
+  const newestFirst = [...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  for (const link of newestFirst) {
+    const card = link.campaign || link.slug;
+    exact.set(linkKey(link), card);
+    if (!bySlug.has(link.slug)) bySlug.set(link.slug, card);
+  }
+  return { exact, bySlug };
+}
+
+/**
+ * Visits, approvals and earnings rolled up per person per card.
+ *
+ * Visits are bucketed by when the click happened and approvals by their approval
+ * date, which is the honest reading of each: an approval that lands three weeks
+ * after the click belongs to the week it was approved, since that is when it was
+ * earned. It also means a period can show approvals with no visits, so the rate
+ * is clamped rather than allowed past 100%.
+ */
+export function buildEarnings(
+  links: AffiliateLink[],
+  visits: Visit[],
+  conversions: Conversion[],
+  {
+    period = 'month',
+    usr = '',
+    groupBy = 'person',
+  }: { period?: Period; usr?: string; groupBy?: GroupBy } = {},
+): EarningsView {
+  const names = nameIndex(links, conversions);
+  const cards = cardIndex(links);
+  const start = periodStart(period);
+  const matchesPerson = (rowUsr: string) => !usr || (rowUsr || HOUSE_KEY) === usr;
+
+  const rows = new Map<string, EarningsRow>();
+  // Tracked per row rather than derived at the end, so a person's card count is
+  // the number of cards that actually had activity in this window.
+  const cardsSeen = new Map<string, Set<string>>();
+
+  const rowFor = (rowUsr: string, card: string): EarningsRow => {
+    const personKey = rowUsr || HOUSE_KEY;
+    const key = groupBy === 'card' ? card : personKey;
+    let row = rows.get(key);
+    if (!row) {
+      row = {
+        key,
+        usr: rowUsr,
+        person: rowUsr ? names.get(rowUsr) ?? rowUsr : HOUSE_LABEL,
+        card: groupBy === 'card' ? card : '',
+        cardCount: 0,
+        visits: 0,
+        approved: 0,
+        earnings: 0,
+        approvalRate: 0,
+      };
+      rows.set(key, row);
+    }
+    const seen = cardsSeen.get(key) ?? new Set<string>();
+    seen.add(card);
+    cardsSeen.set(key, seen);
+    row.cardCount = seen.size;
+    return row;
+  };
+
+  for (const visit of visits) {
+    if (!matchesPerson(visit.usr)) continue;
+    const day = dayKey(visit.createdAt);
+    if (start && day < start) continue;
+    const card =
+      cards.exact.get(linkKey(visit)) ?? cards.bySlug.get(visit.slug) ?? visit.slug;
+    rowFor(visit.usr, card).visits += 1;
+  }
+
+  for (const conversion of conversions) {
+    if (!matchesPerson(conversion.usr)) continue;
+    const day = conversion.approvedOn.slice(0, 10);
+    if (start && day < start) continue;
+    const card = conversion.card || cards.exact.get(linkKey(conversion)) || conversion.slug;
+    const row = rowFor(conversion.usr, card);
+    row.approved += 1;
+    row.earnings += conversion.amount;
+  }
+
+  const list = [...rows.values()];
+  for (const row of list) row.approvalRate = safeRate(row.approved, row.visits);
+  // Earnings first — the column the table is read for.
+  list.sort(
+    (a, b) =>
+      b.earnings - a.earnings ||
+      b.approved - a.approved ||
+      b.visits - a.visits ||
+      (groupBy === 'card' ? a.card.localeCompare(b.card) : a.person.localeCompare(b.person)),
+  );
+
+  const totals = list.reduce(
+    (acc, row) => ({
+      visits: acc.visits + row.visits,
+      approved: acc.approved + row.approved,
+      earnings: acc.earnings + row.earnings,
+      approvalRate: 0,
+    }),
+    { visits: 0, approved: 0, earnings: 0, approvalRate: 0 },
+  );
+  totals.approvalRate = safeRate(totals.approved, totals.visits);
+
+  // Everyone selectable, independent of the period — a filter whose options
+  // vanish when you narrow the dates is worse than useless.
+  const peopleKeys = new Set<string>();
+  for (const link of links) peopleKeys.add(link.usr || HOUSE_KEY);
+  for (const visit of visits) peopleKeys.add(visit.usr || HOUSE_KEY);
+  for (const row of conversions) peopleKeys.add(row.usr || HOUSE_KEY);
+  const people = [...peopleKeys]
+    .map((key) => ({
+      usr: key,
+      name: key === HOUSE_KEY ? HOUSE_LABEL : names.get(key) ?? key,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { rows: list, totals, people, series: buildEarningsSeries(visits, conversions, usr) };
+}
+
+/** Fixed 30-day daily shape for the chart. Follows the person filter, not the period. */
+export function buildEarningsSeries(
+  visits: Visit[],
+  conversions: Conversion[],
+  usr = '',
+  days = 30,
+): EarningsDay[] {
+  const matchesPerson = (rowUsr: string) => !usr || (rowUsr || HOUSE_KEY) === usr;
+  const visitsByDay = new Map<string, number>();
+  const approvedByDay = new Map<string, number>();
+
+  for (const visit of visits) {
+    if (!matchesPerson(visit.usr)) continue;
+    const key = dayKey(visit.createdAt);
+    visitsByDay.set(key, (visitsByDay.get(key) ?? 0) + 1);
+  }
+  for (const row of conversions) {
+    if (!matchesPerson(row.usr)) continue;
+    const key = row.approvedOn.slice(0, 10);
+    approvedByDay.set(key, (approvedByDay.get(key) ?? 0) + 1);
+  }
+
+  const series: EarningsDay[] = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const key = daysAgoKey(i);
+    series.push({
+      date: key,
+      label: new Date(`${key}T00:00:00Z`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      }),
+      visits: visitsByDay.get(key) ?? 0,
+      approved: approvedByDay.get(key) ?? 0,
+    });
+  }
+  return series;
+}
+
+/** Whole-unit currency for dense table cells: 1250 → "$1,250". */
+export function formatMoney(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return `$${rounded.toLocaleString('en-US', {
+    minimumFractionDigits: Number.isInteger(rounded) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function formatPercent(value: number, digits = 1): string {

@@ -8,6 +8,7 @@ export const RESERVED_SLUGS = new Set([
   'api',
   'links',
   'link',
+  'affiliate',
   'dashboard',
   'admin',
   'settings',
@@ -28,6 +29,7 @@ export const SHEET_TABS = {
   links: 'Links',
   submissions: 'Submissions',
   visits: 'Visits',
+  conversions: 'Conversions',
 } as const;
 
 /** Column order for each tab. Changing this changes the sheet layout. */
@@ -69,7 +71,35 @@ export const SHEET_HEADERS = {
     'status',
   ],
   visits: ['id', 'created_at', 'slug', 'usr', 'referrer', 'user_agent', 'ip'],
+  /**
+   * An approved application and what it paid. Nothing produces these
+   * automatically — they are entered on the dashboard or typed straight into
+   * the tab, which is also the shape a network postback would write if one is
+   * wired up later.
+   */
+  conversions: [
+    'id',
+    'created_at',
+    'approved_on',
+    'slug',
+    'usr',
+    'assignee',
+    'card',
+    'amount',
+    'notes',
+  ],
 } as const;
+
+/**
+ * Whether the affiliate link shows the lead-capture page before forwarding.
+ *
+ * Off by default: a click goes straight to the destination. The page, its form
+ * and the submissions tab are all left in place, so setting CAPTURE_FORM=on
+ * brings the old interstitial back with its data intact.
+ */
+export function captureFormEnabled(): boolean {
+  return process.env.CAPTURE_FORM === 'on';
+}
 
 /**
  * Sheets is in play when there's a spreadsheet id AND credentials from either

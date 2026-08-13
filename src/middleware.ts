@@ -78,9 +78,15 @@ export const config = {
     '/',
     '/links',
     '/links/:path*',
+    // Per-person earnings. Missing from this list, it would be a public page
+    // listing what every affiliate is paid.
+    '/affiliate',
+    '/affiliate/:path*',
     '/api/links',
     '/api/links/:path*',
     '/api/leads',
     '/api/leads/:path*',
+    '/api/conversions',
+    '/api/conversions/:path*',
   ],
 };

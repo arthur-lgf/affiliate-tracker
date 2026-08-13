@@ -1,10 +1,11 @@
 import { getStore } from './store';
-import type { AffiliateLink, Submission, Visit } from './types';
+import type { AffiliateLink, Conversion, Submission, Visit } from './types';
 
 export type LoadResult = {
   links: AffiliateLink[];
   submissions: Submission[];
   visits: Visit[];
+  conversions: Conversion[];
   error: string | null;
 };
 
@@ -16,10 +17,11 @@ export type LoadResult = {
 export async function loadAll(): Promise<LoadResult> {
   const store = getStore();
   try {
-    const [links, submissions, visits] = await Promise.all([
+    const [links, submissions, visits, conversions] = await Promise.all([
       store.listLinks(),
       store.listSubmissions(),
       store.listVisits(),
+      store.listConversions(),
     ]);
     // Newest first for display. Sorted into new arrays: a store adapter may be
     // handing back rows it also caches, and sorting those in place would change
@@ -28,6 +30,7 @@ export async function loadAll(): Promise<LoadResult> {
       links: [...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       submissions: [...submissions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       visits,
+      conversions: [...conversions].sort((a, b) => b.approvedOn.localeCompare(a.approvedOn)),
       error: null,
     };
   } catch (error) {
@@ -35,6 +38,7 @@ export async function loadAll(): Promise<LoadResult> {
       links: [],
       submissions: [],
       visits: [],
+      conversions: [],
       error: error instanceof Error ? error.message : 'Unknown storage error',
     };
   }

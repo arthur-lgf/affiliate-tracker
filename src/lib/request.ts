@@ -1,4 +1,9 @@
-import type { NextRequest } from 'next/server';
+/**
+ * Anything carrying request headers. Structural rather than `Request`, so a
+ * server component holding only the result of `headers()` can use these too —
+ * which is how the pass-through redirect logs a click without a route handler.
+ */
+type HeaderSource = { headers: Headers };
 
 /**
  * Best-effort client IP.
@@ -8,7 +13,7 @@ import type { NextRequest } from 'next/server';
  * fully attacker-controlled when the app is not actually behind a proxy. Treat
  * the result as a spam-throttling hint, never as identity.
  */
-export function clientIp(request: NextRequest | Request): string {
+export function clientIp(request: HeaderSource): string {
   const headers = request.headers;
   const platform =
     headers.get('x-vercel-forwarded-for') ??
@@ -21,11 +26,11 @@ export function clientIp(request: NextRequest | Request): string {
   return '';
 }
 
-export function userAgent(request: NextRequest | Request): string {
+export function userAgent(request: HeaderSource): string {
   return (request.headers.get('user-agent') ?? '').slice(0, 400);
 }
 
-export function referrer(request: NextRequest | Request): string {
+export function referrer(request: HeaderSource): string {
   return (request.headers.get('referer') ?? '').slice(0, 400);
 }
 

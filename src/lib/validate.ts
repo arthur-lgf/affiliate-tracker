@@ -105,6 +105,27 @@ export const submissionPatchSchema = z.object({
   status: z.enum(LEAD_STATUSES),
 });
 
+/** An approved application, recorded by hand on the dashboard or in the sheet. */
+export const conversionInputSchema = z.object({
+  slug: slugSchema,
+  usr: usrSchema.optional().default(''),
+  assignee: z.string().trim().max(120).optional().default(''),
+  card: z.string().trim().min(1, 'Card name is required').max(120),
+  // Coerced because it arrives as a string from a number input, and the sheet
+  // may hold it either way.
+  amount: z.coerce
+    .number({ invalid_type_error: 'Enter an amount' })
+    .min(0, 'Amount cannot be negative')
+    .max(1_000_000, 'That amount looks wrong')
+    .optional()
+    .default(0),
+  approvedOn: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-08-13'),
+  notes: z.string().trim().max(300).optional().default(''),
+});
+
 export const visitInputSchema = z.object({
   slug: slugSchema,
   usr: usrSchema.optional().default(''),

@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import type {
   AffiliateLink,
+  Conversion,
   NewAffiliateLink,
+  NewConversion,
   NewSubmission,
   NewVisit,
   Store,
@@ -27,6 +29,7 @@ const FILES = {
   links: path.join(DATA_DIR, 'links.json'),
   submissions: path.join(DATA_DIR, 'submissions.json'),
   visits: path.join(DATA_DIR, 'visits.json'),
+  conversions: path.join(DATA_DIR, 'conversions.json'),
 } as const;
 
 /**
@@ -173,6 +176,33 @@ export function createLocalStore(): Store {
         rows[index] = next;
         await writeFile(FILES.submissions, rows);
         return next;
+      });
+    },
+
+    async listConversions() {
+      return readFile<Conversion>(FILES.conversions);
+    },
+
+    async addConversion(input: NewConversion) {
+      return withLock(async () => {
+        const rows = await readFile<Conversion>(FILES.conversions);
+        const row: Conversion = {
+          ...input,
+          id: randomUUID(),
+          createdAt: new Date().toISOString(),
+        };
+        rows.push(row);
+        await writeFile(FILES.conversions, rows);
+        return row;
+      });
+    },
+
+    async deleteConversion(id: string) {
+      return withLock(async () => {
+        const rows = await readFile<Conversion>(FILES.conversions);
+        const next = rows.filter((row) => row.id !== id);
+        if (next.length === rows.length) throw new StoreNotFoundError('Approval not found');
+        await writeFile(FILES.conversions, next);
       });
     },
 
