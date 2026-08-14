@@ -1,6 +1,16 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import {
+  alignsRight,
+  BLANK,
+  columnKind,
+  formatCell,
+  pageBounds,
+  sortRows,
+  type ColumnKind,
+  type SortDirection,
+} from '@/lib/report-table';
 import { BusyLabel } from './Spinner';
 
 type ResolvedRow = { usr: string; person: string; leadRef: string; client: string };
@@ -72,6 +82,28 @@ function cellText(value: unknown): string {
   return String(value);
 }
 
+/**
+ * A report row and the two things Ledger knows about it, kept together.
+ *
+ * One object rather than two arrays read by the same index, because the table
+ * sorts now: an index that means "row 4" in one array and "row 4 before it was
+ * sorted" in the other is how a person's name ends up beside somebody else's
+ * money.
+ */
+type Line = { row: Record<string, unknown>; person: string; client: string };
+
+/** The sortable columns: the two resolved ones, then whatever QMP sent. */
+const PERSON_KEY = 'ledger:person';
+const CLIENT_KEY = 'ledger:client';
+
+const PER_PAGE_OPTIONS = [25, 50, 100, 250];
+
+function readCell(line: Line, key: string): unknown {
+  if (key === PERSON_KEY) return line.person;
+  if (key === CLIENT_KEY) return line.client;
+  return line.row[key];
+}
+
 export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app: string; baseUrl: string }) {
   const [startDate, setStartDate] = useState(utcDay(-30));
   const [endDate, setEndDate] = useState(utcDay(0));
@@ -84,10 +116,67 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   const [result, setResult] = useState<RunResult | null>(null);
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
   const [sync, setSync] = useState<SyncResult | null>(null);
   /** null, or which of the two sync buttons is running. */
   const [syncing, setSyncing] = useState<null | 'preview' | 'apply'>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
+
+  /** The report joined to what Ledger knows, once, rather than per render. */
+  const lines = useMemo<Line[]>(() => {
+    if (!result) return [];
+    return result.rows.map((row, index) => ({
+      row,
+      person: result.resolved[index]?.person ?? '',
+      client: result.resolved[index]?.client ?? BLANK,
+    }));
+  }, [result]);
+
+  /**
+   * What each column holds, decided once over every row rather than per page.
+   * Deciding it per page would let a column of counts turn into a column of
+   * text on page 4 because that page happens to hold the one odd value.
+   */
+  const kinds = useMemo(() => {
+    const map = new Map<string, ColumnKind>();
+    map.set(PERSON_KEY, 'text');
+    map.set(CLIENT_KEY, 'text');
+    for (const column of result?.columns ?? []) {
+      map.set(
+        column,
+        columnKind(
+          column,
+          lines.map((line) => line.row[column]),
+        ),
+      );
+    }
+    return map;
+  }, [result, lines]);
+
+  const sorted = useMemo(() => {
+    if (!sort) return lines;
+    return sortRows(
+      lines,
+      (line) => readCell(line, sort.key),
+      kinds.get(sort.key) ?? 'text',
+      sort.direction,
+    );
+  }, [lines, sort, kinds]);
+
+  const bounds = pageBounds(sorted.length, page, perPage);
+  const visible = sorted.slice((bounds.current - 1) * perPage, bounds.current * perPage);
+
+  /** Ascending, then descending, then back to the order QMP sent. */
+  function toggleSort(key: string) {
+    setPage(1);
+    setSort((current) => {
+      if (!current || current.key !== key) return { key, direction: 'asc' };
+      if (current.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  }
 
   async function readError(response: Response): Promise<{ message: string; hint?: string }> {
     try {
@@ -128,6 +217,10 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
     setError(null);
     setResult(null);
     setShowRaw(false);
+    // A new report is a new table. Keeping page 7 and a sort on a column the
+    // next report may not even have would open it on an empty screen.
+    setSort(null);
+    setPage(1);
 
     const params = new URLSearchParams();
     if (useRange) {
@@ -182,8 +275,13 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
   /**
    * The rows as shown, with the two resolved columns in front of QMP's own.
-   * The CSV is what is on screen rather than what QMP sent, because what is on
-   * screen is the part that has been reconciled against Ledger.
+   *
+   * Three deliberate choices. It is the reconciled set, not the raw report —
+   * what is on screen is the part that matches a live tracking key. It is
+   * every row of that set, not the page being looked at. And the values go out
+   * exactly as QMP sent them, without the $ and % this table adds, because the
+   * thing opening this file is a spreadsheet and a spreadsheet wants a number
+   * it can add up.
    */
   function downloadCsv() {
     if (!result) return;
@@ -191,19 +289,18 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
       const text = cellText(value);
       return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
-    const lines = [['Person', 'Client', ...result.columns].map(cell).join(',')];
-    for (const [index, row] of result.rows.entries()) {
-      const resolved = result.resolved[index];
-      lines.push(
+    const csv = [['Person', 'Client', ...result.columns].map(cell).join(',')];
+    for (const line of sorted) {
+      csv.push(
         [
-          cell(resolved?.person ?? ''),
-          cell(resolved?.client ?? ''),
-          ...result.columns.map((column) => cell(row[column])),
+          cell(line.person),
+          cell(line.client),
+          ...result.columns.map((column) => cell(line.row[column])),
         ].join(','),
       );
     }
 
-    const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([`﻿${csv.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = href;
@@ -409,23 +506,39 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   <tr className="border-b-2 border-edge">
                     {/* Ledger's two columns first: they are the reason to read
                         the table, and the QMP ones are the evidence for them. */}
-                    <th className="label-cap whitespace-nowrap px-3 pb-3">Person</th>
-                    <th className="label-cap whitespace-nowrap px-3 pb-3">Client</th>
+                    <SortHeader
+                      label="Person"
+                      sortKey={PERSON_KEY}
+                      sort={sort}
+                      onSort={toggleSort}
+                      right={false}
+                    />
+                    <SortHeader
+                      label="Client"
+                      sortKey={CLIENT_KEY}
+                      sort={sort}
+                      onSort={toggleSort}
+                      right={false}
+                    />
                     {result.columns.map((column) => (
-                      <th key={column} className="label-cap whitespace-nowrap px-3 pb-3">
-                        {column}
-                      </th>
+                      <SortHeader
+                        key={column}
+                        label={column}
+                        sortKey={column}
+                        sort={sort}
+                        onSort={toggleSort}
+                        right={alignsRight(kinds.get(column) ?? 'text')}
+                      />
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {result.rows.slice(0, 200).map((row, index) => {
-                    const resolved = result.resolved[index];
-                    const named = Boolean(resolved && resolved.client !== '-');
+                  {visible.map((line, index) => {
+                    const named = line.client !== BLANK;
                     return (
-                      <tr key={index} className="divider-row last:border-0">
+                      <tr key={`${bounds.current}:${index}`} className="divider-row last:border-0">
                         <td className="max-w-[220px] truncate px-3 py-3 text-[18px] font-semibold">
-                          {resolved?.person ?? ''}
+                          {line.person}
                         </td>
                         {/* A dash is the answer when var3 names nobody, and it
                             is dimmed so it reads as "not known" rather than as
@@ -435,13 +548,22 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                             named ? '' : 'text-ink-dim'
                           }`}
                         >
-                          {resolved?.client ?? '-'}
+                          {line.client}
                         </td>
-                        {result.columns.map((column) => (
-                          <td key={column} className="max-w-[320px] truncate px-3 py-3 text-[18px]">
-                            {cellText(row[column])}
-                          </td>
-                        ))}
+                        {result.columns.map((column) => {
+                          const kind = kinds.get(column) ?? 'text';
+                          const text = formatCell(line.row[column], kind);
+                          return (
+                            <td
+                              key={column}
+                              className={`max-w-[320px] truncate px-3 py-3 text-[18px] ${
+                                alignsRight(kind) ? 'tnum text-right' : ''
+                              } ${text === BLANK ? 'text-ink-dim' : ''}`}
+                            >
+                              {text}
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}
@@ -450,10 +572,54 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
             </div>
           )}
 
-          {result.rowCount > 200 ? (
-            <p className="plain-note mt-4">
-              Showing the first 200 rows. The CSV has all {result.rowCount.toLocaleString()}.
-            </p>
+          {result.rowCount > 0 ? (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+              <span className="text-[19px] text-ink-soft" role="status">
+                Showing {bounds.from.toLocaleString()}–{bounds.to.toLocaleString()} of{' '}
+                {sorted.length.toLocaleString()}
+                {sort ? ', sorted' : ''}
+              </span>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2.5 text-[18px] text-ink-soft">
+                  Rows
+                  <select
+                    className="field"
+                    style={{ minHeight: '48px', fontSize: '18px', padding: '0 12px' }}
+                    value={perPage}
+                    onChange={(event) => {
+                      setPerPage(Number(event.target.value));
+                      setPage(1);
+                    }}
+                  >
+                    {PER_PAGE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn-quiet btn-sm"
+                  onClick={() => setPage(bounds.current - 1)}
+                  disabled={bounds.current <= 1}
+                >
+                  ← Previous
+                </button>
+                <span className="tnum text-[18px] font-semibold">
+                  Page {bounds.current} of {bounds.pages}
+                </span>
+                <button
+                  type="button"
+                  className="btn-quiet btn-sm"
+                  onClick={() => setPage(bounds.current + 1)}
+                  disabled={bounds.current >= bounds.pages}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
           ) : null}
 
           {result.hidden > 0 ? (
@@ -640,6 +806,62 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
         </section>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A column heading you can sort by.
+ *
+ * A real <button> inside the <th>, not a click handler on the cell: sorting a
+ * table is an action, and an action has to be reachable by keyboard and
+ * announced as one. `aria-sort` on the header is what tells a screen reader
+ * which column the order is coming from.
+ *
+ * The arrow is always rendered, dimmed when the column is not the one in play,
+ * so the heading row does not reflow when a sort is applied.
+ */
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  right,
+}: {
+  label: string;
+  sortKey: string;
+  sort: { key: string; direction: SortDirection } | null;
+  onSort: (key: string) => void;
+  right: boolean;
+}) {
+  const active = sort?.key === sortKey;
+  const direction = active ? sort.direction : null;
+
+  return (
+    <th
+      scope="col"
+      className="whitespace-nowrap p-0 pb-3"
+      aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`label-cap flex w-full items-center gap-1.5 rounded-lg px-3 py-1 hover:text-ink ${
+          right ? 'justify-end' : 'justify-start'
+        }`}
+        title={
+          direction === 'asc'
+            ? `Sorted by ${label}, lowest first. Click for highest first.`
+            : direction === 'desc'
+              ? `Sorted by ${label}, highest first. Click to clear.`
+              : `Sort by ${label}`
+        }
+      >
+        {label}
+        <span aria-hidden className={active ? 'text-ink' : 'text-ink-dim'}>
+          {direction === 'desc' ? '↓' : '↑'}
+        </span>
+      </button>
+    </th>
   );
 }
 
