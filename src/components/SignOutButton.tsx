@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { BusyLabel } from './Spinner';
 
 /** Drops the session cookie and returns to the sign-in page. */
 export function SignOutButton() {
@@ -20,8 +21,14 @@ export function SignOutButton() {
   }
 
   return (
-    <button type="button" onClick={signOut} disabled={busy} className="btn-quiet btn-sm">
-      {busy ? 'Signing out…' : 'Sign out'}
+    <button
+      type="button"
+      onClick={signOut}
+      disabled={busy}
+      aria-busy={busy}
+      className="btn-quiet btn-sm"
+    >
+      <BusyLabel busy={busy} idle="Sign out" busyLabel="Signing out…" />
     </button>
   );
 }

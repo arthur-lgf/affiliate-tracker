@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { initialsOf } from '@/lib/analytics';
 import { CAMPAIGNS } from '@/lib/campaigns';
+import { BusyLabel } from './Spinner';
 
 /**
  * No `passUsrParam`.
@@ -339,20 +340,24 @@ export function LinkForm({
                 or it becomes part of the input's accessible name ("Your short
                 link * The slug is free") and its changes go unannounced. */}
             <FieldGroup label="Your short link *" error={errors.slug}>
-              <div className="field flex items-center gap-0 overflow-hidden p-0 focus-within:border-ink">
+              <div className="field field-combo">
                 {/* The origin can be long on a real host — let it shrink so the
-                    slug input never collapses to nothing. */}
-                <span className="flex h-[60px] min-w-0 max-w-[45%] shrink items-center truncate border-r-2 border-edge bg-paper-sunk px-5 text-[19px] text-ink-soft">
-                  {origin.replace(/^https?:\/\//, '')}/
+                    slug input never collapses to nothing. The truncation is on
+                    an inner span because this one is a flex container, and
+                    text-overflow does nothing to a flex container's own text. */}
+                <span className="field-combo-prefix">
+                  <span className="truncate">{origin.replace(/^https?:\/\//, '')}/</span>
                 </span>
                 <input
                   id="slug-input"
                   aria-label="Your short link"
                   aria-describedby={slug ? 'slug-status' : undefined}
                   aria-invalid={slugTaken}
-                  /* self-stretch, or the input is a 32px strip floating inside
-                     a 64px box and half the control does not take a click. */
-                  className="h-full w-full min-w-0 flex-1 self-stretch border-none bg-transparent px-5 text-[21px] font-semibold text-ink outline-none"
+                  /* No height of its own: the row stretches it. Give it one and
+                     it becomes a 25px strip pinned to the top of a 60px box,
+                     with the text against the upper edge and most of the
+                     control not taking a click. */
+                  className="field-combo-input"
                   value={values.slug}
                   onChange={(e) => {
                     setTouchedSlug(true);
@@ -592,8 +597,16 @@ export function LinkForm({
         </Step>
 
         <div className="mt-7 flex flex-wrap items-center gap-5">
-          <button type="submit" className="btn-primary h-[68px] px-10 text-[22px]" disabled={submitting}>
-            {submitting ? 'Creating…' : 'Create the link'}
+          <button
+            type="submit"
+            className="btn-primary h-[68px] px-10 text-[22px]"
+            disabled={submitting}
+            aria-busy={submitting}
+          >
+            {/* Stays busy through the navigation that follows a success, which
+                is deliberate — see onSubmit, where setSubmitting(false) is
+                left out so a second click cannot create a second link. */}
+            <BusyLabel busy={submitting} idle="Create the link" busyLabel="Creating…" />
           </button>
           <button
             type="button"

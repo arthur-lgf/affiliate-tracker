@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { BusyLabel } from './Spinner';
 
 type Props = {
   slug: string;
@@ -231,12 +232,16 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         />
       </div>
 
+      {/* The one button a stranger ever presses. Once it succeeds the whole
+          form is replaced by the redirecting screen above, so this only ever
+          has to cover the request itself. */}
       <button
         type="submit"
         className="btn-gold mt-8 w-full text-[21px]"
         disabled={status === 'saving'}
+        aria-busy={status === 'saving'}
       >
-        {status === 'saving' ? 'Saving…' : ctaLabel}
+        <BusyLabel busy={status === 'saving'} idle={ctaLabel} busyLabel="Saving…" />
       </button>
 
       <p className="mt-4 text-center text-[18px] leading-relaxed text-ink-soft">

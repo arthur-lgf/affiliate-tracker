@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { BusyLabel } from './Spinner';
 
 type ResolvedRow = { usr: string; person: string; leadRef: string; client: string };
 
@@ -77,12 +78,15 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   const [useRange, setUseRange] = useState(true);
 
   const [busy, setBusy] = useState(false);
+  /** Which of the two credentialed calls is in flight, so one button spins. */
+  const [running, setRunning] = useState<null | 'report' | 'check'>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [sync, setSync] = useState<SyncResult | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  /** null, or which of the two sync buttons is running. */
+  const [syncing, setSyncing] = useState<null | 'preview' | 'apply'>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
 
   async function readError(response: Response): Promise<{ message: string; hint?: string }> {
@@ -101,6 +105,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
   async function runCheck() {
     setBusy(true);
+    setRunning('check');
     setError(null);
     setCheck(null);
     try {
@@ -114,10 +119,12 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
       failed({ message: 'Network error. The check did not reach the server.' });
     }
     setBusy(false);
+    setRunning(null);
   }
 
   async function runReport() {
     setBusy(true);
+    setRunning('report');
     setError(null);
     setResult(null);
     setShowRaw(false);
@@ -139,6 +146,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
       failed({ message: 'Network error. The report request did not reach the server.' });
     }
     setBusy(false);
+    setRunning(null);
   }
 
   /**
@@ -147,7 +155,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
    * page happens to be holding.
    */
   async function runSync(apply: boolean) {
-    setSyncing(true);
+    setSyncing(apply ? 'apply' : 'preview');
     setError(null);
     if (apply) setSync(null);
 
@@ -169,7 +177,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
     } catch {
       failed({ message: 'Network error. The sync did not reach the server.' });
     }
-    setSyncing(false);
+    setSyncing(null);
   }
 
   /**
@@ -267,12 +275,35 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               </div>
             ) : null}
 
+            {/* `busy` covers both buttons because both spend the same
+                credentials, but only the one that was pressed spins. A report
+                against a wide date range is the longest wait in the app. */}
             <div className="mt-7 flex flex-wrap items-center gap-4">
-              <button type="button" onClick={runReport} disabled={busy} className="btn-primary">
-                {busy ? 'Working…' : 'Run report'}
+              <button
+                type="button"
+                onClick={runReport}
+                disabled={busy}
+                aria-busy={running === 'report'}
+                className="btn-primary"
+              >
+                <BusyLabel
+                  busy={running === 'report'}
+                  idle="Run report"
+                  busyLabel="Asking QMP…"
+                />
               </button>
-              <button type="button" onClick={runCheck} disabled={busy} className="btn-outline">
-                Check connection
+              <button
+                type="button"
+                onClick={runCheck}
+                disabled={busy}
+                aria-busy={running === 'check'}
+                className="btn-outline"
+              >
+                <BusyLabel
+                  busy={running === 'check'}
+                  idle="Check connection"
+                  busyLabel="Checking…"
+                />
               </button>
             </div>
 
@@ -459,19 +490,37 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
             <button
               type="button"
               onClick={() => runSync(false)}
-              disabled={syncing || busy}
+              disabled={Boolean(syncing) || busy}
+              aria-busy={syncing === 'preview'}
               className="btn-outline"
             >
-              {syncing ? 'Working…' : 'Preview sync'}
+              <BusyLabel
+                busy={syncing === 'preview'}
+                idle="Preview sync"
+                busyLabel="Working out the plan…"
+              />
             </button>
             {sync && !sync.applied && sync.toCreate > 0 ? (
               <button
                 type="button"
                 onClick={() => runSync(true)}
-                disabled={syncing}
+                disabled={Boolean(syncing)}
+                aria-busy={syncing === 'apply'}
                 className="btn-gold"
               >
-                Write {sync.toCreate} approval{sync.toCreate === 1 ? '' : 's'} ({money(sync.amountToCreate)})
+                {/* The one button in the app that writes money. It re-fetches
+                    the report before writing, so the wait is two round trips
+                    and the spinner has to hold for both. */}
+                <BusyLabel
+                  busy={syncing === 'apply'}
+                  idle={
+                    <>
+                      Write {sync.toCreate} approval{sync.toCreate === 1 ? '' : 's'} (
+                      {money(sync.amountToCreate)})
+                    </>
+                  }
+                  busyLabel="Writing approvals…"
+                />
               </button>
             ) : null}
           </div>

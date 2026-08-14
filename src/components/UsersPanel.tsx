@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { initialsOf } from '@/lib/analytics';
+import { BusyLabel } from './Spinner';
 
 export type AccountRow = {
   id: string;
@@ -58,6 +59,14 @@ export function UsersPanel({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Which of the row's four buttons is running. `busy` alone says which row,
+   * and a row has Reset password, Disable, Enable and Delete side by side —
+   * so without this the spinner would have to go on all four or none.
+   */
+  const [running, setRunning] = useState<null | 'reset-password' | 'enable' | 'disable' | 'delete'>(
+    null,
+  );
   const [issued, setIssued] = useState<Issued | null>(null);
   const issuedRef = useRef<HTMLDivElement | null>(null);
 
@@ -112,12 +121,14 @@ export function UsersPanel({
       setError('Could not reach the server.');
     } finally {
       setBusy(null);
+      setRunning(null);
     }
   }
 
   async function act(row: AccountRow, action: 'reset-password' | 'enable' | 'disable') {
     if (action === 'disable' && !confirm(`Disable ${row.username}? They will be signed out.`)) return;
     setBusy(row.id);
+    setRunning(action);
     setError(null);
     try {
       const response = await fetch(`/api/users/${encodeURIComponent(row.id)}`, {
@@ -138,6 +149,7 @@ export function UsersPanel({
       setError('Could not reach the server.');
     } finally {
       setBusy(null);
+      setRunning(null);
     }
   }
 
@@ -150,6 +162,7 @@ export function UsersPanel({
       return;
     }
     setBusy(row.id);
+    setRunning('delete');
     setError(null);
     try {
       const response = await fetch(`/api/users/${encodeURIComponent(row.id)}`, { method: 'DELETE' });
@@ -163,6 +176,7 @@ export function UsersPanel({
       setError('Could not reach the server.');
     } finally {
       setBusy(null);
+      setRunning(null);
     }
   }
 
@@ -272,8 +286,13 @@ export function UsersPanel({
           </label>
 
           <div className="lg:col-span-2">
-            <button type="submit" className="btn-gold" disabled={busy === 'create'}>
-              {busy === 'create' ? 'Creating…' : 'Create account'}
+            <button
+              type="submit"
+              className="btn-gold"
+              disabled={busy === 'create'}
+              aria-busy={busy === 'create'}
+            >
+              <BusyLabel busy={busy === 'create'} idle="Create account" busyLabel="Creating…" />
             </button>
           </div>
         </form>
@@ -330,38 +349,58 @@ export function UsersPanel({
                       type="button"
                       className="btn-outline btn-sm"
                       disabled={working}
+                      aria-busy={working && running === 'reset-password'}
                       onClick={() => act(row, 'reset-password')}
                     >
-                      Reset password
+                      <BusyLabel
+                        busy={working && running === 'reset-password'}
+                        idle="Reset password"
+                        busyLabel="Resetting…"
+                      />
                     </button>
                     {row.active ? (
                       <button
                         type="button"
                         className="btn-quiet btn-sm"
                         disabled={working || isSelf}
+                        aria-busy={working && running === 'disable'}
                         title={isSelf ? 'You cannot disable your own account' : undefined}
                         onClick={() => act(row, 'disable')}
                       >
-                        Disable
+                        <BusyLabel
+                          busy={working && running === 'disable'}
+                          idle="Disable"
+                          busyLabel="Disabling…"
+                        />
                       </button>
                     ) : (
                       <button
                         type="button"
                         className="btn-quiet btn-sm"
                         disabled={working}
+                        aria-busy={working && running === 'enable'}
                         onClick={() => act(row, 'enable')}
                       >
-                        Enable
+                        <BusyLabel
+                          busy={working && running === 'enable'}
+                          idle="Enable"
+                          busyLabel="Enabling…"
+                        />
                       </button>
                     )}
                     <button
                       type="button"
                       className="btn-danger btn-sm"
                       disabled={working || isSelf}
+                      aria-busy={working && running === 'delete'}
                       title={isSelf ? 'You cannot delete your own account' : undefined}
                       onClick={() => remove(row)}
                     >
-                      Delete
+                      <BusyLabel
+                        busy={working && running === 'delete'}
+                        idle="Delete"
+                        busyLabel="Deleting…"
+                      />
                     </button>
                   </span>
                 </li>

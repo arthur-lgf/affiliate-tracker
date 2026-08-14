@@ -5,6 +5,7 @@ import { EarningsChart } from '@/components/EarningsChart';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LeadsPanel, type LeadRow } from '@/components/LeadsPanel';
+import { LinkPending } from '@/components/LinkPending';
 import { PersonFilter } from '@/components/PersonFilter';
 import {
   affiliateHref,
@@ -143,11 +144,17 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             <Link
               key={option.key}
               href={search ? `/?${search}` : '/'}
-              className="pill-filter"
+              /* relative, so the pending overlay can sit on top of the pill. */
+              className="pill-filter relative"
               data-active={option.key === period}
               aria-current={option.key === period ? 'page' : undefined}
             >
               {option.label}
+              {/* Only the query string changes here, so this page is never
+                  unmounted and its loading.tsx never appears. Without this,
+                  clicking a period does nothing visible until the new numbers
+                  land. */}
+              <LinkPending />
             </Link>
           );
         })}

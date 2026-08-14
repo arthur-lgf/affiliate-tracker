@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { BusyLabel } from './Spinner';
 
 export type ApprovalTarget = {
   id: string;
@@ -153,8 +154,8 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
       </label>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
-        <button type="submit" disabled={busy} className="btn-primary">
-          {busy ? 'Saving…' : 'Save approval'}
+        <button type="submit" disabled={busy} aria-busy={busy} className="btn-primary">
+          <BusyLabel busy={busy} idle="Save approval" busyLabel="Saving…" />
         </button>
         <button
           type="button"

@@ -2,6 +2,14 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { BusyLabel } from './Spinner';
+
+/**
+ * Which action is in flight, so the spinner appears on the button that was
+ * pressed. One shared flag would disable both and spin neither, which on a
+ * row of six links is how you lose track of which delete you confirmed.
+ */
+type Running = null | 'toggle' | 'delete';
 
 export function LinkActions({
   id,
@@ -16,11 +24,11 @@ export function LinkActions({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState<Running>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function send(method: 'PATCH' | 'DELETE', body?: unknown) {
-    setBusy(true);
+  async function send(what: Exclude<Running, null>, method: 'PATCH' | 'DELETE', body?: unknown) {
+    setRunning(what);
     setError(null);
     try {
       const res = await fetch(`/api/links/${id}`, {
@@ -36,11 +44,13 @@ export function LinkActions({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
-      setBusy(false);
+      setRunning(null);
     }
   }
 
-  const disabled = busy || pending;
+  // The row keeps spinning through the refresh that follows, because until the
+  // list re-renders the change has not actually shown up anywhere.
+  const disabled = running !== null || pending;
 
   return (
     <>
@@ -57,28 +67,34 @@ export function LinkActions({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => send('PATCH', { active: !active })}
+        aria-busy={running === 'toggle'}
+        onClick={() => send('toggle', 'PATCH', { active: !active })}
         className="btn-quiet btn-sm"
         aria-label={`${active ? 'Pause' : 'Activate'} the link for ${label}`}
       >
-        {active ? 'Pause' : 'Activate'}
+        <BusyLabel
+          busy={running === 'toggle'}
+          idle={active ? 'Pause' : 'Activate'}
+          busyLabel={active ? 'Pausing…' : 'Activating…'}
+        />
       </button>
       <button
         type="button"
         disabled={disabled}
+        aria-busy={running === 'delete'}
         onClick={() => {
           if (
             window.confirm(
               `Delete the link for "${label}"? Submissions already logged are kept. Only the link is removed.`,
             )
           ) {
-            void send('DELETE');
+            void send('delete', 'DELETE');
           }
         }}
         className="btn-danger btn-sm"
         aria-label={`Delete the link for ${label}`}
       >
-        Delete
+        <BusyLabel busy={running === 'delete'} idle="Delete" busyLabel="Deleting…" />
       </button>
       {error ? (
         <span role="alert" className="field-error basis-full">

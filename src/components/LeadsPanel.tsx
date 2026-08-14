@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { Spinner } from './Spinner';
 import { isLeadId } from '@/lib/lead-id';
 import { statusLabel } from '@/lib/status';
 import type { LeadStatus } from '@/lib/types';
@@ -294,6 +295,7 @@ function StatusToggle({
       className="pill-status"
       data-status={row.status}
       disabled={busy}
+      aria-busy={busy}
       onClick={onToggle}
       /* The visible word starts the accessible name so "click Pending" still
          works for voice control, and the rest says what clicking will do. */
@@ -301,13 +303,20 @@ function StatusToggle({
         registered ? 'pending' : 'registered'
       }`}
     >
-      <span
-        aria-hidden
-        className="h-2.5 w-2.5 flex-none rounded-full"
-        style={{
-          background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)',
-        }}
-      />
+      {/* The status dot becomes the spinner while the change is in flight.
+          Same spot, same size, so the pill does not resize under the cursor
+          and the thing that is changing is the thing that shows it. */}
+      {busy ? (
+        <Spinner className="h-2.5 w-2.5 border-[2px]" />
+      ) : (
+        <span
+          aria-hidden
+          className="h-2.5 w-2.5 flex-none rounded-full"
+          style={{
+            background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)',
+          }}
+        />
+      )}
       {statusLabel(row.status)}
     </button>
   );

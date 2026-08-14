@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { BusyLabel } from './Spinner';
 
 /** Remove an approval recorded by mistake. Earnings are a money figure — there
  *  has to be a way to take back a fat-fingered one without opening the sheet. */
@@ -34,11 +35,12 @@ export function DeleteApproval({ id, label }: { id: string; label: string }) {
       <button
         type="button"
         disabled={busy}
+        aria-busy={busy}
         onClick={remove}
         className="btn-danger btn-sm"
         aria-label={`Remove the approval for ${label}`}
       >
-        {busy ? 'Removing…' : 'Remove'}
+        <BusyLabel busy={busy} idle="Remove" busyLabel="Removing…" />
       </button>
       {error ? (
         <span role="alert" className="field-error basis-full">

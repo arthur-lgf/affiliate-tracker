@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { BusyLabel } from './Spinner';
 
 /**
  * Username and password, and nothing else.
@@ -96,8 +97,13 @@ export function LoginForm({ next }: { next: string }) {
         </p>
       ) : null}
 
-      <button type="submit" disabled={busy} className="btn-primary mt-8 w-full text-[21px]">
-        {busy ? 'Signing in…' : 'Sign in'}
+      <button
+        type="submit"
+        disabled={busy}
+        aria-busy={busy}
+        className="btn-primary mt-8 w-full text-[21px]"
+      >
+        <BusyLabel busy={busy} idle="Sign in" busyLabel="Signing in…" />
       </button>
     </form>
   );

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTransition } from 'react';
+import { Spinner } from './Spinner';
 
 /**
  * Person filter. A select rather than pills because the list grows with every
@@ -33,10 +34,15 @@ export function PersonFilter({
       <label htmlFor="person-filter" className="text-[19px] font-semibold text-ink-soft">
         Person
       </label>
+      {/* Rendered beside the label rather than inside the select, which cannot
+          hold anything but options. It replaces nothing, so the control keeps
+          its width while the new table is fetched. */}
+      {pending ? <Spinner className="text-ink-soft" /> : null}
       <select
         id="person-filter"
         value={value}
         disabled={pending}
+        aria-busy={pending}
         onChange={(event) => choose(event.target.value)}
         className="field max-w-[280px] truncate"
         /* Overrides rather than a second class: this is the one .field in the

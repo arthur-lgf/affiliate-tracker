@@ -483,6 +483,87 @@
     cursor: pointer;
   }
 
+  /*
+   * A field in two parts: a fixed prefix, then the box you type in. Used for
+   * the short link, where the origin is a fact and only the slug is a field.
+   *
+   * The layout lives here rather than in the markup because two things about
+   * it are easy to get wrong and invisible until they are:
+   *
+   *   - The parts are stretched by the container, and must not set a height of
+   *     their own. A percentage height inside a box that is only min-height
+   *     resolves to auto, which quietly cancels the stretch and leaves the
+   *     text sitting against the top edge of a 60px row.
+   *
+   *   - The focus ring belongs to the whole control. The global :focus-visible
+   *     ring is painted on whichever element has focus — here the inner input —
+   *     and this box clips its children to its rounded corners, so that ring
+   *     arrives as a gold band sliced across the middle of the field instead of
+   *     a ring around the outside of it. So it is taken off the input and put
+   *     back on the container, whose own shadow is not clipped by its overflow.
+   */
+  .field-combo {
+    display: flex;
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .field-combo > * {
+    /* Belt and braces: a child that does set a height still fills the row. */
+    align-self: stretch;
+  }
+
+  .field-combo:focus-within {
+    border-color: var(--color-ink);
+  }
+
+  .field-combo:has(:focus-visible) {
+    border-color: var(--color-ink);
+    outline: 2px solid var(--color-ink);
+    outline-offset: 0;
+    box-shadow: 0 0 0 6px var(--color-gold);
+  }
+
+  .field-combo :focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  /* The unchanging half: the origin, or any other fixed lead-in. */
+  .field-combo-prefix {
+    display: flex;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    padding: 0 20px;
+    border-right: 2px solid var(--color-edge);
+    background: var(--color-paper-sunk);
+    font-size: 19px;
+    color: var(--color-ink-soft);
+  }
+
+  /*
+   * `flex: 1 1 0`, and no width of its own. With `width: 100%` the input asks
+   * for the whole row, so the shrinking needed to fit is shared out in
+   * proportion to that — and the prefix, being the small one, gives up almost
+   * nothing while the input gives up nothing it can spare, leaving the origin
+   * cut to an ellipsis on a row with room to spare. From a zero basis the
+   * prefix is laid out at its natural width first and the input takes what is
+   * left, which is the behaviour the max-width above is there to cap.
+   */
+  .field-combo-input {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 20px;
+    border: none;
+    background: transparent;
+    font-size: 21px;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
   .field-label {
     display: block;
     font-size: 19px;
@@ -597,12 +678,90 @@
     animation: sweep 1100ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
   }
 
+  /* ---- Waiting ------------------------------------------------- */
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /*
+   * The ring that says something is happening.
+   *
+   * currentColor, so it is whatever the thing it sits inside is: white on the
+   * primary button, ink on a quiet one, alarm red on a delete. One class, and
+   * it is never the wrong colour against its background.
+   */
+  .spinner {
+    display: inline-block;
+    flex: none;
+    width: 1em;
+    height: 1em;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 620ms linear infinite;
+  }
+
+  /* ---- Skeletons ----------------------------------------------- */
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  /*
+   * A block standing in for content that has not arrived.
+   *
+   * `edge-soft` rather than one of the paper tones, because these appear on two
+   * surfaces: inside a white panel and directly on the page. Paper-sunk is
+   * lighter than the page background, so a filter row drawn in it was a row of
+   * ghosts on the dashboard while the same block read perfectly inside a panel
+   * three inches below. This one is darker than both, and the sweep is lighter
+   * than it, so a skeleton looks the same wherever it is put.
+   *
+   * Still quiet, though. Scaffolding with enough contrast to read as content is
+   * scaffolding people try to read.
+   */
+  .skeleton {
+    display: block;
+    border-radius: 10px;
+    background-color: var(--color-edge-soft);
+    background-image: linear-gradient(
+      90deg,
+      var(--color-edge-soft) 0%,
+      var(--color-paper-card) 45%,
+      var(--color-paper-card) 55%,
+      var(--color-edge-soft) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1400ms ease-in-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .rise,
     .grow-bar,
     .sweep,
     .draw-loop {
       animation: none;
+    }
+    /*
+     * The spinner and the skeleton keep animating, at a pace that does not
+     * pulse. Reduced motion means no movement that is merely decorative; these
+     * two are the only sign that the app is still working, and freezing them
+     * turns "loading" into "broken".
+     */
+    .spinner {
+      animation-duration: 1400ms;
+    }
+    .skeleton {
+      animation: none;
+      background-image: none;
     }
     * {
       transition-duration: 1ms !important;

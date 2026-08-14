@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { DeleteApproval } from '@/components/DeleteApproval';
 import { EarningsChart } from '@/components/EarningsChart';
 import { ErrorPanel } from '@/components/ErrorPanel';
+import { LinkPending } from '@/components/LinkPending';
 import {
   buildEarnings,
   describeConversions,
@@ -143,11 +144,14 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                   ? `/affiliate/${encodeURIComponent(personKey)}`
                   : `/affiliate/${encodeURIComponent(personKey)}?period=${option.key}`
               }
-              className="pill-filter"
+              className="pill-filter relative"
               data-active={option.key === period}
               aria-current={option.key === period ? 'page' : undefined}
             >
               {option.label}
+              {/* Same page, different query string: no route change, so no
+                  skeleton. The pill says it is working instead. */}
+              <LinkPending />
             </Link>
           ))}
         </nav>
