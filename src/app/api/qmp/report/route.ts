@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { fetchQmpReport, QmpError, qmpConfig } from '@/lib/qmp';
+import { joinReport } from '@/lib/qmp-view';
+import { getStore } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 /**
- * Run a saved QMP report and hand back the rows.
+ * Run a saved QMP report and hand back the rows, read against live data.
  *
  * Admin only, and checked here rather than left to the matcher in
  * middleware.ts. It has to be — this returns revenue across every affiliate,
@@ -11,6 +13,11 @@ import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
  *
  * The QMP key and secret never leave the server. The browser asks this route
  * for a report key and a date range; it never sees a token.
+ *
+ * The join happens here rather than in the browser for the same reason: the
+ * page would otherwise need every link and every lead in order to resolve two
+ * columns, which means shipping the whole client list to resolve a handful of
+ * names. The server has both already.
  */
 
 export const dynamic = 'force-dynamic';
@@ -43,10 +50,25 @@ export async function GET(request: Request) {
 
   try {
     const result = await fetchQmpReport({ reportKey: config.reportId, startDate, endDate, config });
+
+    // Live data, read fresh on every run. A stale copy here would show a row
+    // against a person whose link was deleted an hour ago.
+    const [links, submissions] = await Promise.all([
+      getStore().listLinks(),
+      getStore().listSubmissions(),
+    ]);
+    const joined = joinReport({ rows: result.table.rows, links, submissions });
+
     return NextResponse.json({
       columns: result.table.columns,
-      rows: result.table.rows,
-      rowCount: result.table.rowCount,
+      rows: joined.rows,
+      // What QMP returned, before the var2 filter. Kept separate from
+      // rows.length so the page can say what it is not showing.
+      rowCount: joined.rows.length,
+      reportRowCount: result.table.rowCount,
+      resolved: joined.resolved,
+      hidden: joined.hidden,
+      hiddenKeys: joined.hiddenKeys,
       shape: result.table.shape,
       url: result.url,
       fetchedAt: result.fetchedAt,

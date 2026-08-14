@@ -59,3 +59,61 @@ export function ownsKey(viewer: Viewer | null, usr: string): boolean {
   const key = viewer?.usr ?? '';
   return key !== '' && key === usr;
 }
+
+/* ------------------------------------------------------------------ */
+/* Creating a link                                                      */
+/* ------------------------------------------------------------------ */
+
+/** The three fields on a link that say who it belongs to. */
+export type LinkOwner = { usr: string; assignee: string; assigneeEmail: string };
+
+/** The account behind the viewer, for filling in their own name and email. */
+export type SelfAccount = { fullName: string; email: string; username: string };
+
+export type OwnerDecision = { ok: true; owner: LinkOwner } | { ok: false; reason: string };
+
+/**
+ * Whose tracking key a new link pays out to.
+ *
+ * An admin says. An affiliate is not asked: whatever the request body claims,
+ * the link is bound to the key on their own session. That is the whole reason
+ * this is a function with tests rather than three lines inside the route — an
+ * affiliate who could name the owner could point their own traffic at somebody
+ * else's key, or create a link under somebody else's key and read the leads it
+ * brought in.
+ *
+ * A house link (`usr: ''`) stays an admin-only thing for the same reason. House
+ * rows are what an unattributed click falls back to, so they belong to nobody
+ * in particular rather than to whoever asked for one last.
+ *
+ * The display name comes from the account, not the body: it is the label shown
+ * next to the money on every page, and it should say who the row is actually
+ * for. The email is the exception — it is a note to themselves about their own
+ * row, so a typed one is kept and the account's is only the default.
+ */
+export function ownerForNewLink(
+  viewer: Viewer | null,
+  requested: LinkOwner,
+  self: SelfAccount | null,
+): OwnerDecision {
+  // Same failing-closed rule as scopeData: not knowing who is asking is never
+  // read as "an admin is asking".
+  if (!viewer) return { ok: false, reason: 'Not signed in.' };
+  if (seesEverything(viewer)) return { ok: true, owner: requested };
+
+  if (!viewer.usr) {
+    return {
+      ok: false,
+      reason: 'Your account has no tracking key, so a link cannot be created for it.',
+    };
+  }
+
+  return {
+    ok: true,
+    owner: {
+      usr: viewer.usr,
+      assignee: self?.fullName || self?.username || viewer.username,
+      assigneeEmail: requested.assigneeEmail || self?.email || '',
+    },
+  };
+}

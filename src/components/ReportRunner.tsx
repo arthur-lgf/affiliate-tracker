@@ -2,10 +2,19 @@
 
 import { useRef, useState } from 'react';
 
+type ResolvedRow = { usr: string; person: string; leadRef: string; client: string };
+
 type RunResult = {
   columns: string[];
+  /** Only the rows whose var2 matches a live tracking key. */
   rows: Record<string, unknown>[];
   rowCount: number;
+  /** Everything QMP returned, before that filter. */
+  reportRowCount: number;
+  /** Person and client for each kept row, same order. */
+  resolved: ResolvedRow[];
+  hidden: number;
+  hiddenKeys: string[];
   shape: string;
   url: string;
   fetchedAt: string;
@@ -36,7 +45,14 @@ type SyncResult = {
   unusable: boolean;
   created?: number;
   failures?: string[];
-  preview?: { approvedOn: string; slug: string; usr: string; amount: number; card: string }[];
+  preview?: {
+    approvedOn: string;
+    slug: string;
+    usr: string;
+    amount: number;
+    card: string;
+    client: string;
+  }[];
 };
 
 const money = (value: number) =>
@@ -156,14 +172,28 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
     setSyncing(false);
   }
 
+  /**
+   * The rows as shown, with the two resolved columns in front of QMP's own.
+   * The CSV is what is on screen rather than what QMP sent, because what is on
+   * screen is the part that has been reconciled against Ledger.
+   */
   function downloadCsv() {
     if (!result) return;
     const cell = (value: unknown) => {
       const text = cellText(value);
       return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
-    const lines = [result.columns.map(cell).join(',')];
-    for (const row of result.rows) lines.push(result.columns.map((column) => cell(row[column])).join(','));
+    const lines = [['Person', 'Client', ...result.columns].map(cell).join(',')];
+    for (const [index, row] of result.rows.entries()) {
+      const resolved = result.resolved[index];
+      lines.push(
+        [
+          cell(resolved?.person ?? ''),
+          cell(resolved?.client ?? ''),
+          ...result.columns.map((column) => cell(row[column])),
+        ].join(','),
+      );
+    }
 
     const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
     const href = URL.createObjectURL(blob);
@@ -298,6 +328,12 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
             </span>
           </div>
 
+          <p className="plain mt-2">
+            Only rows whose <code>var2</code> matches a live tracking key. That is the column each
+            link carries its <code>usr</code> in, so it is what says whose row this is;{' '}
+            <code>var3</code> is the lead reference, which is what names the client.
+          </p>
+
           <p className="field-note mt-2 [overflow-wrap:anywhere]">{result.url}</p>
 
           <div className="mt-5 flex flex-wrap items-center gap-4">
@@ -321,10 +357,16 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
           {result.rowCount === 0 ? (
             <p className="mt-6 text-[19px] text-ink-soft">
-              QMP answered, but no rows were found in the response
-              {result.shape === 'unrecognised'
-                ? '. The payload is not in a shape this page recognises yet, so read the raw JSON below and tell me what it looks like.'
-                : ' for this range. Try a wider one.'}
+              {result.hidden > 0
+                ? `QMP returned ${result.reportRowCount.toLocaleString()} row${
+                    result.reportRowCount === 1 ? '' : 's'
+                  }, and none of them carry a var2 that matches a link here.`
+                : 'QMP answered, but no rows were found in the response'}
+              {result.hidden > 0
+                ? ''
+                : result.shape === 'unrecognised'
+                  ? '. The payload is not in a shape this page recognises yet, so read the raw JSON below and tell me what it looks like.'
+                  : ' for this range. Try a wider one.'}
             </p>
           ) : (
             // Wide content scrolls inside its own container so the page never
@@ -334,6 +376,10 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b-2 border-edge">
+                    {/* Ledger's two columns first: they are the reason to read
+                        the table, and the QMP ones are the evidence for them. */}
+                    <th className="label-cap whitespace-nowrap px-3 pb-3">Person</th>
+                    <th className="label-cap whitespace-nowrap px-3 pb-3">Client</th>
                     {result.columns.map((column) => (
                       <th key={column} className="label-cap whitespace-nowrap px-3 pb-3">
                         {column}
@@ -342,15 +388,32 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   </tr>
                 </thead>
                 <tbody>
-                  {result.rows.slice(0, 200).map((row, index) => (
-                    <tr key={index} className="divider-row last:border-0">
-                      {result.columns.map((column) => (
-                        <td key={column} className="max-w-[320px] truncate px-3 py-3 text-[18px]">
-                          {cellText(row[column])}
+                  {result.rows.slice(0, 200).map((row, index) => {
+                    const resolved = result.resolved[index];
+                    const named = Boolean(resolved && resolved.client !== '-');
+                    return (
+                      <tr key={index} className="divider-row last:border-0">
+                        <td className="max-w-[220px] truncate px-3 py-3 text-[18px] font-semibold">
+                          {resolved?.person ?? ''}
                         </td>
-                      ))}
-                    </tr>
-                  ))}
+                        {/* A dash is the answer when var3 names nobody, and it
+                            is dimmed so it reads as "not known" rather than as
+                            a value somebody typed. */}
+                        <td
+                          className={`max-w-[220px] truncate px-3 py-3 text-[18px] ${
+                            named ? '' : 'text-ink-dim'
+                          }`}
+                        >
+                          {resolved?.client ?? '-'}
+                        </td>
+                        {result.columns.map((column) => (
+                          <td key={column} className="max-w-[320px] truncate px-3 py-3 text-[18px]">
+                            {cellText(row[column])}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -359,6 +422,17 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
           {result.rowCount > 200 ? (
             <p className="plain-note mt-4">
               Showing the first 200 rows. The CSV has all {result.rowCount.toLocaleString()}.
+            </p>
+          ) : null}
+
+          {result.hidden > 0 ? (
+            <p className="plain-note mt-4">
+              {result.hidden.toLocaleString()} row{result.hidden === 1 ? '' : 's'} of the{' '}
+              {result.reportRowCount.toLocaleString()} QMP returned{' '}
+              {result.hidden === 1 ? 'is' : 'are'} not shown: their var2 matches no link here (
+              {result.hiddenKeys.slice(0, 6).join(', ')}
+              {result.hiddenKeys.length > 6 ? `, and ${result.hiddenKeys.length - 6} more` : ''}).
+              The sync leaves those alone too.
             </p>
           ) : null}
 
@@ -376,7 +450,9 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
           <p className="plain mt-2">
             Each QMP row says how many approvals a card took that day and what they paid together.
             One row becomes that many approvals in Ledger, with the earnings split evenly between
-            them so the total stays exact. Sub ID is matched to a link to work out whose it is.
+            them so the total stays exact. <code>var2</code> is matched to a link to work out whose
+            it is, and <code>var3</code> is kept on the approval so it can be traced back to the
+            client it came from.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-4">
@@ -475,11 +551,12 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
               {!sync.applied && sync.preview && sync.preview.length > 0 ? (
                 <div className="relative -mx-2 mt-6 overflow-x-auto px-2">
-                  <table className="w-full min-w-[520px] border-collapse text-left">
+                  <table className="w-full min-w-[640px] border-collapse text-left">
                     <thead>
                       <tr className="border-b-2 border-edge">
                         <th className="label-cap px-3 pb-3">Date</th>
                         <th className="label-cap px-3 pb-3">Person</th>
+                        <th className="label-cap px-3 pb-3">Client</th>
                         <th className="label-cap px-3 pb-3">Card</th>
                         <th className="label-cap px-3 pb-3 text-right">Amount</th>
                       </tr>
@@ -489,6 +566,13 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                         <tr key={index} className="divider-row last:border-0">
                           <td className="tnum px-3 py-3 text-[18px]">{row.approvedOn}</td>
                           <td className="px-3 py-3 text-[18px]">{row.usr || 'House'}</td>
+                          <td
+                            className={`max-w-[200px] truncate px-3 py-3 text-[18px] ${
+                              row.client && row.client !== '-' ? '' : 'text-ink-dim'
+                            }`}
+                          >
+                            {row.client || '-'}
+                          </td>
                           <td className="max-w-[260px] truncate px-3 py-3 text-[18px]">{row.card}</td>
                           <td className="tnum px-3 py-3 text-right text-[18px]">{money(row.amount)}</td>
                         </tr>

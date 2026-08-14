@@ -6,6 +6,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { initialsOf } from '@/lib/analytics';
 import { CAMPAIGNS } from '@/lib/campaigns';
 
+/**
+ * No `passUsrParam`.
+ *
+ * That control used to ask which query parameter to append the tracking key to
+ * on the way out. It is gone because the key does not travel that way any more:
+ * it is written into the destination URL itself as `var2=<usr>`, which is the
+ * column QuinStreet reports back and therefore the column an approval is
+ * matched on. Appending a second copy under another name only created a way for
+ * the two to disagree. Links created before this keep whatever they were given,
+ * and it is still honoured when they are followed.
+ */
 type Fields = {
   campaign: string;
   destination: string;
@@ -17,7 +28,6 @@ type Fields = {
   subheadline: string;
   ctaLabel: string;
   requirePhone: boolean;
-  passUsrParam: string;
   notes: string;
   active: boolean;
 };
@@ -33,7 +43,6 @@ const EMPTY: Fields = {
   subheadline: '',
   ctaLabel: '',
   requirePhone: false,
-  passUsrParam: '',
   notes: '',
   active: true,
 };
@@ -55,6 +64,18 @@ export type KnownPerson = {
   username?: string;
 };
 
+/**
+ * The starting fields.
+ *
+ * With a locked person the answer to step 2 is already known, so it is filled
+ * in from the first render rather than after an effect — a form that flickers
+ * from "nobody" to "you" invites a submit in between.
+ */
+function initialFields(lockedTo: KnownPerson | null): Fields {
+  if (!lockedTo) return EMPTY;
+  return { ...EMPTY, assignee: lockedTo.assignee, usr: lockedTo.usr, assigneeEmail: lockedTo.email };
+}
+
 /** Loose while typing (keeps a trailing dash so you can type "cash-back"). */
 function softKey(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+/, '');
@@ -65,17 +86,26 @@ function hardKey(raw: string): string {
   return softKey(raw).replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-const PASS_OPTIONS = ['subid', 'aff_id', 'utm_source'];
-
 export function LinkForm({
   origin,
   people,
+  lockedTo = null,
   takenSlugKeys,
   storageLabel,
   capture,
 }: {
   origin: string;
   people: KnownPerson[];
+  /**
+   * The one person this link may belong to, or null to choose.
+   *
+   * Set when an affiliate is making a link for themselves. It replaces the
+   * picker rather than preselecting inside it: a preselected picker is still a
+   * picker, and the honest thing to show someone with one option is not a
+   * choice. The server decides ownership again on its own, so this is the shape
+   * of the form and not the protection.
+   */
+  lockedTo?: KnownPerson | null;
   /** "slug::usr" of every link that already exists, for the availability check. */
   takenSlugKeys: string[];
   storageLabel: string;
@@ -83,7 +113,7 @@ export function LinkForm({
   capture: boolean;
 }) {
   const router = useRouter();
-  const [values, setValues] = useState<Fields>(EMPTY);
+  const [values, setValues] = useState<Fields>(() => initialFields(lockedTo));
   const [touchedSlug, setTouchedSlug] = useState(false);
   /**
    * Which person the link belongs to, as explicit state.
@@ -93,9 +123,8 @@ export function LinkForm({
    * unmounted the assignee fields mid-keystroke, and still submitted their
    * name — attributing the link to someone the form no longer showed.
    */
-  const [personMode, setPersonMode] = useState<'house' | 'known'>('house');
-  const [pickedUsr, setPickedUsr] = useState('');
-  const [customParam, setCustomParam] = useState(false);
+  const [personMode, setPersonMode] = useState<'house' | 'known'>(lockedTo ? 'known' : 'house');
+  const [pickedUsr, setPickedUsr] = useState(lockedTo?.usr ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -139,7 +168,7 @@ export function LinkForm({
     setValues((prev) => ({ ...prev, assignee: '', usr: '', assigneeEmail: '' }));
   }
 
-  const picked = people.find((person) => person.usr === pickedUsr) ?? null;
+  const picked = lockedTo ?? people.find((person) => person.usr === pickedUsr) ?? null;
 
   const slug = hardKey(values.slug);
   const usr = hardKey(values.usr);
@@ -159,6 +188,30 @@ export function LinkForm({
       return false;
     }
   }, [values.destination]);
+
+  /**
+   * Whether the destination carries `var2=<usr>`.
+   *
+   * This is the whole attribution chain in one query parameter: QuinStreet
+   * passes var2 through to its reporting untouched, and the sync matches that
+   * column back to a tracking key to decide who an approval paid. A destination
+   * without it produces traffic that reports against nobody, which is invisible
+   * until a payout is missing weeks later — so it is worth saying now, while
+   * the URL is still on screen and easy to fix.
+   *
+   * A warning rather than a block: the merchant may one day use a different
+   * column, and a form that refuses to save is worse than one that tells you.
+   */
+  const var2Ok = useMemo(() => {
+    const destination = values.destination.trim();
+    if (!destination || !usr) return null;
+    try {
+      const carried = new URL(destination).searchParams.get('var2') ?? '';
+      return carried.trim().toLowerCase() === usr.toLowerCase();
+    } catch {
+      return null;
+    }
+  }, [values.destination, usr]);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -197,11 +250,20 @@ export function LinkForm({
     <form onSubmit={onSubmit} noValidate className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
       <div className="min-w-0">
         <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">
-          Create an affiliate link
+          {lockedTo ? 'Create your affiliate link' : 'Create an affiliate link'}
         </h1>
         <p className="mt-3 max-w-[640px] text-[20px] leading-relaxed text-ink-soft">
-          Pair a destination with the person who owns the traffic. Three answers are required. The
-          rest have sensible defaults you can change later.
+          {lockedTo ? (
+            <>
+              Every link you make here is tracked to your key, so the clicks and the payouts land on
+              your dashboard. Three answers are required; the rest have sensible defaults.
+            </>
+          ) : (
+            <>
+              Pair a destination with the person who owns the traffic. Three answers are required.
+              The rest have sensible defaults you can change later.
+            </>
+          )}
         </p>
 
         {formError ? (
@@ -262,6 +324,12 @@ export function LinkForm({
               />
               {destinationOk === false ? (
                 <span className="field-error">Enter a full URL including https://</span>
+              ) : var2Ok === false ? (
+                <span className="field-note">
+                  This URL does not carry <code>var2={usr}</code>. Approvals come back matched on
+                  var2, so without it this link&rsquo;s earnings will not be traced to{' '}
+                  {lockedTo ? 'you' : 'them'}.
+                </span>
               ) : null}
             </Field>
           </div>
@@ -321,145 +389,88 @@ export function LinkForm({
             </FieldGroup>
           </div>
 
-          <div className="mt-6">
-            <FieldGroup
-              label="Pass the tracking key on as"
-              error={errors.passUsrParam}
-              note="This adds the person's key to the end of the destination so the merchant knows whose traffic it was."
-            >
-              <div className="flex flex-wrap gap-3">
-                {PASS_OPTIONS.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    className="pill-filter"
-                    aria-pressed={values.passUsrParam === option}
-                    data-active={values.passUsrParam === option}
-                    onClick={() => {
-                      setCustomParam(false);
-                      set('passUsrParam', option);
-                    }}
-                  >
-                    {option}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="pill-filter"
-                  aria-pressed={!customParam && values.passUsrParam === ''}
-                  data-active={!customParam && values.passUsrParam === ''}
-                  onClick={() => {
-                    setCustomParam(false);
-                    set('passUsrParam', '');
-                  }}
-                >
-                  Don&rsquo;t pass it
-                </button>
-                {/* Any param name was allowed before the redesign; keep that
-                    possible rather than capping it at three presets. */}
-                <button
-                  type="button"
-                  className="pill-filter border-dashed"
-                  aria-pressed={customParam}
-                  data-active={customParam}
-                  onClick={() => {
-                    setCustomParam(true);
-                    if (PASS_OPTIONS.includes(values.passUsrParam)) set('passUsrParam', '');
-                  }}
-                >
-                  Something else…
-                </button>
-              </div>
-              {customParam ? (
-                <input
-                  className="field mt-4"
-                  value={values.passUsrParam}
-                  onChange={(e) =>
-                    set('passUsrParam', e.target.value.replace(/[^A-Za-z0-9_-]/g, ''))
-                  }
-                  placeholder="e.g. clickref"
-                  maxLength={32}
-                  autoComplete="off"
-                  aria-label="Custom tracking parameter name"
-                />
-              ) : null}
-            </FieldGroup>
-          </div>
         </Step>
 
         {/* 2 — the person */}
         <Step number={2} title="Who it belongs to">
-          <div className="flex flex-wrap gap-3.5">
-            {people.map((person) => {
-              const active = personMode === 'known' && pickedUsr === person.usr;
-              return (
-                <button
-                  key={person.usr}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => pickPerson(person)}
-                  className="pill-filter h-[68px] max-w-full gap-3.5 pl-3.5 pr-6"
-                  data-active={active}
-                >
-                  <span
-                    aria-hidden
-                    className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 text-[17px] font-bold"
-                    style={
-                      active
-                        ? {
-                            background: 'var(--color-gold)',
-                            borderColor: 'var(--color-gold-edge)',
-                            color: 'var(--color-gold-ink)',
-                          }
-                        : {
-                            background: 'var(--color-leaf-wash)',
-                            borderColor: 'var(--color-leaf-edge)',
-                            color: 'var(--color-leaf-text)',
-                          }
-                    }
-                  >
-                    {initialsOf(person.assignee || person.usr)}
-                  </span>
-                  {/* Names are free text and the pill cannot wrap — truncate
-                      rather than let one long name widen the page. */}
-                  {/* Names are free text and the pill cannot wrap — truncate
-                      rather than let one long name widen the page. The key is
-                      shown too, because two people can share a display name and
-                      the key is the thing that decides who gets paid. */}
-                  <span className="min-w-0 text-left">
-                    <span className="block truncate text-[20px] font-semibold leading-tight">
-                      {person.assignee || person.username || person.usr}
-                    </span>
-                    <span className="tnum block truncate text-[16px] leading-tight text-ink-soft">
-                      usr={person.usr}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              aria-pressed={personMode === 'house'}
-              data-active={personMode === 'house'}
-              onClick={keepInHouse}
-              className="pill-filter h-[68px] px-7 text-[20px]"
-            >
-              Keep it in house
-            </button>
-          </div>
-
-          {people.length === 0 ? (
-            <p className="plain-note mt-5">
-              Nobody has an affiliate account yet, so this link can only be a house link. Create
-              someone on the <Link href="/users" className="link-text">People page</Link> and they
-              will appear here with a tracking key of their own.
+          {lockedTo ? (
+            <p className="plain">
+              This one is yours. Links you create are tracked to your own key and cannot be made for
+              anybody else, so there is nothing to choose here.
             </p>
           ) : (
-            <p className="field-note mt-4">
-              Only people with an account are listed. Their tracking key was generated when the
-              account was made, so there is nothing to type and no way to mistype it. Add someone on
-              the <Link href="/users" className="link-text">People page</Link>.
-            </p>
+            <>
+              <div className="flex flex-wrap gap-3.5">
+                {people.map((person) => {
+                  const active = personMode === 'known' && pickedUsr === person.usr;
+                  return (
+                    <button
+                      key={person.usr}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => pickPerson(person)}
+                      className="pill-filter h-[68px] max-w-full gap-3.5 pl-3.5 pr-6"
+                      data-active={active}
+                    >
+                      <span
+                        aria-hidden
+                        className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 text-[17px] font-bold"
+                        style={
+                          active
+                            ? {
+                                background: 'var(--color-gold)',
+                                borderColor: 'var(--color-gold-edge)',
+                                color: 'var(--color-gold-ink)',
+                              }
+                            : {
+                                background: 'var(--color-leaf-wash)',
+                                borderColor: 'var(--color-leaf-edge)',
+                                color: 'var(--color-leaf-text)',
+                              }
+                        }
+                      >
+                        {initialsOf(person.assignee || person.usr)}
+                      </span>
+                      {/* Names are free text and the pill cannot wrap — truncate
+                          rather than let one long name widen the page. The key is
+                          shown too, because two people can share a display name and
+                          the key is the thing that decides who gets paid. */}
+                      <span className="min-w-0 text-left">
+                        <span className="block truncate text-[20px] font-semibold leading-tight">
+                          {person.assignee || person.username || person.usr}
+                        </span>
+                        <span className="tnum block truncate text-[16px] leading-tight text-ink-soft">
+                          usr={person.usr}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  aria-pressed={personMode === 'house'}
+                  data-active={personMode === 'house'}
+                  onClick={keepInHouse}
+                  className="pill-filter h-[68px] px-7 text-[20px]"
+                >
+                  Keep it in house
+                </button>
+              </div>
+
+              {people.length === 0 ? (
+                <p className="plain-note mt-5">
+                  Nobody has an affiliate account yet, so this link can only be a house link. Create
+                  someone on the <Link href="/users" className="link-text">People page</Link> and
+                  they will appear here with a tracking key of their own.
+                </p>
+              ) : (
+                <p className="field-note mt-4">
+                  Only people with an account are listed. Their tracking key was generated when the
+                  account was made, so there is nothing to type and no way to mistype it. Add
+                  someone on the <Link href="/users" className="link-text">People page</Link>.
+                </p>
+              )}
+            </>
           )}
 
           {picked ? (
@@ -472,14 +483,24 @@ export function LinkForm({
                 <p className="tnum mt-2 text-[26px] font-bold">{picked.usr}</p>
                 <p className="field-note">
                   Appears in the link as <code>?usr={picked.usr}</code>, and is what lets{' '}
-                  {picked.assignee || picked.username || 'them'} see this link&rsquo;s traffic when
-                  they sign in.
+                  {lockedTo ? (
+                    <>you see this link&rsquo;s traffic when you sign in.</>
+                  ) : (
+                    <>
+                      {picked.assignee || picked.username || 'them'} see this link&rsquo;s traffic
+                      when they sign in.
+                    </>
+                  )}
                 </p>
               </div>
               <Field
-                label="Email for their records"
+                label={lockedTo ? 'Email for your records' : 'Email for their records'}
                 error={errors.assigneeEmail}
-                note="Stored on the link. Prefilled from their account if it has one."
+                note={
+                  lockedTo
+                    ? 'Stored on the link. Prefilled from your account if it has one.'
+                    : 'Stored on the link. Prefilled from their account if it has one.'
+                }
               >
                 <input
                   className="field"
@@ -579,11 +600,12 @@ export function LinkForm({
             className="btn-outline h-[68px]"
             disabled={submitting}
             onClick={() => {
-              setValues(EMPTY);
+              // Back to the starting state, which for a locked form means back
+              // to them — not to a house link they are not allowed to make.
+              setValues(initialFields(lockedTo));
               setTouchedSlug(false);
-              setPersonMode('house');
-              setPickedUsr('');
-              setCustomParam(false);
+              setPersonMode(lockedTo ? 'known' : 'house');
+              setPickedUsr(lockedTo?.usr ?? '');
               setErrors({});
               setFormError(null);
             }}
@@ -669,6 +691,21 @@ export function LinkForm({
               pending={!values.campaign.trim()}
               text={values.campaign.trim() ? 'Campaign named' : 'Name the campaign'}
             />
+            {/* Only once there is a key to check against — on a house link
+                there is no var2 to expect, so the row would be noise. */}
+            {usr ? (
+              <Check
+                ok={var2Ok === true}
+                pending={var2Ok === null}
+                text={
+                  var2Ok === null
+                    ? `Destination should carry var2=${usr}`
+                    : var2Ok
+                      ? `Destination carries var2=${usr}`
+                      : `Destination is missing var2=${usr}`
+                }
+              />
+            ) : null}
             <Check
               ok={values.active}
               pending={!values.active}

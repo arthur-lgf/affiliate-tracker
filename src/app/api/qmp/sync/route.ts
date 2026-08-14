@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchQmpReport, QmpError, qmpConfig } from '@/lib/qmp';
 import { planSync } from '@/lib/qmp-sync';
+import { clientIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { getStore, statusForError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
@@ -67,8 +68,15 @@ export async function POST(request: Request) {
   const store = getStore();
   let links;
   let existing;
+  let submissions;
   try {
-    [links, existing] = await Promise.all([store.listLinks(), store.listConversions()]);
+    [links, existing, submissions] = await Promise.all([
+      store.listLinks(),
+      store.listConversions(),
+      // Only to put a name next to each planned row. Nothing about what gets
+      // written depends on it.
+      store.listSubmissions(),
+    ]);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Could not read the current data.' },
@@ -99,11 +107,17 @@ export async function POST(request: Request) {
   };
 
   if (apply !== true) {
+    const clients = clientIndex(submissions);
     return NextResponse.json({
       applied: false,
       ...summary,
-      // A sample rather than the whole plan: enough to see it is right.
-      preview: plan.create.slice(0, 25),
+      // A sample rather than the whole plan: enough to see it is right. The
+      // client name is resolved for display only — a dash when var3 names
+      // nobody, which is a normal state and not a reason to hold the row back.
+      preview: plan.create.slice(0, 25).map((row) => ({
+        ...row,
+        client: clients.get(row.leadRef) ?? UNKNOWN_CLIENT,
+      })),
     });
   }
 

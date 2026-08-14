@@ -78,12 +78,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             ctaLabel="Create your first link"
           />
         ) : (
-          // No call to action: an affiliate cannot create their own link, so
-          // offering a button that leads somewhere they are not allowed would
-          // be worse than saying plainly who to ask.
           <EmptyState
             title="Nothing has come in yet"
-            body={`Nothing has been recorded against usr=${viewer.usr} so far. As soon as one of your links is opened, it will show up here.`}
+            body={`Nothing has been recorded against usr=${viewer.usr} so far. Create a link of your own, share it, and every click will show up here.`}
+            ctaHref="/links/new"
+            ctaLabel="Create your first link"
           />
         )}
       </>
@@ -105,7 +104,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   }));
 
   // Person and card are resolved through each row's link, not stored on it.
-  const recentApprovals = describeConversions(links, conversions.slice(0, RECENT_APPROVALS));
+  // The client comes from the lead reference the sync kept on the row.
+  const recentApprovals = describeConversions(
+    links,
+    conversions.slice(0, RECENT_APPROVALS),
+    submissions,
+  );
 
   const leadRows: LeadRow[] = capture
     ? submissions.slice(0, RECENT_LIMIT).map((row) => ({
@@ -357,8 +361,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[22px] font-semibold">{row.person}</span>
                   <span className="mt-0.5 block truncate text-[18px] text-ink-soft">
-                    {row.card}
-                    {row.notes ? ` · ${row.notes}` : ''}
+                    {row.card} ·{' '}
+                    <span className={row.client === '-' ? 'text-ink-dim' : undefined}>
+                      {row.client}
+                    </span>
+                    {row.note ? ` · ${row.note}` : ''}
                   </span>
                 </span>
                 <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>

@@ -6,7 +6,7 @@
 // below is a way that could happen.
 //
 //   npx tsx scripts/scope-checks.ts
-import { ownsKey, scopeData, seesEverything } from '../src/lib/scope';
+import { ownerForNewLink, ownsKey, scopeData, seesEverything } from '../src/lib/scope';
 import type { Viewer } from '../src/lib/viewer-core';
 import type { AffiliateLink, Conversion, Submission, Visit } from '../src/lib/types';
 
@@ -185,6 +185,60 @@ function main() {
   // Prefix and case games: 'arthur' must not match 'arthur2' or 'Arthur'.
   check('a longer key is not owned', !ownsKey(ARTHUR, 'arthur2'));
   check('a differently cased key is not owned', !ownsKey(ARTHUR, 'Arthur'));
+
+  // An affiliate may now create links, which means the request body carries a
+  // `usr` written by somebody with an interest in what it says. Every case here
+  // is a way that field could end up deciding who gets paid.
+  console.log('\n— who a new link belongs to —');
+  const SELF = { fullName: 'Arthur Reed', email: 'arthur@example.test', username: 'arthur' };
+  const asked = { usr: 'bianca', assignee: 'Bianca Vale', assigneeEmail: 'bianca@example.test' };
+
+  const adminChoice = ownerForNewLink(ADMIN, asked, null);
+  check('an admin creates for whoever they named', adminChoice.ok && adminChoice.owner.usr === 'bianca');
+  const houseChoice = ownerForNewLink(ADMIN, { usr: '', assignee: '', assigneeEmail: '' }, null);
+  check('an admin may still make a house link', houseChoice.ok && houseChoice.owner.usr === '');
+
+  // The one that matters: what was asked for is ignored entirely.
+  const mine = ownerForNewLink(ARTHUR, asked, SELF);
+  check('an affiliate gets their own key', mine.ok && mine.owner.usr === 'arthur');
+  check("and not the one they asked for", mine.ok && mine.owner.usr !== 'bianca');
+  check('with their own name on it', mine.ok && mine.owner.assignee === 'Arthur Reed');
+  check("and not somebody else's", mine.ok && mine.owner.assignee !== 'Bianca Vale');
+
+  // An affiliate cannot make a house link either. House rows are what an
+  // unattributed click falls back to, so they belong to nobody in particular.
+  const asHouse = ownerForNewLink(ARTHUR, { usr: '', assignee: '', assigneeEmail: '' }, SELF);
+  check('an affiliate cannot make a house link', asHouse.ok && asHouse.owner.usr === 'arthur');
+
+  // The email is theirs to write, because it is a note about their own row.
+  const typedEmail = ownerForNewLink(
+    ARTHUR,
+    { usr: '', assignee: '', assigneeEmail: 'work@example.test' },
+    SELF,
+  );
+  check('a typed email is kept', typedEmail.ok && typedEmail.owner.assigneeEmail === 'work@example.test');
+  const blankEmail = ownerForNewLink(ARTHUR, { usr: '', assignee: '', assigneeEmail: '' }, SELF);
+  check(
+    'and their account email is the default',
+    blankEmail.ok && blankEmail.owner.assigneeEmail === 'arthur@example.test',
+  );
+
+  // The account lookup is best effort, so the fallbacks have to hold.
+  const noAccount = ownerForNewLink(ARTHUR, asked, null);
+  check('no account row still binds the key', noAccount.ok && noAccount.owner.usr === 'arthur');
+  check('and falls back to the username', noAccount.ok && noAccount.owner.assignee === 'arthur');
+  const namelessAccount = ownerForNewLink(ARTHUR, asked, { fullName: '', email: '', username: 'arthur' });
+  check(
+    'an account with no full name uses the username',
+    namelessAccount.ok && namelessAccount.owner.assignee === 'arthur',
+  );
+
+  console.log('\n— and failing closed —');
+  check('nobody creates nothing', !ownerForNewLink(null, asked, SELF).ok);
+  check(
+    'an affiliate with no key is refused',
+    !ownerForNewLink(viewer({ usr: '' }), asked, SELF).ok,
+  );
 
   console.log(`\nscope: ${pass} passed, ${fail} failed`);
   process.exitCode = fail === 0 ? 0 : 1;

@@ -1,3 +1,4 @@
+import { leadRefIn, visibleNotes } from './qmp-sync';
 import type { AffiliateLink, Conversion, Submission, Visit } from './types';
 
 export type DayBucket = { date: string; label: string; submissions: number; visits: number };
@@ -384,7 +385,7 @@ export function affiliateHref(usr: string, period?: Period): string {
  * than a name frozen at the time of the sale. That is the honest reading — the
  * name lives in one place and one place only.
  */
-function nameIndex(links: AffiliateLink[]): Map<string, string> {
+export function nameIndex(links: AffiliateLink[]): Map<string, string> {
   const names = new Map<string, string>();
   const newestFirst = [...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   for (const link of newestFirst) {
@@ -417,25 +418,73 @@ function cardFor(cards: CardIndex, row: { slug: string; usr: string }): string {
   return cards.exact.get(linkKey(row)) ?? cards.bySlug.get(row.slug) ?? row.slug;
 }
 
-/** A conversion with the person and card its link supplies, for display. */
-export type ConversionView = Conversion & { person: string; card: string };
+/**
+ * What is shown when an approval names no client. A plain dash, deliberately:
+ * "Unknown" reads as a fact about the client, and this is a fact about the row.
+ */
+export const UNKNOWN_CLIENT = '-';
 
 /**
- * Decorate raw conversions for listing. The name and card are resolved through
- * the links here rather than stored on the row, so a list and the table above it
- * can never label the same sale differently.
+ * Lead reference → the name on that lead.
+ *
+ * The reference is the submission's own id (see lib/lead-id.ts), which is what
+ * travels out as var3 and comes back on the QMP report. A lead with no name
+ * still resolves, to its email, because knowing which address it was is better
+ * than a dash; only a reference that matches no row at all is unknown.
+ */
+export function clientIndex(submissions: Submission[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const row of submissions) {
+    const id = (row.id ?? '').trim();
+    if (!id || names.has(id)) continue;
+    const name = (row.fullName || row.email || '').trim();
+    if (name) names.set(id, name);
+  }
+  return names;
+}
+
+/** A conversion with the person, card and client its row resolves to. */
+export type ConversionView = Conversion & {
+  person: string;
+  card: string;
+  /** The lead this approval came from, or a dash when it names nobody. */
+  client: string;
+  /** The notes with the machine tags stripped out. */
+  note: string;
+};
+
+/**
+ * Decorate raw conversions for listing. The name, card and client are resolved
+ * through the links and leads here rather than stored on the row, so a list and
+ * the table above it can never label the same sale differently.
+ *
+ * The client comes from the lead reference the sync kept in the notes (var3 on
+ * the QMP row, which is the id of the submission). An approval recorded by hand
+ * has no reference, and one whose lead has since been deleted has a reference
+ * that resolves to nothing. Both are normal, and both read as a dash — the
+ * alternative is inventing a name for a row that does not have one.
+ *
+ * `submissions` is optional so the callers that only list money do not have to
+ * load leads to do it; without it, every client is a dash.
  */
 export function describeConversions(
   links: AffiliateLink[],
   conversions: Conversion[],
+  submissions: Submission[] = [],
 ): ConversionView[] {
   const names = nameIndex(links);
   const cards = cardIndex(links);
-  return conversions.map((row) => ({
-    ...row,
-    person: row.usr ? names.get(row.usr) ?? row.usr : 'House',
-    card: cardFor(cards, row),
-  }));
+  const clients = clientIndex(submissions);
+  return conversions.map((row) => {
+    const notes = row.notes ?? '';
+    return {
+      ...row,
+      person: row.usr ? names.get(row.usr) ?? row.usr : 'House',
+      card: cardFor(cards, row),
+      client: clients.get(leadRefIn(notes)) ?? UNKNOWN_CLIENT,
+      note: visibleNotes(notes),
+    };
+  });
 }
 
 /**

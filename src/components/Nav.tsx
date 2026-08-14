@@ -8,7 +8,10 @@ type Item = { href: string; label: string; adminOnly?: boolean };
 const ITEMS: Item[] = [
   { href: '/', label: 'Overview' },
   { href: '/links', label: 'Links' },
-  { href: '/links/new', label: 'Create', adminOnly: true },
+  // Not admin-only: an affiliate may create links, but only ever their own.
+  // The page hands them themselves instead of a picker, and the route decides
+  // ownership again from the session whatever the form posts.
+  { href: '/links/new', label: 'Create' },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
 ];
@@ -16,7 +19,7 @@ const ITEMS: Item[] = [
 /**
  * Hiding a tab is presentation, not protection. Every page behind these
  * re-checks the role server-side, because a hidden link is still a URL anyone
- * can type. This exists so an affiliate is not shown four doors that all say no.
+ * can type. This exists so an affiliate is not shown doors that all say no.
  */
 function visibleItems(isAdmin: boolean): Item[] {
   return isAdmin ? ITEMS : ITEMS.filter((item) => !item.adminOnly);

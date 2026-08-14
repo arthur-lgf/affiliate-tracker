@@ -20,10 +20,21 @@
  *     not say what each individual approval paid, so the split is an average
  *     and is labelled as one. The sum is what is true.
  *
- *  3. Sub ID is the only join back to a person. It is matched to a link's
- *     `usr`. Nothing is guessed: a Sub ID with no link, or with several links
- *     and no way to tell them apart, is reported as unresolved rather than
- *     attributed to somebody.
+ *  3. Var2 is the join back to a person. It is matched to a link's `usr`.
+ *     Nothing is guessed: a var2 with no link, or with several links and no way
+ *     to tell them apart, is reported as unresolved rather than attributed to
+ *     somebody.
+ *
+ *     This used to read Sub ID, and Sub ID turned out to carry QuinStreet's own
+ *     widget identifier ("JavaScriptTransition_JSWidget") on every row of the
+ *     live report, which is nobody's key. Var2 is where the tracking key
+ *     actually travels: it is written into each link's destination URL as
+ *     `var2=<usr>`, so QMP hands it straight back on the report.
+ *
+ *  4. Var3 carries the lead reference, minted before the visitor was forwarded
+ *     (see lib/lead-id.ts). It is kept on the conversion so an approval can be
+ *     traced to the exact person who filled the form, weeks later. It is a
+ *     label, never a join key for attribution — the money follows var2.
  *
  * Re-running is safe. Every conversion carries a marker in its notes derived
  * from the row's dimensions, and anything already carrying that marker is left
@@ -171,6 +182,44 @@ export function markerIn(notes: string): string | null {
   return match ? `qmp:${match[1]}#${match[2]}/${match[3]}` : null;
 }
 
+/**
+ * The lead reference, carried in the notes beside the marker.
+ *
+ * Notes rather than a column of its own, for the same reason the card is there:
+ * the conversions table is also a Google Sheet with a fixed set of headers, and
+ * a column added to one adapter is a column missing from the other. The tag is
+ * machine-readable and stripped back out before any of it is shown.
+ */
+export function leadTag(ref: string): string {
+  return `lead:${ref}`;
+}
+
+const LEAD_PATTERN = /\blead:([a-z0-9]+)/i;
+
+export function leadRefIn(notes: string): string {
+  const match = LEAD_PATTERN.exec(notes ?? '');
+  return match ? match[1]! : '';
+}
+
+/**
+ * The notes with the machine tags taken out, for showing to a person.
+ *
+ * `qmp:ab12cd3#1/3 · lead:rc7czk6xa61y` is bookkeeping. It has to be on the row
+ * — it is what makes a re-run safe and what ties an approval to the lead behind
+ * it — but putting it in front of somebody reading their earnings is noise.
+ */
+export function visibleNotes(notes: string): string {
+  return (notes ?? '')
+    .replace(MARKER_PATTERN, '')
+    .replace(LEAD_PATTERN, '')
+    // Separators left stranded by the removals: a trailing one, a leading one,
+    // or two that have collapsed together.
+    .replace(/·\s*(?=·)/g, '')
+    .replace(/^\s*·\s*|\s*·\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export type ParsedMarker = { identity: string; index: number; count: number };
 
 export function parseMarker(notes: string): ParsedMarker | null {
@@ -191,7 +240,12 @@ export function splitAmount(total: number, count: number): number[] {
   return Array.from({ length: count }, (_, index) => (index < remainder ? base + 1 : base) / 100);
 }
 
-export type PlannedConversion = NewConversion & { marker: string; card: string };
+export type PlannedConversion = NewConversion & {
+  marker: string;
+  card: string;
+  /** var3, the lead this approval came from. Empty when the row carries none. */
+  leadRef: string;
+};
 
 export type SyncIssue = {
   kind:
@@ -222,23 +276,30 @@ export type SyncPlan = {
   unusable: boolean;
 };
 
+/** The tracking key a row carries: var2, as written into the link's destination. */
+export function trackingKeyOf(row: Record<string, unknown>): string {
+  return asText(readField(row, 'var2'));
+}
+
+/** The lead reference a row carries: var3, appended when the form was filled in. */
+export function leadRefOf(row: Record<string, unknown>): string {
+  return asText(readField(row, 'var3'));
+}
+
 function linkFor(
-  subId: string,
+  trackingKey: string,
   row: Record<string, unknown>,
   links: AffiliateLink[],
   defaultSlug: string,
 ): { link: AffiliateLink } | { error: SyncIssue['kind']; detail: string } {
-  const wanted = subId.trim().toLowerCase();
+  const wanted = trackingKey.trim().toLowerCase();
   const matches = links.filter((link) => link.usr.trim().toLowerCase() === wanted);
 
   if (matches.length === 1) return { link: matches[0]! };
   if (matches.length === 0) {
-    // QMP does not always carry a usable tracking key. On report 93440 every
-    // row's Sub ID is "JavaScriptTransition_JSWidget", which is QuinStreet's
-    // own widget identifier rather than anybody's key, so without somewhere to
-    // put them the whole report is unattributable. QMP_DEFAULT_SLUG names that
-    // somewhere. It is off unless set: guessing an owner is worse than saying
-    // nothing.
+    // Not every row comes back with a key in it. QMP_DEFAULT_SLUG names one
+    // link to put those on; it is off unless set, because guessing an owner is
+    // worse than saying nothing.
     if (defaultSlug) {
       const fallback = links.find((link) => link.slug === defaultSlug);
       if (fallback) return { link: fallback };
@@ -250,8 +311,8 @@ function linkFor(
     return {
       error: 'no-link',
       detail: wanted
-        ? `Sub ID "${subId}" has no link. Create one with usr=${subId}, set QMP_DEFAULT_SLUG to send these to one link, or fix the Sub ID in QMP.`
-        : 'Rows with no Sub ID need a house link (a link with usr left empty).',
+        ? `var2 "${trackingKey}" matches no link. Create one with usr=${trackingKey}, or correct the var2 in that link's destination URL.`
+        : 'Rows with an empty var2 carry no tracking key. Add var2=<usr> to the destination URL of the link they came through.',
     };
   }
 
@@ -268,7 +329,7 @@ function linkFor(
 
   return {
     error: 'ambiguous-link',
-    detail: `Sub ID "${subId}" matches ${matches.length} links (${matches
+    detail: `var2 "${trackingKey}" matches ${matches.length} links (${matches
       .map((link) => link.slug)
       .join(', ')}) and the card name does not single one out.`,
   };
@@ -382,8 +443,8 @@ export function planSync(options: {
       continue;
     }
 
-    const subId = asText(readField(row, 'subId'));
-    const resolved = linkFor(subId, row, links, defaultSlug);
+    const trackingKey = trackingKeyOf(row);
+    const resolved = linkFor(trackingKey, row, links, defaultSlug);
     if ('error' in resolved) {
       addIssue(resolved.error, resolved.detail, approvals);
       continue;
@@ -395,6 +456,7 @@ export function planSync(options: {
     const identity = occurrence === 0 ? baseIdentity : `${baseIdentity}${occurrence}`;
 
     const card = asText(readField(row, 'card'));
+    const leadRef = leadRefOf(row);
 
     // QMP restates: a day's approvals can go up (or down) after the fact. The
     // markers of an already-imported row all carry the count it had then, so
@@ -428,10 +490,13 @@ export function planSync(options: {
         approvedOn,
         amount: amounts[index]!,
         // Card first: it is the useful half for anyone reading the sheet, and
-        // Ledger stores the card nowhere else.
-        notes: card ? `${card} · ${marker}` : marker,
+        // Ledger stores the card nowhere else. The lead tag rides along at the
+        // end so an approval can be traced back to the person who filled the
+        // form; visibleNotes takes both tags out again for display.
+        notes: [card, marker, leadRef ? leadTag(leadRef) : ''].filter(Boolean).join(' · '),
         marker,
         card,
+        leadRef,
       });
     }
   }

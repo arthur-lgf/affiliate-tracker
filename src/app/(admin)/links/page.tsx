@@ -50,11 +50,11 @@ export default async function LinksPage() {
                 } paused${isAdmin ? ` · ${people} ${people === 1 ? 'person' : 'people'}` : ''}`}
           </p>
         </div>
-        {isAdmin ? (
-          <Link href="/links/new" className="btn-gold">
-            + New link
-          </Link>
-        ) : null}
+        {/* Everyone signed in can make a link now. An affiliate's is bound to
+            their own key, so the button leads somewhere they are allowed. */}
+        <Link href="/links/new" className="btn-gold">
+          + New link
+        </Link>
       </div>
 
       {links.length === 0 ? (
@@ -69,7 +69,9 @@ export default async function LinksPage() {
           ) : (
             <EmptyState
               title="No links yet"
-              body={`Nothing has been assigned to usr=${viewer.usr} yet. Your admin creates these and they appear here as soon as they do.`}
+              body={`Nothing is assigned to usr=${viewer.usr} yet. Make one by pairing a destination with your key, and you'll get a shareable link like /cashback?usr=${viewer.usr}.`}
+              ctaHref="/links/new"
+              ctaLabel="Create a link"
             />
           )}
         </div>

@@ -7,6 +7,7 @@
 //
 //   npx tsx scripts/qmp-sync-checks.ts
 import {
+  leadRefIn,
   markerIn,
   normalizeKey,
   parseDate,
@@ -15,6 +16,7 @@ import {
   readField,
   rowIdentity,
   splitAmount,
+  visibleNotes,
 } from '../src/lib/qmp-sync';
 import type { AffiliateLink, Conversion } from '../src/lib/types';
 
@@ -49,9 +51,12 @@ function qmpRow(over: Record<string, unknown> = {}): Record<string, unknown> {
     Advertiser: 'Chase',
     'Card Name': 'Chase Sapphire Preferred',
     'Device Type': 'Desktop',
-    Var2: '',
-    Var3: '',
-    'Sub ID': 'mark',
+    // Var2 carries the tracking key and Var3 the lead reference. Sub ID is
+    // filled in with what the live report actually puts there — QuinStreet's
+    // own widget name — so a test cannot pass by accidentally reading it.
+    Var2: 'mark',
+    Var3: 'rc7czk6xa61y',
+    'Sub ID': 'JavaScriptTransition_JSWidget',
     'Referring Session URL': 'https://www.cardratings.com/bestcards',
     State: 'NY',
     Searches: 321,
@@ -74,7 +79,8 @@ check('a dot is ignored', normalizeKey('Avg. EPC($)') === 'avgepc');
 
 const row = qmpRow();
 check('the date column is found', readField(row, 'date') === '2026-08-12');
-check('the sub id column is found', readField(row, 'subId') === 'mark');
+check('the var2 column is found', readField(row, 'var2') === 'mark');
+check('the var3 column is found', readField(row, 'var3') === 'rc7czk6xa61y');
 check('the approvals column is found', readField(row, 'approvals') === 3);
 check('the earnings column is found', readField(row, 'earnings') === '$412.50');
 check('the card column is found', readField(row, 'card') === 'Chase Sapphire Preferred');
@@ -124,6 +130,8 @@ check('a different report key changes it', rowIdentity(row, '456') !== identity)
 check('a different day changes it', rowIdentity(qmpRow({ 'Date-Daily': '2026-08-11' }), '123') !== identity);
 check('a different device changes it', rowIdentity(qmpRow({ 'Device Type': 'Mobile' }), '123') !== identity);
 check('a different sub id changes it', rowIdentity(qmpRow({ 'Sub ID': 'dana' }), '123') !== identity);
+check('a different var2 changes it', rowIdentity(qmpRow({ Var2: 'dana' }), '123') !== identity);
+check('a different var3 changes it', rowIdentity(qmpRow({ Var3: 'zzzzzzzzzzzz' }), '123') !== identity);
 // Measures are the payload, not the identity: yesterday's row gaining an
 // approval must not read as a brand new row.
 check('a changed measure does not change it', rowIdentity(qmpRow({ Approvals: 9, Searches: 1 }), '123') === identity);
@@ -170,21 +178,74 @@ const unchanged = planSync({ rows: [qmpRow({ 'Total Earnings($)': '500.00' })], 
 check('the same count with new earnings is not a restatement', unchanged.issues.length === 0);
 check('and is already imported, so nothing is written', unchanged.create.length === 0 && unchanged.skipped === 3);
 
+// The tracking key travels in var2, written into the link's destination URL as
+// var2=<usr>. Sub ID is not read at all any more: on the live report every row
+// carries "JavaScriptTransition_JSWidget" there, which is QuinStreet's own
+// widget name, and matching on it attributed every approval to nobody.
+console.log('\n— the tracking key comes from var2 —');
+check('var2 is what was matched', plan.create.every((c) => c.usr === 'mark'));
+const subIdOnly = planSync({
+  rows: [qmpRow({ Var2: '', 'Sub ID': 'mark' })],
+  reportKey: '123',
+  links: [links[0]!],
+  existing: [],
+});
+check('a key in Sub ID alone is not used', subIdOnly.create.length === 0);
+check('and is reported as unattributable', subIdOnly.issues[0]?.kind === 'no-link');
+check(
+  'the message names var2, not sub id',
+  /var2/.test(subIdOnly.issues[0]?.detail ?? '') && !/Sub ID/.test(subIdOnly.issues[0]?.detail ?? ''),
+);
+check('case and padding are ignored', planSync({
+  rows: [qmpRow({ Var2: '  MARK  ' })],
+  reportKey: '123',
+  links,
+  existing: [],
+}).create.every((c) => c.usr === 'mark'));
+
+console.log('\n— the lead reference comes from var3 —');
+check('it is carried onto the plan', plan.create.every((c) => c.leadRef === 'rc7czk6xa61y'));
+check('and into the notes', plan.create.every((c) => c.notes.includes('lead:rc7czk6xa61y')));
+check('where it can be read back', leadRefIn(plan.create[0]!.notes) === 'rc7czk6xa61y');
+const noLead = planSync({ rows: [qmpRow({ Var3: '' })], reportKey: '123', links, existing: [] });
+check('a row with no var3 still syncs', noLead.create.length === 3);
+check('and carries no lead tag', noLead.create.every((c) => !c.notes.includes('lead:')));
+check('which reads back as empty', leadRefIn(noLead.create[0]!.notes) === '');
+// The marker still has to survive alongside the lead tag, or a re-run would
+// write every one of these a second time.
+check('the marker still round trips', markerIn(plan.create[0]!.notes) === plan.create[0]!.marker);
+const withLead = planSync({
+  rows: [row],
+  reportKey: '123',
+  links,
+  existing: plan.create.map((c) => conversion(c.notes)),
+});
+check('a re-run recognises rows carrying a lead tag', withLead.create.length === 0 && withLead.skipped === 3);
+
+console.log('\n— notes, as a person reads them —');
+check('the tags come out', visibleNotes(plan.create[0]!.notes) === 'Chase Sapphire Preferred');
+check('a hand-typed note is untouched', visibleNotes('Called them twice') === 'Called them twice');
+check('a marker on its own leaves nothing', visibleNotes(`qmp:${identity}#1/3`) === '');
+check('a lead tag on its own leaves nothing', visibleNotes('lead:rc7czk6xa61y') === '');
+check('both on their own leave nothing', visibleNotes(`qmp:${identity}#1/3 · lead:rc7czk6xa61y`) === '');
+check('empty notes stay empty', visibleNotes('') === '');
+check('a card with a note keeps both', visibleNotes(`Chase · qmp:${identity}#1/3 · Called them`) === 'Chase · Called them');
+
 console.log('\n— things that must not be guessed —');
-const unknown = planSync({ rows: [qmpRow({ 'Sub ID': 'nobody' })], reportKey: '123', links, existing: [] });
-check('an unknown sub id creates nothing', unknown.create.length === 0);
+const unknown = planSync({ rows: [qmpRow({ Var2: 'nobody' })], reportKey: '123', links, existing: [] });
+check('an unknown var2 creates nothing', unknown.create.length === 0);
 check('and is reported', unknown.issues[0]?.kind === 'no-link');
 check('with the approvals at stake', unknown.issues[0]?.approvals === 3);
 
-const houseRow = planSync({ rows: [qmpRow({ 'Sub ID': '' })], reportKey: '123', links, existing: [] });
-check('an empty sub id uses the house link', houseRow.create.every((c) => c.slug === 'house-offer'));
+const houseRow = planSync({ rows: [qmpRow({ Var2: '' })], reportKey: '123', links, existing: [] });
+check('an empty var2 uses the house link', houseRow.create.every((c) => c.slug === 'house-offer'));
 
-const noHouse = planSync({ rows: [qmpRow({ 'Sub ID': '' })], reportKey: '123', links: [links[0]!], existing: [] });
+const noHouse = planSync({ rows: [qmpRow({ Var2: '' })], reportKey: '123', links: [links[0]!], existing: [] });
 check('with no house link it is reported, not dropped silently', noHouse.issues[0]?.kind === 'no-link');
 
 const twoLinks = [link('a', 'mark', ''), link('b', 'mark', '')];
 const ambiguous = planSync({ rows: [row], reportKey: '123', links: twoLinks, existing: [] });
-check('two links on one sub id is ambiguous', ambiguous.issues[0]?.kind === 'ambiguous-link');
+check('two links on one var2 is ambiguous', ambiguous.issues[0]?.kind === 'ambiguous-link');
 check('and nothing is written', ambiguous.create.length === 0);
 
 const disambiguated = planSync({

@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
-import { scopeData } from '@/lib/scope';
+import { ownerForNewLink, scopeData, type SelfAccount } from '@/lib/scope';
 import { getStore, statusForError } from '@/lib/store';
+import { findUserById, usersEnabled } from '@/lib/users';
 import { fieldErrors, linkInputSchema } from '@/lib/validate';
-import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
+import { forbidden, unauthorized, viewerFromRequest, type Viewer } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,12 +30,33 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * The viewer's own account row, for filling in their name and email.
+ *
+ * Best effort on purpose: a database that will not answer must not stop
+ * somebody creating a link for themselves, because none of this decides
+ * anything — the tracking key, which is the part that matters, comes from the
+ * session and is never read from here.
+ */
+async function selfAccount(viewer: Viewer): Promise<SelfAccount | null> {
+  if (!usersEnabled()) return null;
+  try {
+    const account = await findUserById(viewer.id);
+    if (!account) return null;
+    return { fullName: account.fullName, email: account.email, username: account.username };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Anyone signed in may create a link. What they may not do is say whose it is:
+ * an affiliate's is bound to the key on their session, whatever the body asks
+ * for. See ownerForNewLink in lib/scope.ts, where that rule lives and is tested.
+ */
 export async function POST(request: Request) {
   const viewer = await viewerFromRequest(request);
   if (!viewer) return unauthorized();
-  // Creating a link means choosing whose tracking key it pays out to, which is
-  // the one decision an affiliate must never make for themselves.
-  if (viewer.role !== 'admin') return forbidden('Only an admin can create links.');
 
   let body: unknown;
   try {
@@ -56,12 +78,20 @@ export async function POST(request: Request) {
     throw error;
   }
 
+  const decision = ownerForNewLink(
+    viewer,
+    { usr: input.usr, assignee: input.assignee, assigneeEmail: input.assigneeEmail },
+    viewer.role === 'admin' ? null : await selfAccount(viewer),
+  );
+  if (!decision.ok) return forbidden(decision.reason);
+  const owner = decision.owner;
+
   try {
     const link = await getStore().createLink({
       slug: input.slug,
-      usr: input.usr,
-      assignee: input.assignee,
-      assigneeEmail: input.assigneeEmail,
+      usr: owner.usr,
+      assignee: owner.assignee,
+      assigneeEmail: owner.assigneeEmail,
       campaign: input.campaign,
       destination: input.destination,
       headline: input.headline,

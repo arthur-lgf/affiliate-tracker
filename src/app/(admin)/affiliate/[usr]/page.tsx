@@ -69,7 +69,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // fact about who else works here and what their key is.
   if (!ownsKey(viewer, usr)) notFound();
 
-  const { links, visits, conversions, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, error } = await loadAll(viewer);
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
   }
@@ -95,9 +95,13 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   const name = person?.name ?? usr;
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '30 days';
 
+  // Leads are passed in so each approval can name the client behind it. They
+  // are already scoped to this viewer, so an approval whose lead belongs to
+  // somebody else resolves to a dash rather than to a name they may not see.
   const theirApprovals = describeConversions(
     links,
     conversions.filter((row) => (row.usr || HOUSE_KEY) === personKey).slice(0, RECENT_APPROVALS),
+    submissions,
   );
 
   const theirLinks = links.filter((link) => (link.usr || HOUSE_KEY) === personKey);
@@ -263,11 +267,15 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[22px] font-semibold">{row.card}</span>
-                  {row.notes ? (
-                    <span className="mt-0.5 block truncate text-[18px] text-ink-soft">
-                      {row.notes}
+                  {/* Who the approval was for. A dash means the report row
+                      carried no var3, or one that matches no lead here. */}
+                  <span className="mt-0.5 block truncate text-[18px]">
+                    <span className="text-ink-soft">Client </span>
+                    <span className={row.client === '-' ? 'text-ink-dim' : 'font-semibold'}>
+                      {row.client}
                     </span>
-                  ) : null}
+                    {row.note ? <span className="text-ink-soft"> · {row.note}</span> : null}
+                  </span>
                 </span>
                 <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>
                 <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
