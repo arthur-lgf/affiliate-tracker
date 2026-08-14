@@ -63,8 +63,15 @@ export type Submission = {
  * Status is absent here on purpose: the capture endpoint never chooses it. The
  * store stamps `pending` on every new row so there is exactly one place that
  * decides what a brand new lead looks like.
+ *
+ * `id` is the one exception to the store owning identity, and only because the
+ * reference has to exist before the row does: it is embedded in the destination
+ * URL that is saved on the row and followed by the visitor. Left out, the store
+ * mints one as before.
  */
-export type NewSubmission = Omit<Submission, 'id' | 'createdAt' | 'status'>;
+export type NewSubmission = Omit<Submission, 'id' | 'createdAt' | 'status'> & {
+  id?: string;
+};
 
 /** The only part of a logged lead the admin surface may change. */
 export type SubmissionPatch = { status: LeadStatus };
@@ -111,7 +118,7 @@ export type NewConversion = Omit<Conversion, 'id' | 'createdAt'>;
 
 export interface Store {
   /** Which backend is actually serving requests — surfaced in the UI. */
-  readonly kind: 'sheets' | 'local';
+  readonly kind: 'sheets' | 'local' | 'supabase';
 
   listLinks(): Promise<AffiliateLink[]>;
   createLink(input: NewAffiliateLink): Promise<AffiliateLink>;

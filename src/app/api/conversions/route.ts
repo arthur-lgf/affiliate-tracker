@@ -2,15 +2,20 @@ import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { getStore, statusForError } from '@/lib/store';
 import { conversionInputSchema, fieldErrors } from '@/lib/validate';
+import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 /**
- * Approved applications and what they paid. Admin-only — gated by the Basic-auth
- * matcher, like /api/links.
+ * Approved applications and what they paid. Admin only: this route decides who
+ * is owed how much, so it is checked here as well as in the middleware.
  */
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const viewer = await viewerFromRequest(request);
+  if (!viewer) return unauthorized();
+  if (viewer.role !== 'admin') return forbidden('Only an admin can record an approval.');
+
   let body: unknown;
   try {
     body = await request.json();

@@ -43,7 +43,7 @@ export function LoginForm({ next }: { next: string }) {
       // is on its way out and re-enabling invites a second submit.
       window.location.assign(typeof payload.redirectTo === 'string' ? payload.redirectTo : '/');
     } catch {
-      setError('Network error — please try again.');
+      setError('Network error. Please try again.');
       setBusy(false);
       requestAnimationFrame(() => errorRef.current?.focus());
     }

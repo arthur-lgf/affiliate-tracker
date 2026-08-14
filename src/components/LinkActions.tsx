@@ -69,7 +69,7 @@ export function LinkActions({
         onClick={() => {
           if (
             window.confirm(
-              `Delete the link for "${label}"? Submissions already logged are kept — only the link is removed.`,
+              `Delete the link for "${label}"? Submissions already logged are kept. Only the link is removed.`,
             )
           ) {
             void send('DELETE');

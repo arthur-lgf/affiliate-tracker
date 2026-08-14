@@ -43,7 +43,7 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
   if (targets.length === 0) {
     return (
       <p className="plain">
-        Create a link first — an approval is recorded against the link it came through.
+        Create a link first. An approval is recorded against the link it came through.
       </p>
     );
   }
@@ -149,7 +149,7 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
           placeholder="Reference, applicant initials, anything that helps you reconcile"
           className="field"
         />
-        <span className="field-note">Optional — only you ever see it.</span>
+        <span className="field-note">Optional. Only you ever see it.</span>
       </label>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">

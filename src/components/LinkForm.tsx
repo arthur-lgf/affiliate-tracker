@@ -1,8 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { initialsOf } from '@/lib/analytics';
+import { CAMPAIGNS } from '@/lib/campaigns';
 
 type Fields = {
   campaign: string;
@@ -36,7 +38,22 @@ const EMPTY: Fields = {
   active: true,
 };
 
-export type KnownPerson = { usr: string; assignee: string; email: string };
+/**
+ * Someone a link can belong to: an affiliate account, with the tracking key it
+ * was given when the account was created.
+ *
+ * These come from the users table now, not from whoever happened to own an
+ * existing link. That closes a gap: a link could previously be created for any
+ * key an admin typed, and a key with no account behind it belongs to nobody who
+ * can sign in, so its traffic was invisible to everyone but an admin.
+ */
+export type KnownPerson = {
+  usr: string;
+  assignee: string;
+  email: string;
+  /** The sign-in name, shown so two people with the same display name are distinguishable. */
+  username?: string;
+};
 
 /** Loose while typing (keeps a trailing dash so you can type "cash-back"). */
 function softKey(raw: string): string {
@@ -68,7 +85,6 @@ export function LinkForm({
   const router = useRouter();
   const [values, setValues] = useState<Fields>(EMPTY);
   const [touchedSlug, setTouchedSlug] = useState(false);
-  const [touchedUsr, setTouchedUsr] = useState(false);
   /**
    * Which person the link belongs to, as explicit state.
    *
@@ -77,9 +93,7 @@ export function LinkForm({
    * unmounted the assignee fields mid-keystroke, and still submitted their
    * name — attributing the link to someone the form no longer showed.
    */
-  const [personMode, setPersonMode] = useState<'house' | 'known' | 'new'>(
-    people.length === 0 ? 'new' : 'house',
-  );
+  const [personMode, setPersonMode] = useState<'house' | 'known'>('house');
   const [pickedUsr, setPickedUsr] = useState('');
   const [customParam, setCustomParam] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -110,7 +124,6 @@ export function LinkForm({
   function pickPerson(person: KnownPerson) {
     setPersonMode('known');
     setPickedUsr(person.usr);
-    setTouchedUsr(true);
     setValues((prev) => ({
       ...prev,
       assignee: person.assignee,
@@ -123,19 +136,10 @@ export function LinkForm({
   function keepInHouse() {
     setPersonMode('house');
     setPickedUsr('');
-    setTouchedUsr(true);
     setValues((prev) => ({ ...prev, assignee: '', usr: '', assigneeEmail: '' }));
   }
 
-  function onAssigneeChange(value: string) {
-    const firstName = value.trim().split(/\s+/)[0] ?? '';
-    setValues((prev) => ({
-      ...prev,
-      assignee: value,
-      usr: touchedUsr ? prev.usr : hardKey(firstName).slice(0, 48),
-    }));
-    setErrors((prev) => ({ ...prev, assignee: '', usr: '' }));
-  }
+  const picked = people.find((person) => person.usr === pickedUsr) ?? null;
 
   const slug = hardKey(values.slug);
   const usr = hardKey(values.usr);
@@ -184,7 +188,7 @@ export function LinkForm({
       router.push('/links');
       router.refresh();
     } catch {
-      setFormError('Network error — the link was not created.');
+      setFormError('Network error. The link was not created.');
       setSubmitting(false);
     }
   }
@@ -196,7 +200,7 @@ export function LinkForm({
           Create an affiliate link
         </h1>
         <p className="mt-3 max-w-[640px] text-[20px] leading-relaxed text-ink-soft">
-          Pair a destination with the person who owns the traffic. Three answers are required — the
+          Pair a destination with the person who owns the traffic. Three answers are required. The
           rest have sensible defaults you can change later.
         </p>
 
@@ -214,15 +218,27 @@ export function LinkForm({
         {/* 1 — the offer */}
         <Step number={1} title="The offer">
           <div className="grid gap-6 sm:grid-cols-2">
-            <Field label="Campaign name" error={errors.campaign} required>
-              <input
+            <Field
+              label="Campaign"
+              error={errors.campaign}
+              note="Pick the category this offer belongs to."
+              required
+            >
+              {/* A fixed list, not free text: "Cash back" typed once and "Cash
+                  Back" typed the next week are the same offer, and every figure
+                  grouped by campaign would quietly split in two. */}
+              <select
                 className="field"
                 value={values.campaign}
                 onChange={(e) => onCampaignChange(e.target.value)}
-                placeholder="Cash Back Credit Cards"
-                maxLength={120}
-                autoComplete="off"
-              />
+              >
+                <option value="">Choose a campaign…</option>
+                {CAMPAIGNS.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field
               label="Where it sends people"
@@ -406,26 +422,21 @@ export function LinkForm({
                   </span>
                   {/* Names are free text and the pill cannot wrap — truncate
                       rather than let one long name widen the page. */}
-                  <span className="min-w-0 truncate text-[20px] font-semibold">
-                    {person.assignee || person.usr}
+                  {/* Names are free text and the pill cannot wrap — truncate
+                      rather than let one long name widen the page. The key is
+                      shown too, because two people can share a display name and
+                      the key is the thing that decides who gets paid. */}
+                  <span className="min-w-0 text-left">
+                    <span className="block truncate text-[20px] font-semibold leading-tight">
+                      {person.assignee || person.username || person.usr}
+                    </span>
+                    <span className="tnum block truncate text-[16px] leading-tight text-ink-soft">
+                      usr={person.usr}
+                    </span>
                   </span>
                 </button>
               );
             })}
-            <button
-              type="button"
-              aria-pressed={personMode === 'new'}
-              data-active={personMode === 'new'}
-              onClick={() => {
-                setPersonMode('new');
-                setPickedUsr('');
-                setTouchedUsr(false);
-                setValues((prev) => ({ ...prev, assignee: '', usr: '', assigneeEmail: '' }));
-              }}
-              className="pill-filter h-[68px] border-dashed px-7 text-[20px]"
-            >
-              + Add someone new
-            </button>
             <button
               type="button"
               aria-pressed={personMode === 'house'}
@@ -437,37 +448,39 @@ export function LinkForm({
             </button>
           </div>
 
-          {personMode !== 'house' ? (
+          {people.length === 0 ? (
+            <p className="plain-note mt-5">
+              Nobody has an affiliate account yet, so this link can only be a house link. Create
+              someone on the <Link href="/users" className="link-text">People page</Link> and they
+              will appear here with a tracking key of their own.
+            </p>
+          ) : (
+            <p className="field-note mt-4">
+              Only people with an account are listed. Their tracking key was generated when the
+              account was made, so there is nothing to type and no way to mistype it. Add someone on
+              the <Link href="/users" className="link-text">People page</Link>.
+            </p>
+          )}
+
+          {picked ? (
             <div className="mt-6 grid gap-6 sm:grid-cols-2">
-              <Field label="Their name" error={errors.assignee}>
-                <input
-                  className="field"
-                  value={values.assignee}
-                  onChange={(e) => onAssigneeChange(e.target.value)}
-                  placeholder="Arthur Reyes"
-                  maxLength={120}
-                  autoComplete="off"
-                />
-              </Field>
+              {/* Read-only, and not a disabled input: the key is a fact about
+                  the account, not a field that happens to be locked. Editing it
+                  here would point the link at a key nobody can sign in as. */}
+              <div className="panel-sunk p-5">
+                <span className="label-cap block">Tracking key</span>
+                <p className="tnum mt-2 text-[26px] font-bold">{picked.usr}</p>
+                <p className="field-note">
+                  Appears in the link as <code>?usr={picked.usr}</code>, and is what lets{' '}
+                  {picked.assignee || picked.username || 'them'} see this link&rsquo;s traffic when
+                  they sign in.
+                </p>
+              </div>
               <Field
-                label="Tracking key"
-                error={errors.usr}
-                note="Appears in the link as ?usr=…"
+                label="Email for their records"
+                error={errors.assigneeEmail}
+                note="Stored on the link. Prefilled from their account if it has one."
               >
-                <input
-                  className="field"
-                  value={values.usr}
-                  onChange={(e) => {
-                    setTouchedUsr(true);
-                    set('usr', softKey(e.target.value).slice(0, 48));
-                  }}
-                  onBlur={(e) => set('usr', hardKey(e.target.value))}
-                  placeholder="arthur"
-                  maxLength={48}
-                  autoComplete="off"
-                />
-              </Field>
-              <Field label="Email for their records" error={errors.assigneeEmail}>
                 <input
                   className="field"
                   value={values.assigneeEmail}
@@ -527,8 +540,8 @@ export function LinkForm({
                 checked={values.requirePhone}
                 onChange={(v) => set('requirePhone', v)}
                 label="Ask for a phone number"
-                onText="On — name, email and phone"
-                offText="Off — email only"
+                onText="On: name, email and phone"
+                offText="Off: email only"
               />
             </div>
           </Step>
@@ -540,8 +553,8 @@ export function LinkForm({
             checked={values.active}
             onChange={(v) => set('active', v)}
             label="Go live immediately"
-            onText="On — the link works as soon as you save"
-            offText="Off — saves paused, you can activate it later"
+            onText="On: the link works as soon as you save"
+            offText="Off: saves paused, you can activate it later"
           />
           <div className="mt-6">
             <Field label="Notes for your team" error={errors.notes}>
@@ -549,7 +562,7 @@ export function LinkForm({
                 className="field"
                 value={values.notes}
                 onChange={(e) => set('notes', e.target.value)}
-                placeholder="Q3 push — CardRatings"
+                placeholder="Q3 push for CardRatings"
                 maxLength={500}
                 autoComplete="off"
               />
@@ -568,8 +581,7 @@ export function LinkForm({
             onClick={() => {
               setValues(EMPTY);
               setTouchedSlug(false);
-              setTouchedUsr(false);
-              setPersonMode(people.length === 0 ? 'new' : 'house');
+              setPersonMode('house');
               setPickedUsr('');
               setCustomParam(false);
               setErrors({});
@@ -660,7 +672,7 @@ export function LinkForm({
             <Check
               ok={values.active}
               pending={!values.active}
-              text={values.active ? 'Goes live the moment you save' : 'Saves paused — activate it later'}
+              text={values.active ? 'Goes live the moment you save' : 'Saves paused until you activate it'}
             />
           </ul>
         </div>

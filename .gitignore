@@ -7,9 +7,25 @@ build/
 .data/
 
 # Google service-account private keys — never commit these.
+#
+# Matched by pattern rather than by exact name, because Google's download names
+# the file <project-id>-<key-id>.json, which none of the exact rules below would
+# have caught. A key has already been published from this repository once; the
+# rules that let it through were rules that needed the filename guessed in
+# advance.
 service-account.json
 google-service-account.json
 *-service-account.json
+*service*account*.json
+*service*account*.pem
+secrets/
+credentials/
+*.p12
+*-key.json
+
+# Every env file except the committed example.
+.env*
+!.env.example
 
 *.tsbuildinfo
 next-env.d.ts

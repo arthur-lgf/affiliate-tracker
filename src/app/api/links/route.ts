@@ -1,14 +1,26 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
+import { scopeData } from '@/lib/scope';
 import { getStore, statusForError } from '@/lib/store';
 import { fieldErrors, linkInputSchema } from '@/lib/validate';
+import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+/**
+ * Every handler resolves the viewer itself rather than trusting the middleware.
+ * The middleware only proved the request is signed in; it cannot know whether
+ * that account is still an admin, and this is a route that hands back every
+ * affiliate's destination URLs.
+ */
+export async function GET(request: Request) {
+  const viewer = await viewerFromRequest(request);
+  if (!viewer) return unauthorized();
+
   try {
     const links = await getStore().listLinks();
-    return NextResponse.json({ links });
+    const scoped = scopeData({ links, submissions: [], visits: [], conversions: [] }, viewer);
+    return NextResponse.json({ links: scoped.links });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to read links' },
@@ -18,6 +30,12 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const viewer = await viewerFromRequest(request);
+  if (!viewer) return unauthorized();
+  // Creating a link means choosing whose tracking key it pays out to, which is
+  // the one decision an affiliate must never make for themselves.
+  if (viewer.role !== 'admin') return forbidden('Only an admin can create links.');
+
   let body: unknown;
   try {
     body = await request.json();

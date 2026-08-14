@@ -3,6 +3,7 @@ import type { AffiliateLink, Store } from '../types';
 import { StoreConfigError } from './errors';
 import { createLocalStore } from './local';
 import { createSheetsStore } from './sheets';
+import { createSupabaseStore, isSupabaseConfigured } from './supabase';
 
 export { StoreConflictError, StoreNotFoundError, StoreConfigError, statusForError } from './errors';
 
@@ -22,10 +23,10 @@ export function isEphemeralFilesystem(): boolean {
 }
 
 const NOT_CONFIGURED_MESSAGE =
-  'Google Sheets is not configured on this deployment, and the local file store cannot run on a ' +
-  'serverless host. Set GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in ' +
-  'your project settings, then redeploy. (A service-account.json file will not work here — there ' +
-  'is no persistent filesystem.)';
+  'No database is configured on this deployment, and the local file store cannot run on a ' +
+  'serverless host. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in your project settings, ' +
+  'then redeploy. (Google Sheets still works too; a service-account.json file does not, because ' +
+  'there is no persistent filesystem here.)';
 
 /** Every operation fails the same way, with an actionable message. */
 function createUnavailableStore(message: string): Store {
@@ -49,10 +50,11 @@ function createUnavailableStore(message: string): Store {
   };
 }
 
-export type StorageStatus = 'sheets' | 'local' | 'unconfigured';
+export type StorageStatus = 'supabase' | 'sheets' | 'local' | 'unconfigured';
 
 /** What the UI should report about where data is going. */
 export function storageStatus(): StorageStatus {
+  if (isSupabaseConfigured()) return 'supabase';
   if (isSheetsConfigured()) return 'sheets';
   return isEphemeralFilesystem() ? 'unconfigured' : 'local';
 }
@@ -60,12 +62,18 @@ export function storageStatus(): StorageStatus {
 let cached: Store | null = null;
 
 /**
- * Google Sheets when credentials are present, local JSON otherwise. Resolved
- * once per process; restart the dev server after changing .env.local.
+ * Supabase when it is configured, then Google Sheets, then local JSON.
+ * Resolved once per process; restart the dev server after changing .env.local.
+ *
+ * Supabase wins over Sheets deliberately. Both being set is what a migration
+ * looks like halfway through, and at that point the database is the copy that
+ * is being written to.
  */
 export function getStore(): Store {
   if (!cached) {
-    if (isSheetsConfigured()) {
+    if (isSupabaseConfigured()) {
+      cached = createSupabaseStore();
+    } else if (isSheetsConfigured()) {
       cached = createSheetsStore();
     } else if (isEphemeralFilesystem()) {
       // Fail loudly rather than silently degrading to a store that cannot write.

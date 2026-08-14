@@ -105,6 +105,43 @@ export const submissionPatchSchema = z.object({
   status: z.enum(LEAD_STATUSES),
 });
 
+/**
+ * A real calendar date, not just something shaped like one.
+ *
+ * The shape test alone accepted 9999-99-99 and 2026-02-31. That is worse than
+ * it sounds for an approval date: every window on the dashboard is a string
+ * comparison against a start and an end, and a date outside the calendar
+ * compares as inside *every* window at once — so one mistyped month silently
+ * adds its payout to Today, 7 days, 30 days and All time simultaneously, on
+ * every page, permanently.
+ *
+ * Round-tripping through Date is what catches the overflow: Date turns
+ * 2026-02-31 into 2026-03-03, so a value that comes back different was never a
+ * real date.
+ */
+export const isoDateSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-08-13')
+  .superRefine((value, ctx) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'That is not a real date' });
+      return;
+    }
+    // A far-future approval would sit at the top of every list forever and
+    // never fall out of any window. A year of slack covers a clock skew or a
+    // merchant reporting ahead; a typo in the year does not.
+    const limit = Date.now() + 366 * 24 * 60 * 60 * 1000;
+    if (parsed.getTime() > limit) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'That date is too far in the future' });
+    }
+    // Before the web had affiliate links. Catches a transposed year like 0226.
+    if (parsed.getUTCFullYear() < 2000) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'That date is too far in the past' });
+    }
+  });
+
 /** An approved application, recorded by hand on the dashboard or in the sheet. */
 export const conversionInputSchema = z.object({
   // slug + usr identify the link, and the link supplies the person and the card.
@@ -118,16 +155,58 @@ export const conversionInputSchema = z.object({
     .max(1_000_000, 'That amount looks wrong')
     .optional()
     .default(0),
-  approvedOn: z
-    .string()
-    .trim()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-08-13'),
+  approvedOn: isoDateSchema,
   notes: z.string().trim().max(300).optional().default(''),
 });
 
 export const visitInputSchema = z.object({
   slug: slugSchema,
   usr: usrSchema.optional().default(''),
+});
+
+/* ------------------------------------------------------------------ */
+/* Accounts                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Matches the users_username_shape_check constraint exactly. Kept in step by
+ * hand rather than derived, because the database is the one that has to be
+ * right — this copy only exists so the person typing gets told before the
+ * insert fails.
+ */
+export const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(2, 'Username must be at least 2 characters')
+  .max(32, 'Username must be 32 characters or fewer')
+  .refine(
+    (v) => /^[a-z0-9][a-z0-9._-]*$/.test(v),
+    'Letters, numbers, dot, dash and underscore only, starting with a letter or number',
+  );
+
+/**
+ * No `usr` field: an affiliate's tracking key is generated server-side (see
+ * lib/tracking-key.ts) rather than chosen. Accepting one here would let a
+ * caller bind a new account to an existing person's key and inherit their
+ * links, leads and earnings — the unique index would stop the second one, but
+ * only after the request had already tried.
+ */
+export const newUserSchema = z.object({
+  username: usernameSchema,
+  role: z.enum(['admin', 'affiliate']),
+  fullName: z.string().trim().max(120).optional().default(''),
+  email: z
+    .union([z.literal(''), z.string().trim().email('Enter a valid email')])
+    .optional()
+    .default(''),
+});
+
+export type NewUserInput = z.infer<typeof newUserSchema>;
+
+/** The three things an admin may do to an existing account. */
+export const userPatchSchema = z.object({
+  action: z.enum(['reset-password', 'enable', 'disable']),
 });
 
 /** Flatten a ZodError into `{ field: message }` for form rendering. */

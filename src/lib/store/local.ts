@@ -58,16 +58,42 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function readFile<T>(file: string): Promise<T[]> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(file, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
+    raw = await fs.readFile(file, 'utf8');
   } catch (error) {
+    // Only "there is no file yet" may mean "there are no rows". A table that
+    // has never been written to is genuinely empty.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    // A corrupt file should not take the whole app down.
-    if (error instanceof SyntaxError) return [];
     throw error;
   }
+
+  // Everything below used to return [] as well, on the reasoning that a corrupt
+  // file should not take the app down. It is worse than taking it down: every
+  // write path here reads the whole table, appends, and writes it back. So a
+  // file that failed to parse — a truncated restore, a half-finished hand edit,
+  // a disk-full write — read as zero rows, and the next visit or lead
+  // overwrote it with a one-row file. The data was not lost by the corruption;
+  // it was lost by the recovery.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new StoreConfigError(
+      `${file} is not readable JSON (${error instanceof Error ? error.message : 'parse failed'}). ` +
+        'Refusing to read it as empty, because the next write would replace it. Fix or move the ' +
+        'file aside, then reload.',
+    );
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new StoreConfigError(
+      `${file} does not contain a JSON array. Refusing to read it as empty, because the next ` +
+        'write would replace it.',
+    );
+  }
+
+  return parsed as T[];
 }
 
 /** Read-only or non-existent filesystem — i.e. a serverless host. */
@@ -85,7 +111,7 @@ async function writeFile<T>(file: string, rows: T[]): Promise<void> {
       // A bare "ENOENT: mkdir '/var/task/.data'" tells nobody what to do.
       throw new StoreConfigError(
         `Cannot write to ${DATA_DIR} (${code}). This host has no writable filesystem, so the ` +
-          'local file store cannot be used — configure Google Sheets instead by setting ' +
+          'local file store cannot be used. Configure Google Sheets instead by setting ' +
           'GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY, then redeploy.',
       );
     }
@@ -164,7 +190,9 @@ export function createLocalStore(): Store {
         const rows = await readFile<Submission>(FILES.submissions);
         const row: Submission = {
           ...input,
-          id: randomUUID(),
+          // The caller supplies this when the reference is already inside the
+          // destination URL on this very row.
+          id: input.id?.trim() || randomUUID(),
           createdAt: new Date().toISOString(),
           // Every lead starts pending the moment it is captured.
           status: DEFAULT_LEAD_STATUS,

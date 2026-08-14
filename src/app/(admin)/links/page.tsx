@@ -9,13 +9,16 @@ import { captureFormEnabled, configuredBaseUrl } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { originFromHeaders } from '@/lib/request';
 import { affiliateUrl } from '@/lib/url';
+import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Links' };
 
 export default async function LinksPage() {
-  const { links, submissions, visits, error } = await loadAll();
+  const viewer = await requireViewer();
+  const isAdmin = viewer.role === 'admin';
+  const { links, submissions, visits, error } = await loadAll(viewer);
   const origin = originFromHeaders(await headers(), configuredBaseUrl());
 
   if (error) {
@@ -36,33 +39,44 @@ export default async function LinksPage() {
     <div className="w-full">
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         <div>
-          <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">Affiliate links</h1>
+          <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">
+            {isAdmin ? 'Affiliate links' : 'Your links'}
+          </h1>
           <p className="mt-2.5 text-[20px] text-ink-soft">
             {links.length === 0
               ? 'Nothing here yet.'
               : `${links.length} link${links.length === 1 ? '' : 's'} · ${live} live, ${
                   links.length - live
-                } paused · ${people} ${people === 1 ? 'person' : 'people'}`}
+                } paused${isAdmin ? ` · ${people} ${people === 1 ? 'person' : 'people'}` : ''}`}
           </p>
         </div>
-        <Link href="/links/new" className="btn-gold">
-          + New link
-        </Link>
+        {isAdmin ? (
+          <Link href="/links/new" className="btn-gold">
+            + New link
+          </Link>
+        ) : null}
       </div>
 
       {links.length === 0 ? (
         <div className="mt-8">
-          <EmptyState
-            title="No affiliate links yet"
-            body="Create one by pairing a destination URL with the person it belongs to. You'll get a shareable link like /cashback?usr=arthur."
-            ctaHref="/links/new"
-            ctaLabel="Create a link"
-          />
+          {isAdmin ? (
+            <EmptyState
+              title="No affiliate links yet"
+              body="Create one by pairing a destination URL with the person it belongs to. You'll get a shareable link like /cashback?usr=arthur."
+              ctaHref="/links/new"
+              ctaLabel="Create a link"
+            />
+          ) : (
+            <EmptyState
+              title="No links yet"
+              body={`Nothing has been assigned to usr=${viewer.usr} yet. Your admin creates these and they appear here as soon as they do.`}
+            />
+          )}
         </div>
       ) : (
         // Leads only exist while the capture form is on; with it off the column
         // would sit at zero forever, which reads as a bug rather than a setting.
-        <LinksBrowser rows={rows} capture={captureFormEnabled()} />
+        <LinksBrowser rows={rows} capture={captureFormEnabled()} canEdit={isAdmin} />
       )}
     </div>
   );

@@ -21,6 +21,7 @@ import {
 } from '@/lib/analytics';
 import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
+import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const period = parsePeriod(firstValue(query.period));
   const capture = captureFormEnabled();
 
-  const { links, submissions, visits, conversions, error } = await loadAll();
+  const viewer = await requireViewer();
+  const isAdmin = viewer.role === 'admin';
+
+  // Already cut to this viewer's tracking key. Everything below counts, sums
+  // and charts whatever came back, so scoping once here is what makes every
+  // figure on the page theirs.
+  const { links, submissions, visits, conversions, error } = await loadAll(viewer);
 
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
@@ -63,12 +70,22 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     return (
       <>
         <h1 className="sr-only">Dashboard</h1>
-        <EmptyState
-          title="Nothing has come in yet"
-          body="Create an affiliate link, share it with the person it belongs to, and every click will land here."
-          ctaHref="/links/new"
-          ctaLabel="Create your first link"
-        />
+        {isAdmin ? (
+          <EmptyState
+            title="Nothing has come in yet"
+            body="Create an affiliate link, share it with the person it belongs to, and every click will land here."
+            ctaHref="/links/new"
+            ctaLabel="Create your first link"
+          />
+        ) : (
+          // No call to action: an affiliate cannot create their own link, so
+          // offering a button that leads somewhere they are not allowed would
+          // be worse than saying plainly who to ask.
+          <EmptyState
+            title="Nothing has come in yet"
+            body={`Nothing has been recorded against usr=${viewer.usr} so far. As soon as one of your links is opened, it will show up here.`}
+          />
+        )}
       </>
     );
   }
@@ -130,8 +147,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             </Link>
           );
         })}
-        <span aria-hidden className="mx-2 hidden h-9 w-0.5 bg-edge lg:block" />
-        <PersonFilter people={view.people} value={usr} />
+        {/* One person cannot be filtered down to one person. */}
+        {isAdmin ? (
+          <>
+            <span aria-hidden className="mx-2 hidden h-9 w-0.5 bg-edge lg:block" />
+            <PersonFilter people={view.people} value={usr} />
+          </>
+        ) : null}
       </section>
 
       {/* Hero — earnings for the selected window */}
@@ -185,10 +207,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           value={view.totals.approved.toLocaleString()}
           unit={
             view.totals.visits > 0
-              ? `of ${view.totals.visits.toLocaleString()} visits — ${formatPercent(
-                  view.totals.approvalRate,
-                  1,
-                )}`
+              ? `${formatPercent(view.totals.approvalRate, 1)} of ${view.totals.visits.toLocaleString()} visits`
               : 'no visits yet'
           }
           plain="Visits the merchant agreed to pay for."
@@ -199,9 +218,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           value={
             view.totals.approved > 0
               ? formatMoney(view.totals.earnings / view.totals.approved)
-              : '—'
+              : 'None yet'
           }
-          unit={view.totals.approved > 0 ? '' : 'nothing approved yet'}
+          unit=""
           plain="Average payout each time one is approved."
           delay={80}
         />
@@ -250,7 +269,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                     <td className="py-5 pr-4">
                       <div className="flex items-center gap-4.5">
                         <span aria-hidden className="disc h-14 w-14 text-[19px]">
-                          {row.usr ? initialsOf(row.person) : '—'}
+                          {row.usr ? initialsOf(row.person) : 'H'}
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-[23px] font-semibold">
@@ -319,10 +338,13 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <div>
             <h2 className="font-display text-[32px]">Approvals</h2>
             <p className="plain mt-1">
-              {conversions.length} recorded · all time. Nothing adds these on its own.
+              {conversions.length} recorded · all time.{' '}
+              {isAdmin
+                ? 'Nothing adds these on its own.'
+                : 'Recorded by your admin as the merchant confirms them.'}
             </p>
           </div>
-          <ConversionForm targets={targets} />
+          {isAdmin ? <ConversionForm targets={targets} /> : null}
         </div>
 
         {recentApprovals.length > 0 ? (
@@ -343,20 +365,25 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
                   {formatMoney(row.amount)}
                 </span>
-                <DeleteApproval id={row.id} label={`${row.person} · ${row.card}`} />
+                {isAdmin ? (
+                  <DeleteApproval id={row.id} label={`${row.person} · ${row.card}`} />
+                ) : null}
               </li>
             ))}
           </ul>
         ) : (
           <p className="plain mt-6">
-            None recorded yet. Add one here, or type it straight into the Conversions tab of your
-            sheet.
+            {isAdmin
+              ? 'None recorded yet. Add one here, or type it straight into the Conversions tab of your sheet.'
+              : 'None recorded against your links yet.'}
           </p>
         )}
       </section>
 
       {/* Lead capture, only while the form is switched on */}
-      {capture ? <LeadsPanel rows={leadRows} total={submissions.length} /> : null}
+      {capture ? (
+        <LeadsPanel rows={leadRows} total={submissions.length} canEdit={isAdmin} />
+      ) : null}
     </div>
   );
 }

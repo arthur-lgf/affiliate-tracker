@@ -3,27 +3,42 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const ITEMS = [
+type Item = { href: string; label: string; adminOnly?: boolean };
+
+const ITEMS: Item[] = [
   { href: '/', label: 'Overview' },
   { href: '/links', label: 'Links' },
-  { href: '/links/new', label: 'Create' },
+  { href: '/links/new', label: 'Create', adminOnly: true },
+  { href: '/reports', label: 'Reports', adminOnly: true },
+  { href: '/users', label: 'People', adminOnly: true },
 ];
+
+/**
+ * Hiding a tab is presentation, not protection. Every page behind these
+ * re-checks the role server-side, because a hidden link is still a URL anyone
+ * can type. This exists so an affiliate is not shown four doors that all say no.
+ */
+function visibleItems(isAdmin: boolean): Item[] {
+  return isAdmin ? ITEMS : ITEMS.filter((item) => !item.adminOnly);
+}
 
 /** Which item owns the current URL. `/affiliate/*` belongs to Overview — it is
  *  the page you reach by opening a row there, not a section of its own. */
 function isActive(href: string, pathname: string): boolean {
   if (href === '/') return pathname === '/' || pathname.startsWith('/affiliate');
   if (href === '/links') return pathname === '/links';
+  if (href === '/reports') return pathname.startsWith('/reports');
+  if (href === '/users') return pathname.startsWith('/users');
   return pathname.startsWith('/links/new');
 }
 
 /** The header tabs. Hidden on phones, where the bar at the bottom takes over. */
-export function Nav() {
+export function Nav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
   return (
     <nav aria-label="Sections" className="hidden items-center gap-3 md:flex">
-      {ITEMS.map((item) => (
+      {visibleItems(isAdmin).map((item) => (
         <Link
           key={item.href}
           href={item.href}
@@ -42,7 +57,7 @@ export function Nav() {
  * the thumb is. Full-width targets, 17px labels, and a thick bar over the
  * active one so "where am I" survives being read at arm's length.
  */
-export function MobileTabs() {
+export function MobileTabs({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -51,7 +66,7 @@ export function MobileTabs() {
       className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-edge bg-panel pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <div className="flex items-stretch px-2">
-        {ITEMS.map((item) => {
+        {visibleItems(isAdmin).map((item) => {
           const active = isActive(item.href, pathname);
           return (
             <Link

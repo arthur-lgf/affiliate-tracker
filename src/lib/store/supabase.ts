@@ -1,0 +1,404 @@
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { randomUUID } from 'node:crypto';
+import type {
+  AffiliateLink,
+  Conversion,
+  NewAffiliateLink,
+  NewConversion,
+  NewSubmission,
+  NewVisit,
+  Store,
+  Submission,
+  SubmissionPatch,
+  Visit,
+} from '../types';
+import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
+import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './errors';
+
+/**
+ * Postgres, via Supabase.
+ *
+ * Same interface as the Sheets and JSON adapters, so nothing above this layer
+ * knows which one is running.
+ *
+ * Two things about this client are not optional:
+ *
+ *   - It uses the service role key and therefore bypasses RLS. That is the
+ *     access model on purpose (see the migration), and it is exactly why the
+ *     key must never reach a browser. It is read from a non-public env var and
+ *     this module is server-only.
+ *
+ *   - Reads are paged. PostgREST answers with at most 1000 rows unless asked
+ *     otherwise, and a dashboard that silently stops counting at visit 1000
+ *     would be worse than one that fails, because nobody would notice.
+ */
+
+const PAGE_SIZE = 1000;
+const MAX_ROWS = 500_000;
+
+export function isSupabaseConfigured(): boolean {
+  return Boolean(supabaseUrl() && supabaseServiceKey());
+}
+
+function supabaseUrl(): string {
+  return (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+}
+
+function supabaseServiceKey(): string {
+  // Deliberately never NEXT_PUBLIC_: this key bypasses every row level policy.
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    ''
+  ).trim();
+}
+
+let client: SupabaseClient | null = null;
+
+export function getSupabaseClient(): SupabaseClient {
+  if (client) return client;
+
+  const url = supabaseUrl();
+  const key = supabaseServiceKey();
+  if (!url || !key) {
+    throw new StoreConfigError(
+      'Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+    );
+  }
+
+  client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    // The service role is not a user, so there is no session to keep and
+    // nothing to refresh. Saying so avoids a background timer in a server
+    // process that may be frozen between requests.
+  });
+  return client;
+}
+
+/** Only for tests, which swap the environment between cases. */
+export function resetSupabaseClient(): void {
+  client = null;
+}
+
+type PostgrestErrorish = { code?: string; message?: string; details?: string } | null;
+
+function fail(context: string, error: PostgrestErrorish): never {
+  const code = error?.code ?? '';
+  const message = error?.message ?? 'unknown error';
+
+  // 23505 is a unique violation. The only unique constraint here is on
+  // (slug, usr), so it always means this exact link already exists.
+  if (code === '23505') {
+    throw new StoreConflictError('A link for that slug and tracking key already exists.');
+  }
+  // 42P01 (missing table) and 42501 (permission denied) both mean the project
+  // is not set up rather than that the request was wrong, so they are worth
+  // saying plainly instead of surfacing as a generic failure.
+  if (code === '42P01') {
+    throw new StoreConfigError(
+      'The Ledger tables are missing from this Supabase project. Run: npx supabase db push',
+    );
+  }
+  if (code === '42501') {
+    throw new StoreConfigError(
+      'Supabase refused the request. SUPABASE_SERVICE_ROLE_KEY must be the service role key, not the publishable one.',
+    );
+  }
+
+  throw new Error(`${context}: ${message}${code ? ` (${code})` : ''}`);
+}
+
+/**
+ * Read a whole table, a page at a time.
+ *
+ * `range` is inclusive at both ends. The loop stops when a page comes back
+ * short, which is the only reliable signal that there is nothing after it.
+ */
+async function readAll<T>(table: string, order: { column: string; ascending: boolean }): Promise<T[]> {
+  const supabase = getSupabaseClient();
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    // A short page is the only thing that ends this loop, so a backend that
+    // ignored the range would spin forever and take the process with it.
+    // Refusing at half a million rows turns that into an error somebody can
+    // read, and is far above anything this tool is meant to hold in memory.
+    if (from >= MAX_ROWS) {
+      throw new StoreConfigError(
+        `Refusing to read more than ${MAX_ROWS.toLocaleString()} rows from ${table} in one go.`,
+      );
+    }
+
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .order(order.column, { ascending: order.ascending })
+      // A stable tiebreaker. Without one, two rows sharing a timestamp can
+      // swap places between pages, which silently drops one and repeats the
+      // other across a page boundary.
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) fail(`reading ${table}`, error);
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+  }
+}
+
+/** PostgREST returns `numeric` as a string so no precision is lost in JSON. */
+function toAmount(value: unknown): number {
+  if (typeof value === 'number') return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function text(value: unknown): string {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+/* ---------------------------------------------------------------- mapping */
+
+type LinkRow = Record<string, unknown>;
+
+function linkFromRow(row: LinkRow): AffiliateLink {
+  return {
+    id: text(row.id),
+    slug: text(row.slug),
+    usr: text(row.usr),
+    assignee: text(row.assignee),
+    assigneeEmail: text(row.assignee_email),
+    destination: text(row.destination),
+    campaign: text(row.campaign),
+    headline: text(row.headline),
+    subheadline: text(row.subheadline),
+    ctaLabel: text(row.cta_label),
+    requirePhone: Boolean(row.require_phone),
+    passUsrParam: text(row.pass_usr_param),
+    active: Boolean(row.active),
+    notes: text(row.notes),
+    createdAt: text(row.created_at),
+  };
+}
+
+function linkToRow(link: Partial<AffiliateLink>): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  if (link.id !== undefined) row.id = link.id;
+  if (link.slug !== undefined) row.slug = link.slug;
+  if (link.usr !== undefined) row.usr = link.usr;
+  if (link.assignee !== undefined) row.assignee = link.assignee;
+  if (link.assigneeEmail !== undefined) row.assignee_email = link.assigneeEmail;
+  if (link.destination !== undefined) row.destination = link.destination;
+  if (link.campaign !== undefined) row.campaign = link.campaign;
+  if (link.headline !== undefined) row.headline = link.headline;
+  if (link.subheadline !== undefined) row.subheadline = link.subheadline;
+  if (link.ctaLabel !== undefined) row.cta_label = link.ctaLabel;
+  if (link.requirePhone !== undefined) row.require_phone = link.requirePhone;
+  if (link.passUsrParam !== undefined) row.pass_usr_param = link.passUsrParam;
+  if (link.active !== undefined) row.active = link.active;
+  if (link.notes !== undefined) row.notes = link.notes;
+  if (link.createdAt !== undefined) row.created_at = link.createdAt;
+  return row;
+}
+
+function submissionFromRow(row: Record<string, unknown>): Submission {
+  return {
+    id: text(row.id),
+    createdAt: text(row.created_at),
+    slug: text(row.slug),
+    usr: text(row.usr),
+    assignee: text(row.assignee),
+    campaign: text(row.campaign),
+    fullName: text(row.full_name),
+    email: text(row.email),
+    phone: text(row.phone),
+    destination: text(row.destination),
+    referrer: text(row.referrer),
+    userAgent: text(row.user_agent),
+    ip: text(row.ip),
+    status: normalizeLeadStatus(row.status),
+  };
+}
+
+function visitFromRow(row: Record<string, unknown>): Visit {
+  return {
+    id: text(row.id),
+    createdAt: text(row.created_at),
+    slug: text(row.slug),
+    usr: text(row.usr),
+    referrer: text(row.referrer),
+    userAgent: text(row.user_agent),
+    ip: text(row.ip),
+  };
+}
+
+function conversionFromRow(row: Record<string, unknown>): Conversion {
+  return {
+    id: text(row.id),
+    createdAt: text(row.created_at),
+    approvedOn: text(row.approved_on),
+    slug: text(row.slug),
+    usr: text(row.usr),
+    amount: toAmount(row.amount),
+    notes: text(row.notes),
+  };
+}
+
+/* ---------------------------------------------------------------- adapter */
+
+export function createSupabaseStore(): Store {
+  const supabase = () => getSupabaseClient();
+
+  return {
+    kind: 'supabase',
+
+    async listLinks() {
+      const rows = await readAll<LinkRow>('links', { column: 'created_at', ascending: false });
+      return rows.map(linkFromRow);
+    },
+
+    async createLink(input: NewAffiliateLink) {
+      const link: AffiliateLink = {
+        ...input,
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+      };
+      const { data, error } = await supabase()
+        .from('links')
+        .insert(linkToRow(link))
+        .select()
+        .single();
+      if (error) fail('creating a link', error);
+      return linkFromRow(data as LinkRow);
+    },
+
+    async updateLink(id: string, patch: Partial<NewAffiliateLink>) {
+      const row = linkToRow(patch as Partial<AffiliateLink>);
+      // An empty patch would be an UPDATE with no SET clause, which PostgREST
+      // rejects. Nothing to change is not an error, so read the row back.
+      if (Object.keys(row).length === 0) {
+        const { data, error } = await supabase().from('links').select().eq('id', id).maybeSingle();
+        if (error) fail('reading a link', error);
+        if (!data) throw new StoreNotFoundError('Link not found');
+        return linkFromRow(data as LinkRow);
+      }
+
+      const { data, error } = await supabase()
+        .from('links')
+        .update(row)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+      if (error) fail('updating a link', error);
+      if (!data) throw new StoreNotFoundError('Link not found');
+      return linkFromRow(data as LinkRow);
+    },
+
+    async deleteLink(id: string) {
+      // select() so the response says whether a row was actually removed;
+      // a delete that matched nothing is a 404, not a success.
+      const { data, error } = await supabase().from('links').delete().eq('id', id).select('id');
+      if (error) fail('deleting a link', error);
+      if (!data || data.length === 0) throw new StoreNotFoundError('Link not found');
+    },
+
+    async listSubmissions() {
+      const rows = await readAll<Record<string, unknown>>('submissions', {
+        column: 'created_at',
+        ascending: false,
+      });
+      return rows.map(submissionFromRow);
+    },
+
+    async addSubmission(input: NewSubmission) {
+      const row = {
+        // Supplied when the reference is already inside the destination URL on
+        // this very row; otherwise this is a plain new lead.
+        id: input.id?.trim() || randomUUID(),
+        created_at: new Date().toISOString(),
+        slug: input.slug,
+        usr: input.usr,
+        assignee: input.assignee,
+        campaign: input.campaign,
+        full_name: input.fullName,
+        email: input.email,
+        phone: input.phone,
+        destination: input.destination,
+        referrer: input.referrer,
+        user_agent: input.userAgent,
+        ip: input.ip,
+        status: DEFAULT_LEAD_STATUS,
+      };
+      const { data, error } = await supabase().from('submissions').insert(row).select().single();
+      if (error) fail('saving a lead', error);
+      return submissionFromRow(data as Record<string, unknown>);
+    },
+
+    async updateSubmission(id: string, patch: SubmissionPatch) {
+      const { data, error } = await supabase()
+        .from('submissions')
+        .update({ status: patch.status })
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+      if (error) fail('updating a lead', error);
+      if (!data) throw new StoreNotFoundError('Lead not found');
+      return submissionFromRow(data as Record<string, unknown>);
+    },
+
+    async listVisits() {
+      const rows = await readAll<Record<string, unknown>>('visits', {
+        column: 'created_at',
+        ascending: false,
+      });
+      return rows.map(visitFromRow);
+    },
+
+    async addVisit(input: NewVisit) {
+      const row = {
+        id: randomUUID(),
+        created_at: new Date().toISOString(),
+        slug: input.slug,
+        usr: input.usr,
+        referrer: input.referrer,
+        user_agent: input.userAgent,
+        ip: input.ip,
+      };
+      const { data, error } = await supabase().from('visits').insert(row).select().single();
+      if (error) fail('logging a visit', error);
+      return visitFromRow(data as Record<string, unknown>);
+    },
+
+    async listConversions() {
+      const rows = await readAll<Record<string, unknown>>('conversions', {
+        column: 'approved_on',
+        ascending: false,
+      });
+      return rows.map(conversionFromRow);
+    },
+
+    async addConversion(input: NewConversion) {
+      const row = {
+        created_at: new Date().toISOString(),
+        approved_on: input.approvedOn,
+        slug: input.slug,
+        usr: input.usr,
+        amount: input.amount,
+        notes: input.notes,
+      };
+      const { data, error } = await supabase().from('conversions').insert(row).select().single();
+      if (error) fail('recording an approval', error);
+      return conversionFromRow(data as Record<string, unknown>);
+    },
+
+    async deleteConversion(id: string) {
+      const { data, error } = await supabase()
+        .from('conversions')
+        .delete()
+        .eq('id', id)
+        .select('id');
+      if (error) fail('removing an approval', error);
+      if (!data || data.length === 0) throw new StoreNotFoundError('Approval not found');
+    },
+  };
+}

@@ -50,7 +50,7 @@ export function LeadsChart({ series }: { series: DayBucket[] }) {
             <div
               key={day.date}
               className="flex h-full flex-1 flex-col items-center justify-end"
-              title={`${day.label} — ${day.submissions} lead${day.submissions === 1 ? '' : 's'}, ${
+              title={`${day.label}: ${day.submissions} lead${day.submissions === 1 ? '' : 's'}, ${
                 day.visits
               } visit${day.visits === 1 ? '' : 's'}`}
             >

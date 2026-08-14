@@ -595,7 +595,9 @@ export function createSheetsStore(): Store {
     async addSubmission(input: NewSubmission) {
       const row: Submission = {
         ...input,
-        id: randomUUID(),
+        // The caller supplies this when the reference is already inside the
+        // destination URL on this very row.
+        id: input.id?.trim() || randomUUID(),
         createdAt: new Date().toISOString(),
         // Every lead starts pending the moment it is captured.
         status: DEFAULT_LEAD_STATUS,

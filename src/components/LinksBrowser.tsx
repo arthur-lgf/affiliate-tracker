@@ -30,7 +30,20 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: 'name', label: 'A–Z' },
 ];
 
-export function LinksBrowser({ rows, capture }: { rows: LinkRow[]; capture: boolean }) {
+/**
+ * `canEdit` drops the pause/edit/delete controls for an affiliate, who may see
+ * their own links and copy them but not change where they point. Cosmetic only:
+ * /api/links/[id] refuses them either way.
+ */
+export function LinksBrowser({
+  rows,
+  capture,
+  canEdit = true,
+}: {
+  rows: LinkRow[];
+  capture: boolean;
+  canEdit?: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   // With the capture form hidden there are no leads to sort by, and a sort that
@@ -183,7 +196,7 @@ export function LinksBrowser({ rows, capture }: { rows: LinkRow[]; capture: bool
                   </div>
                   <div className="mt-3 flex items-center gap-3">
                     <span aria-hidden className="disc h-10 w-10 text-[16px]">
-                      {row.assignee ? initialsOf(row.assignee) : '—'}
+                      {row.assignee ? initialsOf(row.assignee) : 'H'}
                     </span>
                     <span className="min-w-0 truncate text-[19px] text-ink-soft">
                       {row.assignee || 'House link'}
@@ -200,7 +213,7 @@ export function LinksBrowser({ rows, capture }: { rows: LinkRow[]; capture: bool
                       <Metric
                         label="Turned into leads"
                         value={
-                          row.visits > 0 ? formatPercent(row.submissions / row.visits, 0) : '—'
+                          row.visits > 0 ? formatPercent(row.submissions / row.visits, 0) : 'None yet'
                         }
                       />
                     </>
@@ -220,7 +233,9 @@ export function LinksBrowser({ rows, capture }: { rows: LinkRow[]; capture: bool
                   Preview ↗
                 </a>
                 <span className="hidden flex-1 lg:block" />
-                <LinkActions id={row.id} active={row.active} label={row.campaign || row.slug} />
+                {canEdit ? (
+                  <LinkActions id={row.id} active={row.active} label={row.campaign || row.slug} />
+                ) : null}
               </div>
 
               {/* A URL is one long unbreakable token; let it break anywhere

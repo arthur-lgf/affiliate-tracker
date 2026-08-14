@@ -2,12 +2,25 @@ import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { getStore, statusForError } from '@/lib/store';
 import { fieldErrors, linkPatchSchema } from '@/lib/validate';
+import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 type Context = { params: Promise<{ id: string }> };
 
+/**
+ * Admin only, both verbs.
+ *
+ * There is no affiliate-scoped version of these: a link's `usr` is the field
+ * that decides who gets paid for its traffic, so an affiliate able to PATCH
+ * their own link could point somebody else's at themselves. Editing is a whole
+ * privilege, not a scoped one.
+ */
 export async function PATCH(request: Request, { params }: Context) {
+  const viewer = await viewerFromRequest(request);
+  if (!viewer) return unauthorized();
+  if (viewer.role !== 'admin') return forbidden('Only an admin can change links.');
+
   const { id } = await params;
 
   let body: unknown;
@@ -41,7 +54,11 @@ export async function PATCH(request: Request, { params }: Context) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Context) {
+export async function DELETE(request: Request, { params }: Context) {
+  const viewer = await viewerFromRequest(request);
+  if (!viewer) return unauthorized();
+  if (viewer.role !== 'admin') return forbidden('Only an admin can delete links.');
+
   const { id } = await params;
   try {
     await getStore().deleteLink(id);

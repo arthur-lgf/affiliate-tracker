@@ -16,7 +16,9 @@ import {
   type Period,
 } from '@/lib/analytics';
 import { loadAll } from '@/lib/load';
+import { ownsKey } from '@/lib/scope';
 import { normalizeKey } from '@/lib/validate';
+import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +60,16 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   const usr = decodeUsr(rawUsr);
   const personKey = usr || HOUSE_KEY;
 
-  const { links, visits, conversions, error } = await loadAll();
+  const viewer = await requireViewer();
+  const isAdmin = viewer.role === 'admin';
+
+  // An affiliate asking for anybody else's page gets the same 404 as a key that
+  // was never used. notFound() rather than a redirect or a "forbidden" on
+  // purpose: telling someone that a key exists but is not theirs is itself a
+  // fact about who else works here and what their key is.
+  if (!ownsKey(viewer, usr)) notFound();
+
+  const { links, visits, conversions, error } = await loadAll(viewer);
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
   }
@@ -97,13 +108,13 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
         href={period === 'month' ? '/' : `/?period=${period}`}
         className="btn-quiet btn-sm"
       >
-        ← Back to all people
+        {isAdmin ? '← Back to all people' : '← Back to your dashboard'}
       </Link>
 
       <div className="rise mt-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-5">
         <div className="flex min-w-0 items-center gap-5">
           <span aria-hidden className="disc h-20 w-20 flex-none text-[26px]">
-            {usr ? initialsOf(name) : '—'}
+            {usr ? initialsOf(name) : 'H'}
           </span>
           <div className="min-w-0">
             {/* A tracking key can be one long unbreakable word, and the avatar
@@ -160,7 +171,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
           </div>
           <p className="plain-note mt-6">
             {view.rows.length === 0
-              ? 'Nothing landed in this window. Try a longer period — the numbers below follow the same dates.'
+              ? 'Nothing landed in this window. Try a longer period. The numbers below follow the same dates.'
               : `Everything here is ${usr ? `${name}'s` : 'house'} traffic only. Visits count when the click happens, approvals on the day they were approved.`}
           </p>
         </div>
@@ -262,7 +273,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                 <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
                   {formatMoney(row.amount)}
                 </span>
-                <DeleteApproval id={row.id} label={`${name} · ${row.card}`} />
+                {isAdmin ? <DeleteApproval id={row.id} label={`${name} · ${row.card}`} /> : null}
               </li>
             ))}
           </ul>

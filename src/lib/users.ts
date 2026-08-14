@@ -1,0 +1,392 @@
+/**
+ * Sign-in accounts, in Supabase.
+ *
+ * Deliberately NOT part of the `Store` interface, which the Google Sheets and
+ * local-JSON adapters also implement. Two reasons, and the first is enough:
+ *
+ *   - A password hash does not belong in a spreadsheet. Sheets are shared by
+ *     link, copied, exported and printed; the whole point of a hash is that it
+ *     lives somewhere with an access model, and a Sheet's access model is
+ *     "whoever has the URL and was ever added as a viewer".
+ *   - The local JSON store writes to a directory that does not survive a
+ *     serverless deploy, so accounts kept there would vanish on the next push.
+ *
+ * So accounts require Supabase. Without it the app falls back to the single
+ * ADMIN_USER/ADMIN_PASSWORD account it has always had, which still works and
+ * is still an admin.
+ */
+
+import { ENV_ADMIN_ID, type Role } from './auth';
+import { generatePassword, hashPassword, needsRehash, verifyPassword } from './password';
+import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './store/errors';
+import { getSupabaseClient, isSupabaseConfigured } from './store/supabase';
+import { newTrackingKey } from './tracking-key';
+
+/** What the UI is allowed to see. The hash never leaves this module. */
+export type UserAccount = {
+  id: string;
+  createdAt: string;
+  username: string;
+  role: Role;
+  usr: string;
+  fullName: string;
+  email: string;
+  active: boolean;
+  passwordChangedAt: string;
+  lastLoginAt: string | null;
+  createdBy: string;
+};
+
+type UserRow = {
+  id: string;
+  created_at: string;
+  username: string;
+  password_hash: string;
+  role: string;
+  usr: string;
+  full_name: string;
+  email: string;
+  active: boolean;
+  password_changed_at: string;
+  last_login_at: string | null;
+  created_by: string;
+};
+
+/** Every column except the hash. Spelled out so a future column cannot leak by default. */
+const PUBLIC_COLUMNS =
+  'id, created_at, username, role, usr, full_name, email, active, password_changed_at, last_login_at, created_by';
+
+export function usersEnabled(): boolean {
+  return isSupabaseConfigured();
+}
+
+function requireUsers(): void {
+  if (!usersEnabled()) {
+    throw new StoreConfigError(
+      'User accounts need a database. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then reload.',
+    );
+  }
+}
+
+function toAccount(row: Omit<UserRow, 'password_hash'>): UserAccount {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    username: row.username,
+    // Anything the check constraint would have rejected is treated as the
+    // lesser privilege rather than trusted, so a hand-edited row cannot mint
+    // an admin by typo.
+    role: row.role === 'admin' ? 'admin' : 'affiliate',
+    usr: row.usr ?? '',
+    fullName: row.full_name ?? '',
+    email: row.email ?? '',
+    active: row.active !== false,
+    passwordChangedAt: row.password_changed_at,
+    lastLoginAt: row.last_login_at,
+    createdBy: row.created_by ?? '',
+  };
+}
+
+type PostgrestErrorish = { code?: string; message?: string; details?: string } | null;
+
+function fail(context: string, error: PostgrestErrorish): never {
+  const code = error?.code ?? '';
+  const message = error?.message ?? 'unknown error';
+  const detail = `${message} ${error?.details ?? ''}`;
+
+  if (code === '23505') {
+    // Two unique indexes, and telling them apart is the difference between a
+    // message that says what to change and one that says "it did not work".
+    if (detail.includes('users_usr_key')) {
+      throw new StoreConflictError(
+        'Another account is already bound to that tracking key. Each key belongs to one person.',
+      );
+    }
+    throw new StoreConflictError('That username is already taken.');
+  }
+  if (code === '23514') {
+    if (detail.includes('username_shape')) {
+      throw new StoreConflictError(
+        'Usernames are 2 to 32 characters: lowercase letters, numbers, dot, dash or underscore, starting with a letter or number.',
+      );
+    }
+    if (detail.includes('affiliate_needs_usr')) {
+      throw new StoreConflictError('An affiliate account needs a tracking key.');
+    }
+    if (detail.includes('usr_shape')) {
+      throw new StoreConflictError('Tracking keys use lowercase letters, numbers and dashes only.');
+    }
+    throw new StoreConflictError('That account is not a shape the database accepts.');
+  }
+  if (code === '42P01') {
+    throw new StoreConfigError(
+      'The users table is missing from this Supabase project. Run: npx supabase db push',
+    );
+  }
+  if (code === '42501') {
+    throw new StoreConfigError(
+      'Supabase refused the request. SUPABASE_SERVICE_ROLE_KEY must be the service role key, not the publishable one.',
+    );
+  }
+  throw new Error(`${context}: ${message}${code ? ` (${code})` : ''}`);
+}
+
+/** Usernames are compared and stored lowercased, so case can never fork an account. */
+export function normalizeUsername(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+export async function listUsers(): Promise<UserAccount[]> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select(PUBLIC_COLUMNS)
+    .order('created_at', { ascending: true });
+  if (error) fail('reading users', error);
+  return (data ?? []).map((row) => toAccount(row as Omit<UserRow, 'password_hash'>));
+}
+
+export async function findUserById(id: string): Promise<UserAccount | null> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select(PUBLIC_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) fail('reading a user', error);
+  return data ? toAccount(data as Omit<UserRow, 'password_hash'>) : null;
+}
+
+export async function countAdmins(): Promise<number> {
+  requireUsers();
+  const { count, error } = await getSupabaseClient()
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'admin')
+    .eq('active', true);
+  if (error) fail('counting admins', error);
+  return count ?? 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sign-in                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Verify a username and password against the users table.
+ *
+ * Returns null for every kind of failure — no such user, disabled, wrong
+ * password — because the caller must not be able to tell them apart, and
+ * neither must anybody watching the caller.
+ *
+ * A missing user still costs one PBKDF2 derivation. Skipping it would make
+ * "no such account" measurably faster than "wrong password", which turns the
+ * sign-in form into a way to enumerate who has an account here.
+ */
+export async function verifyLogin(
+  rawUsername: string,
+  password: string,
+): Promise<UserAccount | null> {
+  requireUsers();
+  const username = normalizeUsername(rawUsername);
+
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select(`${PUBLIC_COLUMNS}, password_hash`)
+    .eq('username', username)
+    .maybeSingle();
+  if (error) fail('checking a sign-in', error);
+
+  const row = data as UserRow | null;
+
+  if (!row) {
+    // Decoy work against a throwaway hash, so the timing of a wrong username
+    // matches the timing of a wrong password.
+    await verifyPassword(password, DECOY_HASH);
+    return null;
+  }
+
+  const ok = await verifyPassword(password, row.password_hash);
+  if (!ok) return null;
+  // Checked after the password on purpose: answering "that account is
+  // disabled" before verifying would confirm the username to anyone guessing.
+  if (row.active === false) return null;
+
+  const account = toAccount(row);
+  await afterSuccessfulLogin(row, password);
+  return account;
+}
+
+/**
+ * A well-formed hash that nothing can ever match: the salt and the digest are
+ * both all zero bytes. Verifying against it costs a full PBKDF2 derivation at
+ * the current iteration count, which is exactly the point — it buys the
+ * "no such user" path the same latency as the "wrong password" path.
+ */
+const DECOY_HASH =
+  'pbkdf2-sha256$600000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+/** Fire-and-forget bookkeeping: never let it fail a sign-in that already succeeded. */
+async function afterSuccessfulLogin(row: UserRow, password: string): Promise<void> {
+  const patch: Record<string, unknown> = { last_login_at: new Date().toISOString() };
+
+  // Silently upgrade a hash written at a lower iteration count. This is the
+  // only moment the plaintext is available to do it with.
+  if (needsRehash(row.password_hash)) {
+    try {
+      patch.password_hash = await hashPassword(password);
+    } catch {
+      // Keep the old hash. It still verifies.
+    }
+  }
+
+  try {
+    await getSupabaseClient().from('users').update(patch).eq('id', row.id);
+  } catch {
+    // A failed timestamp write is not a reason to refuse a valid sign-in.
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Administration                                                       */
+/* ------------------------------------------------------------------ */
+
+export type NewUser = {
+  username: string;
+  role: Role;
+  fullName: string;
+  email: string;
+  createdBy: string;
+};
+
+/**
+ * How many times to redraw a tracking key that collides.
+ *
+ * A collision needs two of 887 million to land on the same value, so this is
+ * far more headroom than the birthday maths asks for. It exists because the
+ * only correct way to check uniqueness is to let the unique index decide —
+ * a SELECT-then-INSERT would race two admins creating accounts at once.
+ */
+const KEY_ATTEMPTS = 5;
+
+/**
+ * Create an account and return the one and only copy of its password.
+ *
+ * The plaintext is returned here and never again: it is not stored, not logged,
+ * and not recoverable. Losing it means resetting it.
+ *
+ * An affiliate's tracking key is generated here rather than supplied, so it is
+ * neither guessable nor personal, and so two people with the same first name
+ * cannot collide.
+ */
+export async function createUser(
+  input: NewUser,
+): Promise<{ user: UserAccount; password: string }> {
+  requireUsers();
+
+  const username = normalizeUsername(input.username);
+  const password = generatePassword();
+  const passwordHash = await hashPassword(password);
+
+  for (let attempt = 1; ; attempt += 1) {
+    const row = {
+      id: crypto.randomUUID(),
+      username,
+      password_hash: passwordHash,
+      role: input.role,
+      // An admin is scoped to nothing, because it sees everything.
+      usr: input.role === 'admin' ? '' : newTrackingKey(),
+      full_name: input.fullName,
+      email: input.email,
+      active: true,
+      created_by: input.createdBy,
+    };
+
+    const { data, error } = await getSupabaseClient()
+      .from('users')
+      .insert(row)
+      .select(PUBLIC_COLUMNS)
+      .single();
+
+    if (!error) {
+      return { user: toAccount(data as Omit<UserRow, 'password_hash'>), password };
+    }
+
+    // Only a *key* collision is worth retrying, and only while attempts remain.
+    // A duplicate username is the caller's problem and must surface as one, not
+    // be redrawn five times and then reported as a key failure.
+    const isKeyCollision =
+      error.code === '23505' &&
+      `${error.message} ${error.details ?? ''}`.includes('users_usr_key');
+    if (!isKeyCollision || attempt >= KEY_ATTEMPTS) fail('creating a user', error);
+  }
+}
+
+/**
+ * Issue a new password and return it once.
+ *
+ * `password_changed_at` moves forward, which invalidates every session token
+ * minted before now — so a reset actually signs the person out everywhere
+ * rather than just changing what they type next time.
+ */
+export async function resetUserPassword(id: string): Promise<{ user: UserAccount; password: string }> {
+  requireUsers();
+
+  const password = generatePassword();
+  const passwordHash = await hashPassword(password);
+
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .update({
+      password_hash: passwordHash,
+      password_changed_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select(PUBLIC_COLUMNS)
+    .maybeSingle();
+  if (error) fail('resetting a password', error);
+  if (!data) throw new StoreNotFoundError('That account no longer exists.');
+
+  return { user: toAccount(data as Omit<UserRow, 'password_hash'>), password };
+}
+
+/**
+ * Enable or disable an account.
+ *
+ * Disabling also moves `password_changed_at`, because an account that cannot
+ * sign in but whose existing cookie still works is not disabled in any sense
+ * the word normally carries.
+ */
+export async function setUserActive(id: string, active: boolean): Promise<UserAccount> {
+  requireUsers();
+
+  const patch: Record<string, unknown> = { active };
+  if (!active) patch.password_changed_at = new Date().toISOString();
+
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .update(patch)
+    .eq('id', id)
+    .select(PUBLIC_COLUMNS)
+    .maybeSingle();
+  if (error) fail('updating a user', error);
+  if (!data) throw new StoreNotFoundError('That account no longer exists.');
+  return toAccount(data as Omit<UserRow, 'password_hash'>);
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  requireUsers();
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
+  if (error) fail('deleting a user', error);
+  if (!data) throw new StoreNotFoundError('That account no longer exists.');
+}
+
+/** The env account is not a row and can never be edited through the UI. */
+export function isEnvAdminId(id: string): boolean {
+  return id === ENV_ADMIN_ID;
+}

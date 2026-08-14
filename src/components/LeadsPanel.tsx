@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { isLeadId } from '@/lib/lead-id';
 import { statusLabel } from '@/lib/status';
 import type { LeadStatus } from '@/lib/types';
 
@@ -30,7 +31,21 @@ type Filter = 'all' | 'pending' | 'registered';
 
 const PAGE = 12;
 
-export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) {
+/**
+ * `canEdit` hides the status toggle for an affiliate, who may read their own
+ * leads but not change them. It is presentation only — /api/leads/[id] refuses
+ * them regardless, and has to, because nothing stops someone calling it
+ * directly.
+ */
+export function LeadsPanel({
+  rows,
+  total,
+  canEdit = true,
+}: {
+  rows: LeadRow[];
+  total: number;
+  canEdit?: boolean;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [filter, setFilter] = useState<Filter>('all');
@@ -97,7 +112,7 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
         <h2 className="font-display text-[32px]">Latest submissions</h2>
         <span className="text-[19px] text-ink-soft">
           {total > rows.length
-            ? `Latest ${rows.length} of ${total.toLocaleString()} — older leads live in your sheet`
+            ? `Latest ${rows.length} of ${total.toLocaleString()}. Older leads live in your sheet`
             : `${total.toLocaleString()} in total`}
         </span>
       </div>
@@ -124,7 +139,7 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
           </div>
           <p className="plain mt-3">
             Every lead starts <strong>pending</strong>. Mark one registered once they have signed
-            up — here, or in column N of the sheet.
+            up, either here or in column N of the sheet.
           </p>
 
           {error ? (
@@ -148,7 +163,7 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
                 >
                   <div className="flex min-w-0 items-start justify-between gap-4 lg:flex-1">
                     <span className="min-w-0">
-                      <span className="block text-[21px] font-semibold">{row.fullName || '—'}</span>
+                      <span className="block text-[21px] font-semibold">{row.fullName || 'No name given'}</span>
                       <a
                         href={`mailto:${row.email}`}
                         className="link-text mt-1 block truncate text-[18px]"
@@ -163,6 +178,18 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
                         >
                           {row.phone}
                         </a>
+                      ) : null}
+                      {/* The value this lead was forwarded to the merchant
+                          with. It is what turns up in the report's var3
+                          column, so it is the thing to search for when an
+                          approval needs tracing back to a person. Leads
+                          captured before references existed have a uuid
+                          instead, which never travelled anywhere, so showing
+                          it would only invite a fruitless search. */}
+                      {isLeadId(row.id) ? (
+                        <span className="mt-1.5 block text-[17px] text-ink-dim">
+                          ref <span className="tnum font-semibold text-ink-soft">{row.id}</span>
+                        </span>
                       ) : null}
                     </span>
                     <span
@@ -188,13 +215,17 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
                   </div>
 
                   <div className="lg:w-[150px] lg:flex-none">
-                    <StatusToggle
-                      row={row}
-                      busy={busyId === row.id}
-                      onToggle={() =>
-                        setStatus(row, row.status === 'registered' ? 'pending' : 'registered')
-                      }
-                    />
+                    {canEdit ? (
+                      <StatusToggle
+                        row={row}
+                        busy={busyId === row.id}
+                        onToggle={() =>
+                          setStatus(row, row.status === 'registered' ? 'pending' : 'registered')
+                        }
+                      />
+                    ) : (
+                      <StatusPill row={row} />
+                    )}
                   </div>
 
                   <span
@@ -227,6 +258,25 @@ export function LeadsPanel({ rows, total }: { rows: LeadRow[]; total: number }) 
   );
 }
 
+/**
+ * The same pill with nothing to press. Not a disabled button: a disabled
+ * control reads as "temporarily unavailable, try again", when the truth is that
+ * this is simply not yours to change.
+ */
+function StatusPill({ row }: { row: LeadRow }) {
+  const registered = row.status === 'registered';
+  return (
+    <span className="pill-status" data-status={row.status}>
+      <span
+        aria-hidden
+        className="h-2.5 w-2.5 flex-none rounded-full"
+        style={{ background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)' }}
+      />
+      {statusLabel(row.status)}
+    </span>
+  );
+}
+
 function StatusToggle({
   row,
   busy,
@@ -247,7 +297,7 @@ function StatusToggle({
       onClick={onToggle}
       /* The visible word starts the accessible name so "click Pending" still
          works for voice control, and the rest says what clicking will do. */
-      aria-label={`${statusLabel(row.status)} — mark ${who} as ${
+      aria-label={`${statusLabel(row.status)}, mark ${who} as ${
         registered ? 'pending' : 'registered'
       }`}
     >

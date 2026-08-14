@@ -628,10 +628,10 @@ export function formatPercent(value: number, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
-/** "MS" from "Mark Salvador", "A" from "Arthur". Falls back to a dash. */
+/** "MS" from "Mark Salvador", "A" from "Arthur". Falls back to a question mark. */
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '—';
+  if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }

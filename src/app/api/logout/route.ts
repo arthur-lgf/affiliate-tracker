@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { SESSION_COOKIE } from '@/lib/auth';
+import { clearedSessionCookieOptions, SESSION_COOKIE } from '@/lib/auth';
+import { isSecureRequest } from '@/lib/request';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,13 +12,10 @@ export const dynamic = 'force-dynamic';
  * a crawler cannot sign someone out by following a link.
  */
 export async function POST(request: Request) {
+  // Cleared with the same attributes it was set with. A cookie whose Secure or
+  // Path differs from the original is a *different* cookie to the browser, so
+  // the old one would survive the click that was supposed to remove it.
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(SESSION_COOKIE, '', {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: new URL(request.url).protocol === 'https:',
-    path: '/',
-    maxAge: 0,
-  });
+  response.cookies.set(SESSION_COOKIE, '', clearedSessionCookieOptions(isSecureRequest(request)));
   return response;
 }

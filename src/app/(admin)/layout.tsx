@@ -3,12 +3,18 @@ import { MobileTabs, Nav } from '@/components/Nav';
 import { SignOutButton } from '@/components/SignOutButton';
 import { authConfigured } from '@/lib/auth';
 import { storageStatus } from '@/lib/store';
+import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
 /* The storage badge. Each carries its own words as well as its own colour —
    three dots that differ only in hue is not a status anyone can read. */
 const STORAGE = {
+  supabase: {
+    text: 'Database connected',
+    dot: 'var(--color-leaf-live)',
+    className: 'chip chip-live',
+  },
   sheets: {
     text: 'Sheets connected',
     dot: 'var(--color-leaf-live)',
@@ -26,9 +32,14 @@ const STORAGE = {
   },
 } as const;
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const status = storageStatus();
   const badge = STORAGE[status];
+  // Resolved here as well as in each page. The layout renders the navigation,
+  // and a nav built from an unverified guess at who is looking is a nav that
+  // offers an affiliate the admin tabs.
+  const viewer = await requireViewer();
+  const isAdmin = viewer.role === 'admin';
 
   return (
     <div className="min-h-screen bg-paper">
@@ -48,7 +59,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Link>
 
           <div className="flex min-w-0 items-center gap-4">
-            <Nav />
+            <Nav isAdmin={isAdmin} />
             <span className={`${badge.className} hidden lg:inline-flex`}>
               <span
                 aria-hidden
@@ -57,7 +68,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               />
               {badge.text}
             </span>
-            {/* Only when there is a session to end. With no password set the
+            {/* Who you are signed in as. An affiliate sees a filtered version of
+                every figure on every page, so the one thing that must never be
+                ambiguous is whose numbers these are. */}
+            {viewer.open ? null : (
+              <span className="hidden min-w-0 sm:block">
+                <span className="block truncate text-[17px] font-semibold leading-tight">
+                  {viewer.username}
+                </span>
+                <span className="block truncate text-[15px] leading-tight text-ink-soft">
+                  {isAdmin ? 'Admin' : `Your links only · usr=${viewer.usr}`}
+                </span>
+              </span>
+            )}
+            {/* Only when there is a session to end. With nothing configured the
                 admin surface is open and "Sign out" would do nothing. */}
             {authConfigured() ? <SignOutButton /> : null}
           </div>
@@ -70,7 +94,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {children}
       </main>
 
-      <MobileTabs />
+      <MobileTabs isAdmin={isAdmin} />
     </div>
   );
 }

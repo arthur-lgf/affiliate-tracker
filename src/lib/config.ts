@@ -14,6 +14,11 @@ export const RESERVED_SLUGS = new Set([
   'settings',
   'login',
   'logout',
+  'users',
+  'user',
+  'people',
+  'account',
+  'accounts',
   'static',
   'public',
   'assets',
@@ -89,6 +94,21 @@ export const SHEET_HEADERS = {
  */
 export function captureFormEnabled(): boolean {
   return process.env.CAPTURE_FORM === 'on';
+}
+
+/**
+ * The query parameter the lead's reference is appended to on the way out, so
+ * the merchant reports it back against whatever that person goes on to do.
+ *
+ * `var3` because that is the column QuinStreet passes through to its reporting
+ * unchanged, and because var2 is already spoken for by the placement id that
+ * lives in each link's destination. Set LEAD_ID_PARAM to move it, or to an
+ * empty string to stop appending anything.
+ */
+export function leadIdParam(): string {
+  const raw = process.env.LEAD_ID_PARAM;
+  if (raw === undefined) return 'var3';
+  return raw.trim();
 }
 
 /**

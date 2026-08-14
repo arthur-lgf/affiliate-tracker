@@ -104,7 +104,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
       setStatus('redirecting');
       window.location.assign(target);
     } catch {
-      setFormError('Network error — please check your connection and try again.');
+      setFormError('Network error. Please check your connection and try again.');
       setStatus('idle');
     }
   }
