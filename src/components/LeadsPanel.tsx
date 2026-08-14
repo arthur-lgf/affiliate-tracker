@@ -37,15 +37,35 @@ const PAGE = 12;
  * leads but not change them. It is presentation only — /api/leads/[id] refuses
  * them regardless, and has to, because nothing stops someone calling it
  * directly.
+ *
+ * The wording is overridable because this panel now appears in two places that
+ * mean different things by it: everyone's leads on the dashboard, and one
+ * person's on their own page. Same rows, same controls, different sentence —
+ * which is much better than a second copy of the list that can drift from this
+ * one.
  */
 export function LeadsPanel({
   rows,
   total,
   canEdit = true,
+  title = 'Latest submissions',
+  summary,
+  emptyBody = 'No leads captured yet. Share a link and they will appear here.',
+  showAssignee = true,
 }: {
   rows: LeadRow[];
   total: number;
   canEdit?: boolean;
+  title?: string;
+  /** Replaces the count line on the right of the heading. */
+  summary?: string;
+  emptyBody?: string;
+  /**
+   * Off when every row belongs to the same person and the heading already says
+   * who — their name down the side of their own page is six copies of a fact
+   * the reader arrived with.
+   */
+  showAssignee?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -110,18 +130,17 @@ export function LeadsPanel({
   return (
     <section className="rise panel mt-5 p-6 sm:p-8">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <h2 className="font-display text-[32px]">Latest submissions</h2>
+        <h2 className="font-display text-[32px]">{title}</h2>
         <span className="text-[19px] text-ink-soft">
-          {total > rows.length
-            ? `Latest ${rows.length} of ${total.toLocaleString()}. Older leads live in your sheet`
-            : `${total.toLocaleString()} in total`}
+          {summary ??
+            (total > rows.length
+              ? `Latest ${rows.length} of ${total.toLocaleString()}. Older leads live in your sheet`
+              : `${total.toLocaleString()} in total`)}
         </span>
       </div>
 
       {rows.length === 0 ? (
-        <p className="py-12 text-center text-[19px] text-ink-soft">
-          No leads captured yet. Share a link and they will appear here.
-        </p>
+        <p className="py-12 text-center text-[19px] text-ink-soft">{emptyBody}</p>
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -138,10 +157,20 @@ export function LeadsPanel({
               </button>
             ))}
           </div>
-          <p className="plain mt-3">
-            Every lead starts <strong>pending</strong>. Mark one registered once they have signed
-            up, either here or in column N of the sheet.
-          </p>
+          {/* Instructions for a control this reader does not have are worse
+              than no instructions, so an affiliate gets the reading of the
+              pills instead of the recipe for changing them. */}
+          {canEdit ? (
+            <p className="plain mt-3">
+              Every lead starts <strong>pending</strong>. Mark one registered once they have signed
+              up, either here or in column N of the sheet.
+            </p>
+          ) : (
+            <p className="plain mt-3">
+              Every lead starts <strong>pending</strong> and is marked registered by your admin once
+              they have signed up.
+            </p>
+          )}
 
           {error ? (
             <p role="alert" className="field-error">
@@ -210,9 +239,11 @@ export function LeadsPanel({
                     >
                       <span className="block min-w-0 truncate">{row.campaign || row.slug}</span>
                     </span>
-                    <span className="truncate text-[18px] text-ink-soft lg:w-[150px]">
-                      {row.assignee || 'Unassigned'}
-                    </span>
+                    {showAssignee ? (
+                      <span className="truncate text-[18px] text-ink-soft lg:w-[150px]">
+                        {row.assignee || 'Unassigned'}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="lg:w-[150px] lg:flex-none">

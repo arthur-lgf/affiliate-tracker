@@ -4,18 +4,22 @@ import { notFound } from 'next/navigation';
 import { DeleteApproval } from '@/components/DeleteApproval';
 import { EarningsChart } from '@/components/EarningsChart';
 import { ErrorPanel } from '@/components/ErrorPanel';
+import { LeadsPanel, type LeadRow } from '@/components/LeadsPanel';
 import { LinkPending } from '@/components/LinkPending';
 import {
   buildEarnings,
   describeConversions,
+  formatDateTime,
   formatDay,
   formatMoney,
   formatPercent,
+  formatRelative,
   HOUSE_KEY,
   initialsOf,
   PERIODS,
   type Period,
 } from '@/lib/analytics';
+import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { ownsKey } from '@/lib/scope';
 import { normalizeKey } from '@/lib/validate';
@@ -24,6 +28,12 @@ import { requireViewer } from '@/lib/viewer';
 export const dynamic = 'force-dynamic';
 
 const RECENT_APPROVALS = 12;
+/**
+ * How many of this person's leads are sent to the browser. The panel itself
+ * pages through them twelve at a time; this is the ceiling on the payload, so a
+ * person with thousands of leads does not turn their own page into a download.
+ */
+const RECENT_LEADS = 200;
 
 type PageProps = {
   params: Promise<{ usr: string }>;
@@ -106,6 +116,41 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   );
 
   const theirLinks = links.filter((link) => (link.usr || HOUSE_KEY) === personKey);
+
+  // The people behind the numbers. A visit records no name — only a slug, a
+  // key and an IP — so the form is the one place a person's own details are
+  // ever captured, and these are the only names this page can honestly show.
+  //
+  // All time, like the approvals below it and unlike the cards above: a lead is
+  // a person you might still call, and hiding one because it arrived 31 days
+  // ago would make the period filter mean something quite different here.
+  const capture = captureFormEnabled();
+  const theirLeads = submissions.filter((row) => (row.usr || HOUSE_KEY) === personKey);
+  const leadRows: LeadRow[] = theirLeads.slice(0, RECENT_LEADS).map((row) => ({
+    id: row.id,
+    fullName: row.fullName,
+    email: row.email,
+    phone: row.phone,
+    campaign: row.campaign,
+    slug: row.slug,
+    assignee: row.assignee,
+    status: row.status,
+    // Formatted here rather than in the browser: a relative time computed on
+    // the client renders a different string from the one the server sent.
+    age: formatRelative(row.createdAt),
+    capturedAt: formatDateTime(row.createdAt),
+  }));
+
+  // Leads against visits, both all time, because that pairing is the question
+  // the list is opened with: of everyone who clicked, who actually left their
+  // details. Counted rather than expressed as a rate — the visit beacon is
+  // best-effort, so leads can legitimately outnumber the visits recorded.
+  const everVisits = everView.totals.visits;
+  const leadSummary =
+    theirLeads.length > leadRows.length
+      ? `Latest ${leadRows.length} of ${theirLeads.length.toLocaleString()} · all time`
+      : `${theirLeads.length.toLocaleString()} lead${theirLeads.length === 1 ? '' : 's'} from ` +
+        `${everVisits.toLocaleString()} visit${everVisits === 1 ? '' : 's'} · all time`;
 
   return (
     <div className="w-full">
@@ -291,6 +336,26 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
           </ul>
         )}
       </section>
+
+      {/* The people themselves. Kept behind the same switch as the dashboard's
+          copy, with one exception: leads that were captured while the form was
+          on stay readable after it is turned off, because they are still real
+          people who are still worth calling. */}
+      {capture || theirLeads.length > 0 ? (
+        <LeadsPanel
+          rows={leadRows}
+          total={theirLeads.length}
+          canEdit={isAdmin}
+          title={usr ? `${name}'s leads` : 'House leads'}
+          summary={leadSummary}
+          showAssignee={false}
+          emptyBody={
+            usr
+              ? `Nobody has filled in the form on ${name}'s links yet.`
+              : 'No form fills have arrived without a tracking key.'
+          }
+        />
+      ) : null}
     </div>
   );
 }

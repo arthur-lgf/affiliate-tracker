@@ -45,6 +45,19 @@ export default function AffiliateLoading() {
           ))}
         </div>
       </SkeletonPanel>
+
+      {/* Their leads: a heading, the three status pills, then the list. */}
+      <SkeletonPanel className="mt-5">
+        <SkeletonLine width={260} height={34} />
+        <div className="mt-5">
+          <SkeletonPills />
+        </div>
+        <div className="mt-5 flex flex-col gap-4">
+          {[0, 1, 2].map((index) => (
+            <SkeletonRow key={index} disc={false} />
+          ))}
+        </div>
+      </SkeletonPanel>
     </SkeletonScreen>
   );
 }
