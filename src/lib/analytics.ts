@@ -337,22 +337,52 @@ export type EarningsRow = {
 export type GroupBy = 'person' | 'card';
 
 /**
- * One bar group in the chart. Weeks rather than days: thirty daily bars on a
- * traffic level of single figures is thirty hairlines and one spike, which
- * carries no information you can read. A week is wide enough to label and to
- * put a number on.
+ * One bar group in the chart.
+ *
+ * A bucket is a day, a week or a calendar month — one step coarser than the
+ * window that was asked for, so the chart is the context around the figure
+ * rather than a second copy of it. Thirty daily bars on a traffic level of
+ * single figures is thirty hairlines and one spike, which carries no
+ * information you can read; half a dozen bars of a bigger unit does.
  */
-export type EarningsWeek = {
+export type EarningsBucket = {
   /** First day in the bucket, YYYY-MM-DD. */
   start: string;
   /** Last day in the bucket, inclusive. */
   end: string;
-  /** "Jul 16", or "This week" for the bucket ending today. */
+  /** The short label under the bar: "Tue 12", "Aug 12", "Mar". */
   label: string;
-  /** "16–22 Jul" — the span spelled out, for the table and the tooltip. */
+  /** The span spelled out, for the table behind the picture. */
   range: string;
+  /** The bucket today falls in, which the chart draws in bold. */
+  current: boolean;
   visits: number;
   approved: number;
+};
+
+/**
+ * The chart's whole contents: the bars, and what they are.
+ *
+ * The heading, the span and the caption travel with the bars rather than being
+ * written into the component, because they are the part that says what the bars
+ * mean, and "Week by week" over a chart of months is worse than no heading at
+ * all.
+ */
+export type EarningsSeries = {
+  buckets: EarningsBucket[];
+  /** "Day by day", "Week by week", "Month by month". */
+  title: string;
+  /**
+   * What the bars cover: "last 7 days", "last 6 months".
+   *
+   * Shown next to the heading, and load-bearing rather than decoration. The
+   * chart deliberately reaches back further than the filter does, so without
+   * this a reader could add up the bars, get a bigger number than the figure
+   * beside them, and conclude that one of the two is wrong.
+   */
+  span: string;
+  /** The sentence read in place of the picture. */
+  caption: string;
 };
 
 export type EarningsView = {
@@ -360,7 +390,7 @@ export type EarningsView = {
   totals: { visits: number; approved: number; earnings: number; approvalRate: number };
   /** Everyone who has a link, a visit or an approval — the filter's options. */
   people: { usr: string; name: string }[];
-  series: EarningsWeek[];
+  series: EarningsSeries;
 };
 
 /**
@@ -596,7 +626,15 @@ export function buildEarnings(
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { rows: list, totals, people, series: buildEarningsWeeks(visits, conversions, usr) };
+  return {
+    rows: list,
+    totals,
+    people,
+    // The chart follows both filters. It used to follow only the person, which
+    // left the picture sitting still while every figure around it moved — and a
+    // chart that ignores the control directly above it reads as a broken chart.
+    series: buildEarningsSeries(visits, conversions, { period, usr }),
+  };
 }
 
 /** "Jul 16" — UTC, to match every other date in the app. */
@@ -609,24 +647,82 @@ function shortDay(key: string): string {
 }
 
 /**
- * Five rolling weeks for the chart, oldest first, the last one ending today.
+ * "Tue 16" — for a chart of single days, where the month repeats on every bar.
  *
- * Rolling like the period filters, so the newest bar is always a full seven
- * days rather than collapsing to almost nothing on a Monday. Follows the person
- * filter but not the period — the shape of the last five weeks is the context
- * you read the selected window against, so narrowing to "Today" should not also
- * shrink the chart to a single bar.
+ * Composed rather than asked for as one format, because a request for a weekday
+ * and a day number comes back as "16 Tue" in some ICU builds and "Tue 16" in
+ * others, and an axis label should not depend on which one the server has.
  */
-export function buildEarningsWeeks(
+function weekdayDay(key: string): string {
+  const date = new Date(`${key}T00:00:00Z`);
+  const weekday = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  return `${weekday} ${date.getUTCDate()}`;
+}
+
+/** "Tue 16 Aug" — the same day spelled out for the table behind the chart. */
+function longDay(key: string): string {
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+/** "Mar", or "Dec '25" once the chart reaches back into another year. */
+function shortMonth(key: string, thisYear: number): string {
+  const [year, month] = key.split('-').map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, 1));
+  const name = date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  return year === thisYear ? name : `${name} '${String(year).slice(2)}`;
+}
+
+/** "March 2026" — the same month spelled out for the table behind the chart. */
+function longMonth(key: string): string {
+  const [year, month] = key.split('-').map(Number);
+  return new Date(Date.UTC(year!, month! - 1, 1)).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/** Whole days from one day key to another, counting both ends. */
+function daysBetween(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return 1;
+  return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+}
+
+/** About half a dozen bars: enough to be a shape, few enough to label. */
+const TARGET_BUCKETS = 6;
+
+/**
+ * The bars around the selected window.
+ *
+ * Each filter is drawn one step coarser than it asks for: today in days, a week
+ * in weeks, a month in months. So the chart is not a second copy of the figure
+ * beside it — it is what that figure sits inside. Reading "3 visits today" is
+ * one fact; seeing that yesterday was 12 and the day before was 16 is what
+ * makes it mean something.
+ *
+ * That does mean the bars add up to more than the figure they sit next to, on
+ * purpose, which is why every series carries a span that says how far back it
+ * reaches.
+ *
+ * Visits are bucketed by the click and approvals by their approval date, the
+ * same split the tables use, so a bar and a row can never disagree.
+ */
+export function buildEarningsSeries(
   visits: Visit[],
   conversions: Conversion[],
-  usr = '',
-  weeks = 5,
-): EarningsWeek[] {
+  { period = 'month', usr = '' }: { period?: Period; usr?: string } = {},
+): EarningsSeries {
   const matchesPerson = (rowUsr: string) => !usr || (rowUsr || HOUSE_KEY) === usr;
+
   const visitsByDay = new Map<string, number>();
   const approvedByDay = new Map<string, number>();
-
   for (const visit of visits) {
     if (!matchesPerson(visit.usr)) continue;
     const key = dayKey(visit.createdAt);
@@ -634,34 +730,147 @@ export function buildEarningsWeeks(
   }
   for (const row of conversions) {
     if (!matchesPerson(row.usr)) continue;
-    // Approvals are bucketed by their approval date, visits by the click —
-    // the same split the tables use, so a bar and a row cannot disagree.
     const key = row.approvedOn.slice(0, 10);
     approvedByDay.set(key, (approvedByDay.get(key) ?? 0) + 1);
   }
 
-  const series: EarningsWeek[] = [];
-  for (let week = weeks - 1; week >= 0; week -= 1) {
-    const startOffset = week * 7 + 6;
-    const start = daysAgoKey(startOffset);
-    const end = daysAgoKey(week * 7);
+  if (period === 'month') return monthSeries(visitsByDay, approvedByDay);
+
+  const { size, count } = bucketPlan(period, visitsByDay, approvedByDay);
+
+  const buckets: EarningsBucket[] = [];
+  // Built from the newest backwards, so the last bar always ends today rather
+  // than on whatever boundary the calendar happens to offer. That is what makes
+  // "this week" mean the last seven days on a Monday as well as on a Friday.
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const firstOffset = index * size + (size - 1);
+    const lastOffset = index * size;
+    const start = daysAgoKey(firstOffset);
+    const end = daysAgoKey(lastOffset);
     let visitCount = 0;
     let approvedCount = 0;
-    for (let day = startOffset; day >= week * 7; day -= 1) {
+    for (let day = firstOffset; day >= lastOffset; day -= 1) {
       const key = daysAgoKey(day);
       visitCount += visitsByDay.get(key) ?? 0;
       approvedCount += approvedByDay.get(key) ?? 0;
     }
-    series.push({
+    buckets.push({
       start,
       end,
-      label: week === 0 ? 'This week' : shortDay(start),
-      range: `${shortDay(start)} – ${shortDay(end)}`,
+      label: bucketLabel(size, index, start),
+      range: size === 1 ? longDay(start) : `${shortDay(start)} – ${shortDay(end)}`,
+      current: index === 0,
       visits: visitCount,
       approved: approvedCount,
     });
   }
-  return series;
+
+  const title = size === 1 ? 'Day by day' : size === 7 ? 'Week by week' : `${size} days at a time`;
+  const span =
+    size === 1
+      ? `last ${count} days`
+      : size === 7
+        ? `last ${count} weeks`
+        : `last ${size * count} days`;
+
+  return {
+    buckets,
+    title,
+    span,
+    caption: `Visits and approvals over the ${span}, ${
+      size === 1 ? 'one bar per day' : size === 7 ? 'one bar per week' : `${size} days at a time`
+    }.`,
+  };
+}
+
+/** "Today", "This week", or the date the bar starts on. */
+function bucketLabel(size: number, index: number, start: string): string {
+  if (index === 0) return size === 1 ? 'Today' : size === 7 ? 'This week' : shortDay(start);
+  return size === 1 ? weekdayDay(start) : shortDay(start);
+}
+
+/**
+ * How wide each bar is and how many there are, for everything but months.
+ *
+ * Today is drawn in days and a week in weeks, both fixed, so that the two are
+ * read against each other without a bar quietly changing meaning between them.
+ * All time is the only one that has to be worked out, since the history behind
+ * it is a day old in a new account and years old in an old one.
+ */
+function bucketPlan(
+  period: Period,
+  visitsByDay: Map<string, number>,
+  approvedByDay: Map<string, number>,
+): { size: number; count: number } {
+  if (period === 'day') return { size: 1, count: 7 };
+  if (period === 'week') return { size: 7, count: TARGET_BUCKETS };
+
+  const days = [...visitsByDay.keys(), ...approvedByDay.keys()].sort();
+  // Nothing recorded at all: six empty days, which says "nothing yet" more
+  // honestly than one flat bar spanning an imaginary history.
+  if (days.length === 0) return { size: 1, count: TARGET_BUCKETS };
+
+  const historyDays = daysBetween(days[0]!, daysAgoKey(0));
+  const size = Math.max(1, Math.ceil(historyDays / TARGET_BUCKETS));
+  return { size, count: Math.min(TARGET_BUCKETS, Math.ceil(historyDays / size)) };
+}
+
+/**
+ * Six calendar months, the last one being this one.
+ *
+ * Calendar months rather than blocks of thirty days: a month is the unit
+ * everything else about this business is settled in, and "August" is a thing a
+ * person can check against a statement in a way that "the 20th to the 18th"
+ * never is. The current bar is therefore a part-month, and says so by being the
+ * one labelled "This month".
+ */
+function monthSeries(
+  visitsByDay: Map<string, number>,
+  approvedByDay: Map<string, number>,
+): EarningsSeries {
+  const today = new Date(`${daysAgoKey(0)}T00:00:00Z`);
+  const thisYear = today.getUTCFullYear();
+
+  const visitsByMonth = new Map<string, number>();
+  const approvedByMonth = new Map<string, number>();
+  for (const [day, count] of visitsByDay) {
+    const key = day.slice(0, 7);
+    visitsByMonth.set(key, (visitsByMonth.get(key) ?? 0) + count);
+  }
+  for (const [day, count] of approvedByDay) {
+    const key = day.slice(0, 7);
+    approvedByMonth.set(key, (approvedByMonth.get(key) ?? 0) + count);
+  }
+
+  const buckets: EarningsBucket[] = [];
+  for (let back = TARGET_BUCKETS - 1; back >= 0; back -= 1) {
+    const first = new Date(Date.UTC(thisYear, today.getUTCMonth() - back, 1));
+    // Day 0 of the next month is the last day of this one, which is the whole
+    // reason to let Date do the counting rather than carrying a table of 31s
+    // and a February rule.
+    const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+    const key = first.toISOString().slice(0, 7);
+    buckets.push({
+      start: first.toISOString().slice(0, 10),
+      end: last.toISOString().slice(0, 10),
+      // The month's own name, even for the current one: "This month" is the
+      // only label in any of these charts that does not fit its column, and a
+      // truncated "This mo…" is worse than the word August. The bold says
+      // which one we are in; the range says it is only part-run so far.
+      label: shortMonth(key, thisYear),
+      range: back === 0 ? `${longMonth(key)}, so far` : longMonth(key),
+      current: back === 0,
+      visits: visitsByMonth.get(key) ?? 0,
+      approved: approvedByMonth.get(key) ?? 0,
+    });
+  }
+
+  return {
+    buckets,
+    title: 'Month by month',
+    span: `last ${TARGET_BUCKETS} months`,
+    caption: `Visits and approvals over the last ${TARGET_BUCKETS} calendar months, one bar per month. The last is the month so far.`,
+  };
 }
 
 /** Whole-unit currency for dense table cells: 1250 → "$1,250". */

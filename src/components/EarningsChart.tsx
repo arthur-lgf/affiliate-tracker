@@ -1,25 +1,42 @@
-import type { EarningsWeek } from '@/lib/analytics';
+import type { EarningsSeries } from '@/lib/analytics';
 
 /**
- * Five weeks, two bars each: visits in green, approvals in gold.
+ * The context around the selected window, as bars: visits in green, approvals
+ * in gold.
+ *
+ * The buckets, the heading, the span and the caption all arrive together from
+ * buildEarningsSeries, because the size of a bar is the thing that says what it
+ * means — six bars are one week each on 7 days and one month each on 30 days,
+ * and only the series knows which. Nothing about the shape is decided here.
+ *
+ * The span is printed beside the heading and is not decoration: the chart
+ * deliberately reaches back further than the filter, so the bars add up to more
+ * than the figure beside them and the reader has to be told how far back they
+ * go.
  *
  * Every bar carries its own number above it, so the picture is a convenience
- * and never the only way to read a figure. A week with nothing still draws a
- * 6px stub on the baseline — an absent bar reads as missing data, a flat one
- * reads as "nothing came in", and those are different things.
+ * and never the only way to read a figure. An empty bucket still draws a 6px
+ * stub on the baseline — an absent bar reads as missing data, a flat one reads
+ * as "nothing came in", and those are different things.
  *
- * Visits and approvals are on the same axis but approvals are almost always
- * the smaller of the two by an order of magnitude, so the stub is what keeps a
- * single approval from rendering as nothing at all.
+ * Visits and approvals share an axis, and approvals are almost always the
+ * smaller by an order of magnitude, so that stub is also what keeps a single
+ * approval from rendering as nothing at all.
  */
-export function EarningsChart({ series }: { series: EarningsWeek[] }) {
-  const peak = Math.max(1, ...series.map((week) => Math.max(week.visits, week.approved)));
+export function EarningsChart({ series }: { series: EarningsSeries }) {
+  const { buckets } = series;
+  const peak = Math.max(1, ...buckets.map((bucket) => Math.max(bucket.visits, bucket.approved)));
   const height = (value: number) => (value === 0 ? 6 : Math.max(14, (value / peak) * 210));
 
   return (
     <figure className="m-0 min-w-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <h2 className="font-display text-[26px]">Week by week</h2>
+        <h2 className="font-display text-[26px]">
+          {series.title}{' '}
+          <span className="whitespace-nowrap text-[19px] font-normal text-ink-soft">
+            · {series.span}
+          </span>
+        </h2>
         <span className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[18px] text-ink-soft">
           <span className="flex items-center gap-2.5">
             <span aria-hidden className="h-4 w-4 flex-none rounded bg-leaf-bar" />
@@ -37,29 +54,34 @@ export function EarningsChart({ series }: { series: EarningsWeek[] }) {
 
       {/* Decorative — the table below carries the same numbers.
 
-          Bars and week labels share one scroller so they can never drift out of
+          Bars and labels share one scroller so they can never drift out of
           register, and the bars themselves shrink to fit first: on a phone this
           only scrolls if a three-digit count needs more room than its column. */}
       <div aria-hidden className="mt-6 overflow-x-auto">
-        <div className="min-w-[300px]">
+        {/* Room for every label, whatever the chart is made of: seven daily
+            bars squeezed into a phone gave every column 31px, which clipped
+            even the word "Today". Sized by the bar count so the scroller does
+            its job instead. On a laptop the panel is wider than this anyway,
+            so nothing moves. */}
+        <div style={{ minWidth: `${Math.max(300, buckets.length * 76)}px` }}>
           <div className="flex h-[250px] items-end gap-3 border-b-2 border-edge px-1 sm:gap-8 sm:px-2">
-            {series.map((week, index) => (
+            {buckets.map((bucket, index) => (
               <div
-                key={week.start}
+                key={bucket.start}
                 className="flex h-full min-w-0 flex-1 items-end justify-center gap-1.5 sm:gap-2"
               >
                 <Bar
-                  value={week.visits}
-                  px={height(week.visits)}
+                  value={bucket.visits}
+                  px={height(bucket.visits)}
                   delay={index * 60}
                   className="bg-leaf-bar"
                 />
                 <Bar
-                  value={week.approved}
-                  px={height(week.approved)}
+                  value={bucket.approved}
+                  px={height(bucket.approved)}
                   delay={index * 60 + 30}
                   className={
-                    week.approved > 0
+                    bucket.approved > 0
                       ? 'border-2 border-b-0 border-gold-edge bg-gold'
                       : 'bg-gold-faint'
                   }
@@ -69,14 +91,18 @@ export function EarningsChart({ series }: { series: EarningsWeek[] }) {
           </div>
 
           <div className="mt-3 flex gap-3 px-1 sm:gap-8 sm:px-2">
-            {series.map((week) => (
+            {buckets.map((bucket) => (
               <div
-                key={week.start}
+                key={bucket.start}
+                /* The bucket the clock is in is bold, whatever it is called and
+                   wherever it sits. Matching on the word "This week" only
+                   worked while every chart was weeks, and bolding the last bar
+                   only works while the chart ends at now. */
                 className={`min-w-0 flex-1 truncate text-center text-[17px] sm:text-[18px] ${
-                  week.label === 'This week' ? 'font-bold text-ink' : 'text-ink-soft'
+                  bucket.current ? 'font-bold text-ink' : 'text-ink-soft'
                 }`}
               >
-                {week.label}
+                {bucket.label}
               </div>
             ))}
           </div>
@@ -88,20 +114,20 @@ export function EarningsChart({ series }: { series: EarningsWeek[] }) {
           still lays out at its content width and widens the document. */}
       <div className="sr-only left-0">
         <table>
-          <caption>Visits and approvals per week over the last five weeks</caption>
+          <caption>{series.caption}</caption>
           <thead>
             <tr>
-              <th scope="col">Week</th>
+              <th scope="col">When</th>
               <th scope="col">Visits</th>
               <th scope="col">Approved</th>
             </tr>
           </thead>
           <tbody>
-            {series.map((week) => (
-              <tr key={week.start}>
-                <th scope="row">{week.range}</th>
-                <td>{week.visits}</td>
-                <td>{week.approved}</td>
+            {buckets.map((bucket) => (
+              <tr key={bucket.start}>
+                <th scope="row">{bucket.range}</th>
+                <td>{bucket.visits}</td>
+                <td>{bucket.approved}</td>
               </tr>
             ))}
           </tbody>
