@@ -243,6 +243,13 @@ export function splitAmount(total: number, count: number): number[] {
 export type PlannedConversion = NewConversion & {
   marker: string;
   card: string;
+  /**
+   * var2 exactly as the report wrote it, which is not always `usr`: `usr` is
+   * the matched link's own key, the same thing in different letters most of the
+   * time and nothing like it when QMP_DEFAULT_SLUG placed a row that carried no
+   * key at all. Kept so a plan can show what it read as well as what it decided.
+   */
+  trackingKey: string;
   /** var3, the lead this approval came from. Empty when the row carries none. */
   leadRef: string;
 };
@@ -487,6 +494,7 @@ export function planSync(options: {
       create.push({
         slug: resolved.link.slug,
         usr: resolved.link.usr,
+        trackingKey,
         approvedOn,
         amount: amounts[index]!,
         // Card first: it is the useful half for anyone reading the sheet, and

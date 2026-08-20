@@ -61,6 +61,12 @@ type SyncResult = {
     approvedOn: string;
     slug: string;
     usr: string;
+    /** The name behind that tracking key, or the key when no link names one. */
+    person: string;
+    /** var2 as the report wrote it. Empty on a row placed by the default slug. */
+    trackingKey: string;
+    /** var3, the lead reference. Empty when the row carries none. */
+    leadRef: string;
     amount: number;
     card: string;
     client: string;
@@ -767,35 +773,70 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               ) : null}
 
               {!sync.applied && sync.preview && sync.preview.length > 0 ? (
-                <div className="relative -mx-2 mt-6 overflow-x-auto px-2">
-                  <table className="w-full min-w-[640px] border-collapse text-left">
-                    <thead>
-                      <tr className="border-b-2 border-edge">
-                        <th className="label-cap px-3 pb-3">Date</th>
-                        <th className="label-cap px-3 pb-3">Person</th>
-                        <th className="label-cap px-3 pb-3">Client</th>
-                        <th className="label-cap px-3 pb-3">Card</th>
-                        <th className="label-cap px-3 pb-3 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sync.preview.map((row, index) => (
-                        <tr key={index} className="divider-row last:border-0">
-                          <td className="tnum px-3 py-3 text-[18px]">{row.approvedOn}</td>
-                          <td className="px-3 py-3 text-[18px]">{row.usr || 'House'}</td>
-                          <td
-                            className={`max-w-[200px] truncate px-3 py-3 text-[18px] ${
-                              row.client && row.client !== '-' ? '' : 'text-ink-dim'
-                            }`}
-                          >
-                            {row.client || '-'}
-                          </td>
-                          <td className="max-w-[260px] truncate px-3 py-3 text-[18px]">{row.card}</td>
-                          <td className="tnum px-3 py-3 text-right text-[18px]">{money(row.amount)}</td>
+                <div className="mt-6">
+                  {/* Seven columns is more than a laptop holds comfortably and
+                      more than a phone holds at all, so this one gets the same
+                      scroll buttons as the result table above it. */}
+                  <TableScroller label="Approvals about to be written">
+                    <table className="w-full min-w-[900px] border-collapse text-left">
+                      <thead>
+                        <tr className="border-b-2 border-edge">
+                          <th className="label-cap px-3 pb-3">Date</th>
+                          {/* Each resolved name sits beside the raw field it was
+                              resolved from: the name is the answer, the code is
+                              the evidence, and having to read them apart is how
+                              a row gets attributed to the wrong person. */}
+                          <th className="label-cap px-3 pb-3">Person</th>
+                          <th className="label-cap px-3 pb-3">var2</th>
+                          <th className="label-cap px-3 pb-3">Client</th>
+                          <th className="label-cap px-3 pb-3">var3</th>
+                          <th className="label-cap px-3 pb-3">Card</th>
+                          <th className="label-cap px-3 pb-3 text-right">Amount</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {sync.preview.map((row, index) => (
+                          <tr key={index} className="divider-row last:border-0">
+                            <td className="tnum px-3 py-3 text-[18px]">{row.approvedOn}</td>
+                            <td className="px-3 py-3 text-[18px]">
+                              {row.person || row.usr || 'House'}
+                            </td>
+                            {/* What the row carried, not what it matched. The
+                                two differ only on a keyless row that
+                                QMP_DEFAULT_SLUG placed anyway, and that is
+                                exactly the row worth spotting before writing. */}
+                            <td
+                              className={`px-3 py-3 text-[18px] ${
+                                row.trackingKey ? '' : 'text-ink-dim'
+                              }`}
+                            >
+                              {row.trackingKey || BLANK}
+                            </td>
+                            <td
+                              className={`max-w-[200px] truncate px-3 py-3 text-[18px] ${
+                                row.client && row.client !== BLANK ? '' : 'text-ink-dim'
+                              }`}
+                            >
+                              {row.client || BLANK}
+                            </td>
+                            <td
+                              className={`max-w-[200px] truncate px-3 py-3 text-[18px] ${
+                                row.leadRef ? '' : 'text-ink-dim'
+                              }`}
+                            >
+                              {row.leadRef || BLANK}
+                            </td>
+                            <td className="max-w-[260px] truncate px-3 py-3 text-[18px]">
+                              {row.card}
+                            </td>
+                            <td className="tnum px-3 py-3 text-right text-[18px]">
+                              {money(row.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScroller>
                   {sync.toCreate > sync.preview.length ? (
                     <p className="plain-note mt-3">
                       The first {sync.preview.length} of {sync.toCreate}.

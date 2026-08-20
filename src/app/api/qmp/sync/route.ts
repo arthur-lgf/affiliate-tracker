@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchQmpReport, QmpError, qmpConfig } from '@/lib/qmp';
 import { planSync } from '@/lib/qmp-sync';
-import { clientIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
+import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { getStore, statusForError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
 
@@ -108,14 +108,21 @@ export async function POST(request: Request) {
 
   if (apply !== true) {
     const clients = clientIndex(submissions);
+    // Whose row it is, in the name their links carry rather than the tracking
+    // key those links are matched on. The same index the result table above
+    // reads, so one person cannot be two different things on one screen.
+    const names = nameIndex(links);
     return NextResponse.json({
       applied: false,
       ...summary,
-      // A sample rather than the whole plan: enough to see it is right. The
-      // client name is resolved for display only — a dash when var3 names
-      // nobody, which is a normal state and not a reason to hold the row back.
+      // A sample rather than the whole plan: enough to see it is right. Both
+      // names are for display only — the tracking key is what actually gets
+      // written — and a dash where var3 names nobody is a normal state rather
+      // than a reason to hold the row back. A key with no name behind it falls
+      // back to the key: better a code you can look up than a blank.
       preview: plan.create.slice(0, 25).map((row) => ({
         ...row,
+        person: names.get(row.usr) ?? row.usr,
         client: clients.get(row.leadRef) ?? UNKNOWN_CLIENT,
       })),
     });

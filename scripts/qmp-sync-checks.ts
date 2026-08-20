@@ -286,5 +286,34 @@ const duplicated = planSync({ rows: [qmpRow(), qmpRow()], reportKey: '123', link
 check('an exactly repeated row is not swallowed', duplicated.create.length === 6);
 check('and its markers stay distinct', new Set(duplicated.create.map((c) => c.notes)).size === 6);
 
+console.log('\n— what the row carried —');
+// The plan keeps var2 as written as well as the link it matched, because the
+// sync preview shows both and they are not always the same string.
+check('var2 is kept beside the link it matched', plan.create.every((c) => c.trackingKey === 'mark'));
+
+const shouted = planSync({
+  rows: [qmpRow({ Var2: 'MARK', Approvals: 1, 'Total Earnings($)': 10 })],
+  reportKey: '123',
+  links,
+  existing: [],
+});
+check('a differently cased var2 still matches', shouted.create.length === 1);
+check('the link keeps its own spelling', shouted.create[0]!.usr === 'mark');
+check('and the row keeps what it said', shouted.create[0]!.trackingKey === 'MARK');
+
+// The one case where the two genuinely disagree: no key at all, placed on the
+// default link anyway. Showing the blank is the point — it is the row a person
+// should look at twice before writing.
+const defaulted = planSync({
+  rows: [qmpRow({ Var2: '', Approvals: 1, 'Total Earnings($)': 10 })],
+  reportKey: '123',
+  links: [link('cash-back', 'mark', 'Cash Back'), link('house-offer', 'house')],
+  existing: [],
+  defaultSlug: 'house-offer',
+});
+check('a keyless row lands on the default link', defaulted.create.length === 1);
+check('under that link\'s person', defaulted.create[0]!.usr === 'house');
+check('while var2 stays empty, as the report had it', defaulted.create[0]!.trackingKey === '');
+
 console.log(`\nqmp-sync: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
