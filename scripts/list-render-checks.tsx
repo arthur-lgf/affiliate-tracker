@@ -172,6 +172,10 @@ check('with the rest a page away', card.includes('Showing 1–10 of 23'));
 check('there is a search box', card.includes('id="cpa-search"'));
 check('the columns are sortable', card.includes('aria-sort'));
 check('the rate column is named for what it answers', card.includes('Pays now'));
+check('the affiliate half has a column', card.includes('Affiliate revenue'));
+// 100 + i for the fixture rows, so row 0 pays 100 and the affiliate keeps 50.
+check('and it is half of what the card pays', card.includes(formatMoney(affiliateRevenueOf(100))));
+check('a card at zero pays the affiliate zero, not a dash', (card.match(/\$0/g) || []).length >= 2);
 // A card at zero has been switched off; a blank previous rate only means the
 // card is new. The two must not render the same way.
 check('a rate of zero reads as money', card.includes('$0'));

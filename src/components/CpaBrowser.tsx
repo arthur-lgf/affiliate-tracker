@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Pager } from '@/components/Pager';
 import { SortHeader, nextSort, type SortState } from '@/components/SortHeader';
 import { TableScroller } from '@/components/TableScroller';
-import { formatDay, formatMoney, formatPercent } from '@/lib/analytics';
+import { affiliateRevenueOf, formatDay, formatMoney, formatPercent } from '@/lib/analytics';
 import { tierNumber } from '@/lib/cpa';
 import { BLANK, sortRows, type ColumnKind } from '@/lib/report-table';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
@@ -43,6 +43,24 @@ const COLUMNS: Column[] = [
   // between "Tier 1" and "Tier 2". A card with a single rate sorts first.
   { key: 'tier', label: 'Tier', right: false, read: (r) => (r.tier ? tierNumber(r.tier) : null), kind: 'number' },
   { key: 'current', label: 'Pays now', right: true, read: (r) => r.current, kind: 'currency' },
+  /*
+   * Half of what the card pays, through the same helper the dashboard's
+   * Affiliate revenue column uses. One definition of the share, in
+   * AFFILIATE_SHARE, so the rate card and the earnings table can never quote
+   * two different splits for the same dollar.
+   *
+   * Derived rather than stored: the export has no such column, and a number
+   * saved beside the rate would go stale the moment the rate changed. If a
+   * card ever pays something other than half, that becomes a column on the
+   * row and this reads it instead.
+   */
+  {
+    key: 'affiliate',
+    label: 'Affiliate revenue',
+    right: true,
+    read: (r) => (r.current === null ? null : affiliateRevenueOf(r.current)),
+    kind: 'currency',
+  },
   { key: 'previous', label: 'Paid before', right: true, read: (r) => r.previous, kind: 'currency' },
   { key: 'change', label: 'Change', right: true, read: (r) => r.change, kind: 'percent' },
   { key: 'changedOn', label: 'Changed', right: true, read: (r) => r.changedOn, kind: 'text' },
@@ -111,7 +129,7 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
         </p>
       ) : (
         <TableScroller className="mt-5" label="CPA rates">
-          <table className="w-full min-w-[880px] border-collapse text-left">
+          <table className="w-full min-w-[1040px] border-collapse text-left">
             <thead>
               <tr className="border-b-2 border-edge">
                 {COLUMNS.map((column) => (
@@ -148,6 +166,13 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
                       <span className="text-ink-dim">{BLANK}</span>
                     ) : (
                       formatMoney(rate.current)
+                    )}
+                  </td>
+                  <td className="tnum px-3 py-3 text-right font-display text-[26px] font-semibold">
+                    {rate.current === null ? (
+                      <span className="text-ink-dim">{BLANK}</span>
+                    ) : (
+                      formatMoney(affiliateRevenueOf(rate.current))
                     )}
                   </td>
                   <td className="tnum px-3 py-3 text-right text-[18px] text-ink-soft">

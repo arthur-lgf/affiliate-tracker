@@ -46,8 +46,9 @@ export default async function CpaPage() {
       <div className="rise">
         <h1 className="font-display leading-[1.05] text-[clamp(1.75rem,7vw,3rem)]">CPA report</h1>
         <p className="mt-3 max-w-[720px] text-[20px] leading-relaxed text-ink-soft">
-          What each card pays for an approval. Where a card is tiered, every tier is listed
-          separately, because the tier is what decides the payout.
+          What each card pays for an approval, and half of it beside, which is what the affiliate
+          keeps. Where a card is tiered, every tier is listed separately, because the tier is what
+          decides the payout.
         </p>
       </div>
 
