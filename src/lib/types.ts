@@ -36,8 +36,9 @@ export type AffiliateLink = {
 export type NewAffiliateLink = Omit<AffiliateLink, 'id' | 'createdAt'>;
 
 /**
- * Where a lead stands. `pending` is stamped automatically on capture;
- * `registered` is only ever set by hand. See `lib/status.ts`.
+ * Where a lead stands. `pending` is stamped automatically on capture. The other
+ * state is set by hand, written through by the report sync, or read off an
+ * approval at display time — and reads "Approved" on screen. See `lib/status.ts`.
  */
 export type LeadStatus = 'pending' | 'registered';
 

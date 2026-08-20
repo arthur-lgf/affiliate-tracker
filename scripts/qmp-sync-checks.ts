@@ -7,6 +7,7 @@
 //
 //   npx tsx scripts/qmp-sync-checks.ts
 import {
+  approvedLeadIds,
   leadsToRegister,
   leadRefIn,
   markerIn,
@@ -357,6 +358,28 @@ const repeated = leadsToRegister(
   [lead('rc7czk6xa61y', 'pending')],
 );
 check('one lead under three approvals is written once', repeated.length === 1);
+
+/*
+ * The same references, read as a set rather than as a list of writes. This is
+ * what the leads list reads to show a lead as approved without anybody running
+ * a sync, so it has to answer for every approval on file, not just the new ones.
+ */
+const named = approvedLeadIds([withRef('rc7czk6xa61y'), withRef('zz9maybe'), { notes: 'typed by hand' }]);
+check('every reference on file is named', named.has('rc7czk6xa61y') && named.has('zz9maybe'));
+check('an approval entered by hand names nobody', named.size === 2);
+check('a lead nothing points at is not named', !named.has('nobody'));
+check('no approvals name nobody', approvedLeadIds([]).size === 0);
+check(
+  'three approvals for one lead name it once',
+  approvedLeadIds([withRef('same'), withRef('same'), withRef('same')]).size === 1,
+);
+// The list of writes and the set of names have to agree, or the sheet says one
+// thing and the screen says another.
+check(
+  'what gets written is what is named, minus the leads already approved',
+  leadsToRegister([withRef('a'), withRef('b')], [lead('a', 'pending'), lead('b', 'registered')])
+    .every((id) => approvedLeadIds([withRef('a'), withRef('b')]).has(id)),
+);
 
 console.log(`\nqmp-sync: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -16,7 +16,8 @@
 //   npx tsx --tsconfig scripts/render.tsconfig.json scripts/list-render-checks.tsx
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ApprovalsList } from '../src/components/ApprovalsList';
-import { CpaBrowser } from '../src/components/CpaBrowser';
+import { CpaBrowser, groupRates, tierCount, tiersOf } from '../src/components/CpaBrowser';
+import { sortRows } from '../src/lib/report-table';
 import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
 import { Pager } from '../src/components/Pager';
@@ -217,6 +218,67 @@ check('twelve flat cards is twelve cards', flatOnly.includes('Showing 1–10 of 
 const noRates = renderToStaticMarkup(<CpaBrowser rows={[]} />);
 check('an empty card says nothing is uploaded', noRates.includes('No rates uploaded yet'));
 check('and offers no page controls', !noRates.includes('Previous'));
+
+console.log('\n— sorting by tier —');
+/*
+ * The Tier column puts cards in order by how many tiers they pay at, which is
+ * the number the badge shows. A card with no tiers has nothing to be ordered
+ * by, so it reads blank and sinks, the same as every other blank here.
+ */
+const cardGroups = groupRates(rates);
+check('a three-tier card counts three', tierCount(cardGroups[0]!) === 3);
+check('a flat card counts nothing at all', tierCount(cardGroups[3]!) === null);
+
+const byTier = sortRows(cardGroups, tierCount, 'number', 'desc');
+check('the tiered cards come first', byTier.slice(0, 3).every((g) => g.tiered));
+check('and the flat ones sink', byTier.slice(3).every((g) => !g.tiered));
+check(
+  'ascending sinks them too — a blank is not a low number',
+  sortRows(cardGroups, tierCount, 'number', 'asc').slice(3).every((g) => !g.tiered),
+);
+
+// The direction has to mean something inside the card as well, or "highest
+// first" reorders three cards and leaves Tier 1 at the top of each of them.
+const platinum = cardGroups[0]!;
+check(
+  'unsorted, the tiers read as the report writes them',
+  tiersOf(platinum, null).map((r) => r.tier).join() === 'Tier 1,Tier 2,Tier 3',
+);
+check(
+  'highest first turns the tiers round',
+  tiersOf(platinum, { key: 'tier', direction: 'desc' }).map((r) => r.tier).join() ===
+    'Tier 3,Tier 2,Tier 1',
+);
+check(
+  'lowest first puts them back',
+  tiersOf(platinum, { key: 'tier', direction: 'asc' }).map((r) => r.tier).join() ===
+    'Tier 1,Tier 2,Tier 3',
+);
+check(
+  'sorting by another column leaves the tiers alone',
+  tiersOf(platinum, { key: 'current', direction: 'desc' }).map((r) => r.tier).join() ===
+    'Tier 1,Tier 2,Tier 3',
+);
+check('and the card itself is never reordered in place', platinum.rates[0]!.tier === 'Tier 1');
+
+console.log('\n— the banding —');
+/*
+ * Every other card sits on a band and takes its tiers with it. Read off the
+ * rendered rows rather than trusted: the rule is only worth anything if a
+ * tiered card's four rows really do come out one colour.
+ */
+const body = card.slice(card.indexOf('<tbody>'), card.indexOf('</tbody>'));
+const banded = [...body.matchAll(/<tr class="([^"]*)"/g)].map((m) => m[1]!.includes('bg-paper-sunk'));
+check('the first page draws every row', banded.length === 19);
+check('the first card takes no band', banded.slice(0, 4).every((on) => !on));
+check('the second card takes one, tiers and all', banded.slice(4, 8).every((on) => on));
+check('the third takes none again', banded.slice(8, 12).every((on) => !on));
+check(
+  'and flat cards alternate a row at a time',
+  banded.slice(12).join(',') === 'true,false,true,false,true,false,true',
+);
+check('a table with no tiers still stripes', flatOnly.includes('bg-paper-sunk'));
+check('the Tier heading is a control now', card.includes('Sort by Tier'));
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

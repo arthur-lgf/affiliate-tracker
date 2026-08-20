@@ -202,6 +202,23 @@ export function leadRefIn(notes: string): string {
 }
 
 /**
+ * The leads the approvals name.
+ *
+ * The reference is the submission's own id: the capture form puts it in var3,
+ * the merchant carries it through, and the report hands it back, which is how
+ * an approval knows whose it is. An approval typed in by hand carries no
+ * reference and names nobody, so it is not in here.
+ */
+export function approvedLeadIds(conversions: { notes: string }[]): Set<string> {
+  const ids = new Set<string>();
+  for (const conversion of conversions) {
+    const ref = leadRefIn(conversion.notes ?? '');
+    if (ref) ids.add(ref);
+  }
+  return ids;
+}
+
+/**
  * The leads an approval proves have signed up.
  *
  * A lead starts pending and is marked registered by hand once somebody has
@@ -223,13 +240,7 @@ export function leadsToRegister(
   conversions: { notes: string }[],
   submissions: { id: string; status: string }[],
 ): string[] {
-  const approved = new Set<string>();
-  for (const conversion of conversions) {
-    const ref = leadRefIn(conversion.notes ?? '');
-    if (ref) approved.add(ref);
-  }
-  // Matched on the submission's own id, which is what the lead reference is:
-  // the capture form puts the id in var3 and QMP hands it back on the report.
+  const approved = approvedLeadIds(conversions);
   return submissions
     .filter((row) => row.status !== 'registered' && approved.has(row.id))
     .map((row) => row.id);

@@ -7,7 +7,7 @@
  */
 import { SHEET_HEADERS } from '../src/lib/config';
 import { planHeaderRow } from '../src/lib/store/sheets';
-import { normalizeLeadStatus } from '../src/lib/status';
+import { displayStatus, normalizeLeadStatus, statusLabel } from '../src/lib/status';
 
 const SUB = SHEET_HEADERS.submissions;
 /** The 13-column header every sheet written before this change has. */
@@ -74,6 +74,13 @@ for (const [input, want] of [
   ['registered', 'registered'],
   ['Registered', 'registered'],
   ['  REGISTERED  ', 'registered'],
+  // The word on screen. Somebody typing what they read has to land in the same
+  // place as somebody typing what they have always typed.
+  ['approved', 'registered'],
+  ['Approved', 'registered'],
+  ['APPROVED', 'registered'],
+  ['not approved', 'pending'],
+  ['pending approval', 'pending'],
   ['yes', 'registered'],
   ['Done', 'registered'],
   ['✓', 'registered'],
@@ -85,6 +92,27 @@ for (const [input, want] of [
 ] as const) {
   check(`"${String(input)}" reads as ${want}`, normalizeLeadStatus(input), want);
 }
+
+console.log('\n— what it is called on screen —');
+// The stored word and the shown word part company here and nowhere else, which
+// is what lets the caption change without the database or the sheet changing.
+check('registered reads as Approved', statusLabel('registered'), 'Approved');
+check('pending reads as Pending', statusLabel('pending'), 'Pending');
+
+console.log('\n— an approval outranks the stored status —');
+/*
+ * The rule the leads list and the approvals list share. A lead sitting at
+ * pending under an approval is not a decision anybody made, so the approval
+ * wins; without an approval the stored status is left exactly as it is.
+ */
+check('an approval lifts a pending lead', displayStatus('pending', true), 'registered');
+check('an approval leaves an approved lead alone', displayStatus('registered', true), 'registered');
+check('no approval keeps pending pending', displayStatus('pending', false), 'pending');
+check(
+  'no approval keeps a hand-marked lead approved',
+  displayStatus('registered', false),
+  'registered',
+);
 
 console.log(failed === 0 ? '\nPASS' : `\nFAIL — ${failed} check(s)`);
 process.exit(failed === 0 ? 0 : 1);

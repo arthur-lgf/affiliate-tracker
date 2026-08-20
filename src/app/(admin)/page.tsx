@@ -21,6 +21,7 @@ import {
 } from '@/lib/analytics';
 import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
+import { approvedLeadIds } from '@/lib/qmp-sync';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -118,6 +119,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     submissions,
   );
 
+  // Who the approvals below name. Worked out once for the whole list rather
+  // than per row, and from every approval rather than the page's slice, so a
+  // lead reads approved whether the approval was imported this morning or six
+  // syncs ago.
+  const approvedLeads = approvedLeadIds(conversions);
+
   const leadRows: LeadRow[] = capture
     ? submissions.slice(0, RECENT_LIMIT).map((row) => ({
         id: row.id,
@@ -128,6 +135,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         slug: row.slug,
         assignee: row.assignee,
         status: row.status,
+        hasApproval: approvedLeads.has(row.id),
         age: formatRelative(row.createdAt),
         capturedAt: formatDateTime(row.createdAt),
       }))

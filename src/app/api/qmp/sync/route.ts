@@ -180,7 +180,7 @@ export async function POST(request: Request) {
       leadsMarked += 1;
     } catch (error) {
       failures.push(
-        `lead ${id}: ${error instanceof Error ? error.message : 'could not be marked registered'}`,
+        `lead ${id}: ${error instanceof Error ? error.message : 'could not be marked approved'}`,
       );
     }
   }

@@ -657,7 +657,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                       </>
                     ) : (
                       <>
-                        Mark {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} registered
+                        Mark {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} approved
                       </>
                     )
                   }
@@ -678,7 +678,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 >
                   {sync.created} approval{sync.created === 1 ? '' : 's'} written to Ledger
                   {sync.leadsMarked
-                    ? `, and ${sync.leadsMarked} lead${sync.leadsMarked === 1 ? '' : 's'} marked registered`
+                    ? `, and ${sync.leadsMarked} lead${sync.leadsMarked === 1 ? '' : 's'} marked approved`
                     : ''}
                   .{sync.failures?.length ? ' Then it stopped on an error.' : ''}
                 </p>
@@ -704,8 +704,9 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} still
                   {sync.leadsToMark === 1 ? ' reads' : ' read'} pending under an approval.
                   {sync.toCreate > 0 ? ' Writing' : ' Applying'} this marks{' '}
-                  {sync.leadsToMark === 1 ? 'it' : 'them'} registered: an approval is the merchant
-                  confirming they signed up, which is what the status is for.
+                  {sync.leadsToMark === 1 ? 'it' : 'them'} approved in the sheet as well: an
+                  approval is the merchant confirming they signed up, which is what the status is
+                  for.
                 </p>
               ) : null}
 
@@ -750,7 +751,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               {!sync.applied && sync.toCreate === 0 && sync.leadsToMark === 0 && sync.issues.length === 0 ? (
                 <p className="mt-4 text-[19px] text-ink-soft">
                   Nothing to write. Everything in this report is already in Ledger, and every lead
-                  behind it is already marked registered.
+                  behind it is already marked approved.
                 </p>
               ) : null}
 

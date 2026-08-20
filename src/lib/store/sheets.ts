@@ -162,8 +162,12 @@ async function ensureHeaderRow(tab: TabName): Promise<boolean> {
 }
 
 /**
- * Turn the Status column into a dropdown so marking a lead registered in the
+ * Turn the Status column into a dropdown so marking a lead through in the
  * spreadsheet is a click rather than a guess at the spelling.
+ *
+ * The values stay the ones already in the column; the dashboard calls the
+ * second one "Approved" but renaming the cells would flag every row written
+ * before today. `normalizeLeadStatus` reads either word.
  *
  * `strict: false` keeps a bulk paste from being rejected outright — anything
  * unrecognised is flagged in the sheet and read back as pending.
@@ -190,7 +194,8 @@ async function applyStatusDropdown(): Promise<void> {
                 type: 'ONE_OF_LIST',
                 values: [{ userEnteredValue: 'pending' }, { userEnteredValue: 'registered' }],
               },
-              inputMessage: 'Set to "registered" once this lead has signed up.',
+              inputMessage:
+                'Set to "registered" once this lead has signed up. The dashboard shows it as Approved.',
               showCustomUi: true,
               strict: false,
             },

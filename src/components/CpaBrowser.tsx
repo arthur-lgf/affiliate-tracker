@@ -35,7 +35,7 @@ export type CpaRateRow = Omit<CpaRate, 'placement'>;
  */
 
 /** One card, with every tier it pays at. An untiered card has exactly one. */
-type Group = {
+export type Group = {
   key: string;
   issuer: string;
   card: string;
@@ -57,6 +57,24 @@ type Column = {
   kind: ColumnKind;
 };
 
+/** What the Tier column puts a card in order by: the number in its badge. */
+export function tierCount(group: Group): number | null {
+  return group.tiered ? group.rates.length : null;
+}
+
+/**
+ * A card's tiers, in the order the sort asks for.
+ *
+ * They arrive as the report writes them, Tier 1 first, which is the order to
+ * read them in and the order to go back to. Only the Tier column's own
+ * descending sort flips them, because that is the one click that means "start
+ * from the highest".
+ */
+export function tiersOf(group: Group, sort: SortState): CpaRateRow[] {
+  const flip = sort?.key === 'tier' && sort.direction === 'desc';
+  return flip ? [...group.rates].reverse() : group.rates;
+}
+
 /** The best-paying of a card's tiers, ignoring any with no rate at all. */
 function best(group: Group): CpaRateRow | null {
   let found: CpaRateRow | null = null;
@@ -70,6 +88,17 @@ function best(group: Group): CpaRateRow | null {
 const COLUMNS: Column[] = [
   { key: 'issuer', label: 'Issuer', right: false, read: (g) => g.issuer, kind: 'text' },
   { key: 'card', label: 'Card', right: false, read: (g) => g.card, kind: 'text' },
+  /*
+   * How many tiers the card pays at — the number in the badge, which is all
+   * this column says about a card. An untiered card has no tier to be put in
+   * order by, so it reads blank and falls to the end whichever way the arrow
+   * points, the same as every other blank in this table.
+   *
+   * Sorting it also turns the tiers inside each card round: see `tiersOf`.
+   * Without that, "highest tier first" would reorder seven cards and leave
+   * Tier 1 sitting at the top of each of them.
+   */
+  { key: 'tier', label: 'Tier', right: false, read: tierCount, kind: 'number' },
   { key: 'current', label: 'Pays now', right: true, read: (g) => best(g)?.current ?? null, kind: 'currency' },
   /*
    * Half of what the card pays, through the same helper the dashboard's
@@ -206,24 +235,7 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
           <table className="w-full min-w-[1040px] border-collapse text-left">
             <thead>
               <tr className="border-b-2 border-edge">
-                {COLUMNS.slice(0, 2).map((column) => (
-                  <SortHeader
-                    key={column.key}
-                    label={column.label}
-                    sortKey={column.key}
-                    sort={sort}
-                    onSort={toggleSort}
-                    right={column.right}
-                  />
-                ))}
-                {/* Not sortable, and it cannot be: this column holds a tier
-                    count on one row and a tier label on the next, so there is
-                    no single thing to put in order. Sorting by money already
-                    orders the cards. */}
-                <th scope="col" className="label-cap whitespace-nowrap px-3 pb-3">
-                  Tier
-                </th>
-                {COLUMNS.slice(2).map((column) => (
+                {COLUMNS.map((column) => (
                   <SortHeader
                     key={column.key}
                     label={column.label}
@@ -236,16 +248,32 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
               </tr>
             </thead>
             <tbody>
-              {visible.map((group) => {
+              {visible.map((group, index) => {
                 const open = !closed.has(group.key);
                 const single = group.tiered ? null : group.rates[0]!;
+                /*
+                 * Every other card sits on a band, and a whole card takes one:
+                 * a tiered card and its tiers are one thing, and striping them
+                 * apart would undo the grouping this table exists for. Folded
+                 * shut, that is exactly one row per band, which is the plain
+                 * every-other-row stripe.
+                 *
+                 * Counted off the page rather than the whole list, so every
+                 * page opens on the same colour instead of the first row
+                 * changing shade as you page through.
+                 */
+                const band = index % 2 === 1 ? 'bg-paper-sunk' : '';
 
                 return (
                   <Fragment key={group.key}>
                     {/* The card. On a tiered one this is a heading and nothing
                         else: the rates live on the tiers underneath, and
                         putting a figure here would mean inventing one. */}
-                    <tr className={group.tiered ? 'border-t-2 border-edge-faint' : 'divider-row'}>
+                    <tr
+                      className={`${
+                        group.tiered ? 'border-t-2 border-edge-faint' : 'divider-row'
+                      } ${band}`}
+                    >
                       <td className="max-w-[200px] truncate px-3 py-3 text-[18px] text-ink-soft">
                         {group.issuer || BLANK}
                       </td>
@@ -286,8 +314,11 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
                     </tr>
 
                     {group.tiered && open
-                      ? group.rates.map((rate, index) => (
-                          <tr key={`${group.key}:${rate.tier}:${index}`} className="divider-row">
+                      ? tiersOf(group, sort).map((rate, tierIndex) => (
+                          <tr
+                            key={`${group.key}:${rate.tier}:${tierIndex}`}
+                            className={`divider-row ${band}`}
+                          >
                             {/* Blank on purpose: the issuer and the card are on
                                 the row above, and repeating them down every
                                 tier is what makes a grouped table read like an

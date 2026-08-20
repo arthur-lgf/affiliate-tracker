@@ -6,7 +6,7 @@ import { Pager } from './Pager';
 import { Spinner } from './Spinner';
 import { isLeadId } from '@/lib/lead-id';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
-import { statusLabel } from '@/lib/status';
+import { displayStatus, statusLabel } from '@/lib/status';
 import type { LeadStatus } from '@/lib/types';
 
 /**
@@ -25,11 +25,20 @@ export type LeadRow = {
   campaign: string;
   slug: string;
   assignee: string;
+  /** As stored. What is shown may be stronger — see `hasApproval`. */
   status: LeadStatus;
+  /**
+   * Whether an approval names this lead. Passed in rather than worked out here
+   * because the approvals live on the server beside the leads, and shipping
+   * them to the browser a second time to re-derive one boolean per row would be
+   * the same answer at ten times the weight.
+   */
+  hasApproval: boolean;
   age: string;
   capturedAt: string;
 };
 
+/** Keyed by the stored word; `statusLabel` decides what it is called on screen. */
 type Filter = 'all' | 'pending' | 'registered';
 
 /**
@@ -85,11 +94,20 @@ export function LeadsPanel({
   const [changed, setChanged] = useState<Record<string, LeadStatus>>({});
 
   const withStatus = useMemo(
-    () => rows.map((row) => ({ ...row, status: changed[row.id] ?? row.status })),
+    () =>
+      rows.map((row) => ({
+        ...row,
+        // The approval wins over both the stored status and an optimistic
+        // toggle, so the counts, the filter and the pill all read the same
+        // thing the approvals panel does.
+        status: displayStatus(changed[row.id] ?? row.status, row.hasApproval),
+      })),
     [rows, changed],
   );
 
   const registeredCount = withStatus.filter((row) => row.status === 'registered').length;
+  /** How many of those are approved because an approval says so, not by hand. */
+  const fromApprovals = withStatus.filter((row) => row.hasApproval).length;
   const counts = {
     all: withStatus.length,
     registered: registeredCount,
@@ -169,15 +187,24 @@ export function LeadsPanel({
               pills instead of the recipe for changing them. */}
           {canEdit ? (
             <p className="plain mt-3">
-              Every lead starts <strong>pending</strong>. Mark one registered once they have signed
-              up, either here or in column N of the sheet.
+              Every lead starts <strong>pending</strong>. Mark one approved once they have signed up,
+              either here or in column N of the sheet.
             </p>
           ) : (
             <p className="plain mt-3">
-              Every lead starts <strong>pending</strong> and is marked registered by your admin once
-              they have signed up.
+              Every lead starts <strong>pending</strong> and is marked approved once they have signed
+              up.
             </p>
           )}
+          {/* Said only when it applies. An explanation of something that is not
+              happening on this list is just one more line to read past. */}
+          {fromApprovals > 0 ? (
+            <p className="plain mt-2 text-ink-soft">
+              {fromApprovals === 1 ? 'One of them reads' : `${fromApprovals} of them read`} approved
+              because there is an approval on file, which is the merchant confirming it went
+              through. Removing the approval is what changes that back.
+            </p>
+          ) : null}
 
           {error ? (
             <p role="alert" className="field-error">
@@ -254,7 +281,10 @@ export function LeadsPanel({
                   </div>
 
                   <div className="lg:w-[150px] lg:flex-none">
-                    {canEdit ? (
+                    {/* No toggle where an approval decides it: pressing it
+                        would write a status the next render overrules, which
+                        is a control that lies about what it does. */}
+                    {canEdit && !row.hasApproval ? (
                       <StatusToggle
                         row={row}
                         busy={busyId === row.id}
@@ -308,7 +338,11 @@ export function LeadsPanel({
 function StatusPill({ row }: { row: LeadRow }) {
   const registered = row.status === 'registered';
   return (
-    <span className="pill-status" data-status={row.status}>
+    <span
+      className="pill-status"
+      data-status={row.status}
+      title={row.hasApproval ? 'An approval is recorded against this lead.' : undefined}
+    >
       <span
         aria-hidden
         className="h-2.5 w-2.5 flex-none rounded-full"
@@ -340,9 +374,9 @@ function StatusToggle({
       onClick={onToggle}
       /* The visible word starts the accessible name so "click Pending" still
          works for voice control, and the rest says what clicking will do. */
-      aria-label={`${statusLabel(row.status)}, mark ${who} as ${
-        registered ? 'pending' : 'registered'
-      }`}
+      aria-label={`${statusLabel(row.status)}, mark ${who} as ${statusLabel(
+        registered ? 'pending' : 'registered',
+      ).toLowerCase()}`}
     >
       {/* The status dot becomes the spinner while the change is in flight.
           Same spot, same size, so the pill does not resize under the cursor
