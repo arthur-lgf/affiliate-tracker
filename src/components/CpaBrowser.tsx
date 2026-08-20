@@ -1,11 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Pager } from '@/components/Pager';
 import { SortHeader, nextSort, type SortState } from '@/components/SortHeader';
 import { TableScroller } from '@/components/TableScroller';
 import { affiliateRevenueOf, formatDay, formatMoney, formatPercent } from '@/lib/analytics';
-import { tierNumber } from '@/lib/cpa';
 import { BLANK, sortRows, type ColumnKind } from '@/lib/report-table';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import type { CpaRate } from '@/lib/types';
@@ -21,77 +20,132 @@ import type { CpaRate } from '@/lib/types';
 export type CpaRateRow = Omit<CpaRate, 'placement'>;
 
 /**
- * The rate card: search it, sort it, page through it.
+ * The rate card, grouped the way the report itself is written: one row per
+ * card, with its tiers folded underneath it.
  *
- * Everyone signed in can read this. It is the answer to "what do we get for
- * this card", which is a question a setter has mid-conversation, so the search
- * box is the important control and it is the first thing on the panel.
+ * The export is a list of rates, but a person reads it as a list of cards —
+ * "what does the Platinum pay" is one question, not three. Flat, a nine-tier
+ * card is nine rows that push everything else off the screen; grouped, it is
+ * one row you open when you need it.
+ *
+ * That makes the card the unit of this table, and so also the unit of the
+ * pager: a page is ten cards, never ten rates, because half a card's tiers at
+ * the bottom of one page and the rest at the top of the next is not something
+ * anybody can read.
  */
+
+/** One card, with every tier it pays at. An untiered card has exactly one. */
+type Group = {
+  key: string;
+  issuer: string;
+  card: string;
+  rates: CpaRateRow[];
+  /** True when the export gave this card's rows tier labels. */
+  tiered: boolean;
+};
 
 type Column = {
   key: string;
   label: string;
   right: boolean;
-  read: (rate: CpaRateRow) => unknown;
+  /**
+   * What this column sorts a whole card by. A tiered card has no single rate,
+   * so money sorts by its best tier — the honest answer to "which card pays
+   * most", which is the question somebody sorting by it is asking.
+   */
+  read: (group: Group) => unknown;
   kind: ColumnKind;
 };
 
+/** The best-paying of a card's tiers, ignoring any with no rate at all. */
+function best(group: Group): CpaRateRow | null {
+  let found: CpaRateRow | null = null;
+  for (const rate of group.rates) {
+    if (rate.current === null) continue;
+    if (found === null || rate.current > (found.current ?? 0)) found = rate;
+  }
+  return found;
+}
+
 const COLUMNS: Column[] = [
-  { key: 'issuer', label: 'Issuer', right: false, read: (r) => r.issuer, kind: 'text' },
-  { key: 'card', label: 'Card', right: false, read: (r) => r.card, kind: 'text' },
-  // Sorted by the number in it, so "Tier 10" lands after "Tier 9" rather than
-  // between "Tier 1" and "Tier 2". A card with a single rate sorts first.
-  { key: 'tier', label: 'Tier', right: false, read: (r) => (r.tier ? tierNumber(r.tier) : null), kind: 'number' },
-  { key: 'current', label: 'Pays now', right: true, read: (r) => r.current, kind: 'currency' },
+  { key: 'issuer', label: 'Issuer', right: false, read: (g) => g.issuer, kind: 'text' },
+  { key: 'card', label: 'Card', right: false, read: (g) => g.card, kind: 'text' },
+  { key: 'current', label: 'Pays now', right: true, read: (g) => best(g)?.current ?? null, kind: 'currency' },
   /*
    * Half of what the card pays, through the same helper the dashboard's
    * Affiliate revenue column uses. One definition of the share, in
    * AFFILIATE_SHARE, so the rate card and the earnings table can never quote
    * two different splits for the same dollar.
-   *
-   * Derived rather than stored: the export has no such column, and a number
-   * saved beside the rate would go stale the moment the rate changed. If a
-   * card ever pays something other than half, that becomes a column on the
-   * row and this reads it instead.
    */
   {
     key: 'affiliate',
     label: 'Affiliate revenue',
     right: true,
-    read: (r) => (r.current === null ? null : affiliateRevenueOf(r.current)),
+    read: (g) => {
+      const current = best(g)?.current;
+      return current === undefined || current === null ? null : affiliateRevenueOf(current);
+    },
     kind: 'currency',
   },
-  { key: 'previous', label: 'Paid before', right: true, read: (r) => r.previous, kind: 'currency' },
-  { key: 'change', label: 'Change', right: true, read: (r) => r.change, kind: 'percent' },
-  { key: 'changedOn', label: 'Changed', right: true, read: (r) => r.changedOn, kind: 'text' },
+  { key: 'previous', label: 'Paid before', right: true, read: (g) => best(g)?.previous ?? null, kind: 'currency' },
+  { key: 'change', label: 'Change', right: true, read: (g) => best(g)?.change ?? null, kind: 'percent' },
+  { key: 'changedOn', label: 'Changed', right: true, read: (g) => best(g)?.changedOn ?? '', kind: 'text' },
 ];
 
 const byKey = new Map(COLUMNS.map((column) => [column.key, column]));
+
+/** Rates into cards, keeping the order they arrived in. */
+export function groupRates(rows: CpaRateRow[]): Group[] {
+  const groups = new Map<string, Group>();
+  for (const rate of rows) {
+    const key = `${rate.issuer}|${rate.card}`;
+    const group = groups.get(key);
+    if (group) group.rates.push(rate);
+    else groups.set(key, { key, issuer: rate.issuer, card: rate.card, rates: [rate], tiered: false });
+  }
+  for (const group of groups.values()) {
+    // Tiered because the export said so, not because there is more than one
+    // row. One tier is still a tier, and the report writes it as one.
+    group.tiered = group.rates.some((rate) => rate.tier !== '');
+  }
+  return [...groups.values()];
+}
 
 export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
+  /**
+   * Which cards are folded shut. Closed is what is tracked rather than open, so
+   * the default is everything open: the same as the report this copies, and the
+   * state somebody can read without clicking anything first.
+   */
+  const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
+
+  const groups = useMemo(() => groupRates(rows), [rows]);
 
   const matched = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const filtered = needle
-      ? rows.filter((rate) =>
-          // The three things somebody would actually type: who pays, what for,
-          // and which tier. Not the amounts — "420" matching a dollar figure
-          // and a date at the same time is noise, not a search.
-          `${rate.issuer} ${rate.card} ${rate.tier}`.toLowerCase().includes(needle),
+      ? groups.filter((group) =>
+          // Who pays, what for, and which tier. Not the amounts — "420"
+          // matching a dollar figure and a date at once is noise, not a search.
+          `${group.issuer} ${group.card} ${group.rates.map((rate) => rate.tier).join(' ')}`
+            .toLowerCase()
+            .includes(needle),
         )
-      : rows;
+      : groups;
 
     if (!sort) return filtered;
     const column = byKey.get(sort.key);
     if (!column) return filtered;
     return sortRows(filtered, column.read, column.kind, sort.direction);
-  }, [rows, query, sort]);
+  }, [groups, query, sort]);
 
   const visible = pageSlice(matched, page, perPage);
+  const anyTiered = groups.some((group) => group.tiered);
+  const allClosed = anyTiered && groups.every((group) => !group.tiered || closed.has(group.key));
 
   function search(next: string) {
     setQuery(next);
@@ -101,6 +155,21 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
   function toggleSort(key: string) {
     setPage(1);
     setSort((current) => nextSort(current, key));
+  }
+
+  function toggle(key: string) {
+    setClosed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    // Every card, not just this page. A "fold everything" that left the next
+    // page open would be a control that lies about what it did.
+    setClosed(allClosed ? new Set() : new Set(groups.filter((g) => g.tiered).map((g) => g.key)));
   }
 
   return (
@@ -119,11 +188,16 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
             className="field"
           />
         </div>
+        {anyTiered ? (
+          <button type="button" className="btn-quiet btn-sm" onClick={toggleAll}>
+            {allClosed ? 'Open every card' : 'Fold every card'}
+          </button>
+        ) : null}
       </div>
 
       {matched.length === 0 ? (
         <p className="mt-8 rounded-[20px] border-2 border-dashed border-edge-strong bg-panel px-6 py-16 text-center text-[20px] text-ink-soft">
-          {rows.length === 0
+          {groups.length === 0
             ? 'No rates uploaded yet.'
             : `Nothing matches${query ? ` “${query}”` : ''}.`}
         </p>
@@ -132,7 +206,24 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
           <table className="w-full min-w-[1040px] border-collapse text-left">
             <thead>
               <tr className="border-b-2 border-edge">
-                {COLUMNS.map((column) => (
+                {COLUMNS.slice(0, 2).map((column) => (
+                  <SortHeader
+                    key={column.key}
+                    label={column.label}
+                    sortKey={column.key}
+                    sort={sort}
+                    onSort={toggleSort}
+                    right={column.right}
+                  />
+                ))}
+                {/* Not sortable, and it cannot be: this column holds a tier
+                    count on one row and a tier label on the next, so there is
+                    no single thing to put in order. Sorting by money already
+                    orders the cards. */}
+                <th scope="col" className="label-cap whitespace-nowrap px-3 pb-3">
+                  Tier
+                </th>
+                {COLUMNS.slice(2).map((column) => (
                   <SortHeader
                     key={column.key}
                     label={column.label}
@@ -145,54 +236,88 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
               </tr>
             </thead>
             <tbody>
-              {visible.map((rate, index) => (
-                <tr key={`${rate.issuer}:${rate.card}:${rate.tier}:${index}`} className="divider-row last:border-0">
-                  <td className="max-w-[200px] truncate px-3 py-3 text-[18px] text-ink-soft">
-                    {rate.issuer || BLANK}
-                  </td>
-                  <td className="max-w-[380px] px-3 py-3 text-[19px] font-semibold">{rate.card}</td>
-                  <td className="px-3 py-3 text-[18px]">
-                    {rate.tier ? (
-                      <span className="chip chip-quiet">{rate.tier}</span>
-                    ) : (
-                      <span className="text-ink-dim">One rate</span>
-                    )}
-                  </td>
-                  {/* The number people came here for. A card at $0 is switched
-                      off rather than unknown, so it is shown as money and the
-                      dash is kept for genuinely missing values. */}
-                  <td className="tnum px-3 py-3 text-right font-display text-[26px] font-semibold">
-                    {rate.current === null ? (
-                      <span className="text-ink-dim">{BLANK}</span>
-                    ) : (
-                      formatMoney(rate.current)
-                    )}
-                  </td>
-                  <td className="tnum px-3 py-3 text-right font-display text-[26px] font-semibold">
-                    {rate.current === null ? (
-                      <span className="text-ink-dim">{BLANK}</span>
-                    ) : (
-                      formatMoney(affiliateRevenueOf(rate.current))
-                    )}
-                  </td>
-                  <td className="tnum px-3 py-3 text-right text-[18px] text-ink-soft">
-                    {rate.previous === null ? BLANK : formatMoney(rate.previous)}
-                  </td>
-                  <td className="tnum px-3 py-3 text-right text-[18px]">
-                    {rate.change === null ? (
-                      <span className="text-ink-dim">{BLANK}</span>
-                    ) : (
-                      <span className={rate.change < 0 ? 'text-alarm' : undefined}>
-                        {rate.change > 0 ? '+' : ''}
-                        {formatPercent(rate.change, 2)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-right text-[18px] text-ink-soft">
-                    {rate.changedOn ? formatDay(rate.changedOn) : BLANK}
-                  </td>
-                </tr>
-              ))}
+              {visible.map((group) => {
+                const open = !closed.has(group.key);
+                const single = group.tiered ? null : group.rates[0]!;
+
+                return (
+                  <Fragment key={group.key}>
+                    {/* The card. On a tiered one this is a heading and nothing
+                        else: the rates live on the tiers underneath, and
+                        putting a figure here would mean inventing one. */}
+                    <tr className={group.tiered ? 'border-t-2 border-edge-faint' : 'divider-row'}>
+                      <td className="max-w-[200px] truncate px-3 py-3 text-[18px] text-ink-soft">
+                        {group.issuer || BLANK}
+                      </td>
+                      <td className="max-w-[380px] px-3 py-3 text-[19px] font-semibold">
+                        {group.card}
+                      </td>
+                      <td className="px-3 py-3 text-[18px]">
+                        {group.tiered ? (
+                          <button
+                            type="button"
+                            onClick={() => toggle(group.key)}
+                            aria-expanded={open}
+                            className="inline-flex items-center gap-2 rounded-lg px-1 py-1"
+                          >
+                            <span className="chip chip-quiet tnum">{group.rates.length}</span>
+                            <span aria-hidden className="text-ink-soft">
+                              {open ? '▲' : '▼'}
+                            </span>
+                            <span className="sr-only">
+                              {open ? 'Fold away' : 'Show'} the {group.rates.length} tiers of{' '}
+                              {group.card}
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="text-ink-dim">{BLANK}</span>
+                        )}
+                      </td>
+                      <Money value={single ? single.current : null} lead />
+                      <Money
+                        value={
+                          single && single.current !== null ? affiliateRevenueOf(single.current) : null
+                        }
+                        lead
+                      />
+                      <Money value={single ? single.previous : null} />
+                      <Change value={single ? single.change : null} />
+                      <Changed value={single ? single.changedOn : ''} />
+                    </tr>
+
+                    {group.tiered && open
+                      ? group.rates.map((rate, index) => (
+                          <tr key={`${group.key}:${rate.tier}:${index}`} className="divider-row">
+                            {/* Blank on purpose: the issuer and the card are on
+                                the row above, and repeating them down every
+                                tier is what makes a grouped table read like an
+                                ungrouped one. */}
+                            <td />
+                            <td />
+                            <td className="whitespace-nowrap px-3 py-3 text-[18px]">
+                              <span aria-hidden className="mr-2 text-ink-dim">
+                                ↳
+                              </span>
+                              {/* The card's name, for a screen reader only: a
+                                  row that says only "Tier 2" is unreadable out
+                                  of the context the indent gives sighted eyes. */}
+                              <span className="sr-only">{group.card}, </span>
+                              {rate.tier || BLANK}
+                            </td>
+                            <Money value={rate.current} lead />
+                            <Money
+                              value={rate.current === null ? null : affiliateRevenueOf(rate.current)}
+                              lead
+                            />
+                            <Money value={rate.previous} />
+                            <Change value={rate.change} />
+                            <Changed value={rate.changedOn} />
+                          </tr>
+                        ))
+                      : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </TableScroller>
@@ -204,10 +329,54 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
         perPage={perPage}
         onPage={setPage}
         onPerPage={setPerPage}
-        label="Rates"
-        note={matched.length === rows.length ? '' : ` · ${rows.length} in total`}
+        label="Cards"
+        note={matched.length === groups.length ? '' : ` · ${groups.length} in total`}
         className="mt-6"
       />
     </>
+  );
+}
+
+/**
+ * A money cell. `lead` marks the two columns people came here for, which are
+ * set larger; the rest are context and are sized as such.
+ *
+ * Null reads as a dash rather than as $0 throughout. A card at zero has been
+ * switched off, which is worth seeing; a blank one simply has no figure.
+ */
+function Money({ value, lead = false }: { value: number | null; lead?: boolean }) {
+  return (
+    <td
+      className={
+        lead
+          ? 'tnum px-3 py-3 text-right font-display text-[26px] font-semibold'
+          : 'tnum px-3 py-3 text-right text-[18px] text-ink-soft'
+      }
+    >
+      {value === null ? <span className="text-ink-dim">{BLANK}</span> : formatMoney(value)}
+    </td>
+  );
+}
+
+function Change({ value }: { value: number | null }) {
+  return (
+    <td className="tnum px-3 py-3 text-right text-[18px]">
+      {value === null ? (
+        <span className="text-ink-dim">{BLANK}</span>
+      ) : (
+        <span className={value < 0 ? 'text-alarm' : undefined}>
+          {value > 0 ? '+' : ''}
+          {formatPercent(value, 2)}
+        </span>
+      )}
+    </td>
+  );
+}
+
+function Changed({ value }: { value: string }) {
+  return (
+    <td className="whitespace-nowrap px-3 py-3 text-right text-[18px] text-ink-soft">
+      {value ? formatDay(value) : BLANK}
+    </td>
   );
 }

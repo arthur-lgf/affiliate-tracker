@@ -156,31 +156,64 @@ const noApprovals = renderToStaticMarkup(<ApprovalsList rows={[]} canEdit={false
 check('an empty history says so and stops', noApprovals.includes('none yet') && !noApprovals.includes('Showing'));
 
 console.log('\n— the CPA rate card —');
-const rates: CpaRate[] = Array.from({ length: 23 }, (_, i) => ({
+/*
+ * Twelve cards paying one flat rate and three paying by tier, which is the
+ * shape of the real export. Fifteen cards, twenty-one rates: the difference
+ * between those two numbers is what the grouping and the pager are for.
+ */
+const flat: CpaRate[] = Array.from({ length: 12 }, (_, i) => ({
   placement: '714025 - LGF',
   issuer: i % 2 === 0 ? 'AmEx Consumer' : 'Capital One',
-  card: 'Card ' + i,
-  tier: i % 3 === 0 ? '' : 'Tier ' + ((i % 3) + 1),
+  card: 'Flat Card ' + i,
+  tier: '',
   current: i === 5 ? 0 : 100 + i,
   previous: i === 7 ? null : 90 + i,
   change: i === 7 ? null : 0.1,
   changedOn: i === 9 ? '' : '2026-07-01',
 }));
+const tiered: CpaRate[] = ['Platinum', 'Gold', 'Venture'].flatMap((name, card) =>
+  [1, 2, 3].map((tier) => ({
+    placement: '714025 - LGF',
+    issuer: 'AmEx Consumer',
+    card: name + ' Card',
+    tier: 'Tier ' + tier,
+    current: 400 + card * 10 + tier * 100,
+    previous: 300,
+    change: 0.1,
+    changedOn: '2026-07-01',
+  })),
+);
+// Tiered first, so the fold controls land on the first page where these
+// checks can see them. The store sorts by issuer and card, which puts the
+// AmEx tiers near the top of the real card too.
+const rates = [...tiered, ...flat];
 const card = renderToStaticMarkup(<CpaBrowser rows={rates} />);
-check('ten rates to a page', (card.match(/<tr class="divider-row/g) || []).length === 10);
-check('with the rest a page away', card.includes('Showing 1–10 of 23'));
+
+// Fifteen cards out of twenty-one rates: the page counts cards.
+check('a page is ten cards, not ten rates', (card.match(/aria-expanded|Flat Card/g) || []).length >= 10);
+check('the pager counts cards', card.includes('Showing 1–10 of 15'));
+check('and names them', card.includes('Cards'));
 check('there is a search box', card.includes('id="cpa-search"'));
 check('the columns are sortable', card.includes('aria-sort'));
 check('the rate column is named for what it answers', card.includes('Pays now'));
 check('the affiliate half has a column', card.includes('Affiliate revenue'));
-// 100 + i for the fixture rows, so row 0 pays 100 and the affiliate keeps 50.
+// 100 for the first flat card, so the affiliate keeps 50.
 check('and it is half of what the card pays', card.includes(formatMoney(affiliateRevenueOf(100))));
 check('a card at zero pays the affiliate zero, not a dash', (card.match(/\$0/g) || []).length >= 2);
-// A card at zero has been switched off; a blank previous rate only means the
-// card is new. The two must not render the same way.
-check('a rate of zero reads as money', card.includes('$0'));
-check('a card with one rate says so', card.includes('One rate'));
-check('a tier is labelled', card.includes('Tier 2'));
+
+// The grouping itself.
+check('a tiered card is foldable', card.includes('aria-expanded="true"'));
+check('and says how many tiers it has', card.includes('>3</span>'));
+check('its tiers are drawn under it', card.includes('Tier 1') && card.includes('Tier 3'));
+check('with an indent marker', card.includes('↳'));
+check('a screen reader still hears which card a tier belongs to', card.includes('Platinum Card, '));
+check('there is a way to fold them all', card.includes('Fold every card'));
+// A flat card has no tiers to fold, so it gets a dash rather than a control.
+const flatOnly = renderToStaticMarkup(<CpaBrowser rows={flat} />);
+check('a card with one rate has nothing to fold', !flatOnly.includes('aria-expanded'));
+check('and no fold-everything button', !flatOnly.includes('Fold every card'));
+check('twelve flat cards is twelve cards', flatOnly.includes('Showing 1–10 of 12'));
+
 const noRates = renderToStaticMarkup(<CpaBrowser rows={[]} />);
 check('an empty card says nothing is uploaded', noRates.includes('No rates uploaded yet'));
 check('and offers no page controls', !noRates.includes('Previous'));

@@ -57,7 +57,11 @@ type SyncResult = {
   alreadyImported: number;
   issues: SyncIssue[];
   unusable: boolean;
+  /** Leads sitting at pending under an approval, waiting to be caught up. */
+  leadsToMark: number;
   created?: number;
+  /** How many of them were, on a run that applied. */
+  leadsMarked?: number;
   failures?: string[];
   preview?: {
     approvedOn: string;
@@ -629,7 +633,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 busyLabel="Working out the plan…"
               />
             </button>
-            {sync && !sync.applied && sync.toCreate > 0 ? (
+            {sync && !sync.applied && (sync.toCreate > 0 || sync.leadsToMark > 0) ? (
               <button
                 type="button"
                 onClick={() => runSync(true)}
@@ -643,12 +647,21 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 <BusyLabel
                   busy={syncing === 'apply'}
                   idle={
-                    <>
-                      Write {sync.toCreate} approval{sync.toCreate === 1 ? '' : 's'} (
-                      {money(sync.amountToCreate)})
-                    </>
+                    sync.toCreate > 0 ? (
+                      <>
+                        Write {sync.toCreate} approval{sync.toCreate === 1 ? '' : 's'} (
+                        {money(sync.amountToCreate)})
+                        {sync.leadsToMark > 0
+                          ? `, mark ${sync.leadsToMark} lead${sync.leadsToMark === 1 ? '' : 's'}`
+                          : ''}
+                      </>
+                    ) : (
+                      <>
+                        Mark {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} registered
+                      </>
+                    )
                   }
-                  busyLabel="Writing approvals…"
+                  busyLabel={sync.toCreate > 0 ? 'Writing approvals…' : 'Marking leads…'}
                 />
               </button>
             ) : null}
@@ -663,8 +676,11 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   }`}
                   role="status"
                 >
-                  {sync.created} approval{sync.created === 1 ? '' : 's'} written to Ledger.
-                  {sync.failures?.length ? ' Then it stopped on an error.' : ''}
+                  {sync.created} approval{sync.created === 1 ? '' : 's'} written to Ledger
+                  {sync.leadsMarked
+                    ? `, and ${sync.leadsMarked} lead${sync.leadsMarked === 1 ? '' : 's'} marked registered`
+                    : ''}
+                  .{sync.failures?.length ? ' Then it stopped on an error.' : ''}
                 </p>
               ) : null}
 
@@ -682,6 +698,16 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   note="from an earlier sync"
                 />
               </dl>
+
+              {!sync.applied && sync.leadsToMark > 0 ? (
+                <p className="plain mt-4">
+                  {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} still
+                  {sync.leadsToMark === 1 ? ' reads' : ' read'} pending under an approval.
+                  {sync.toCreate > 0 ? ' Writing' : ' Applying'} this marks{' '}
+                  {sync.leadsToMark === 1 ? 'it' : 'them'} registered: an approval is the merchant
+                  confirming they signed up, which is what the status is for.
+                </p>
+              ) : null}
 
               {sync.failures?.length ? (
                 <div className="mt-5">
@@ -721,9 +747,10 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 </div>
               ) : null}
 
-              {!sync.applied && sync.toCreate === 0 && sync.issues.length === 0 ? (
+              {!sync.applied && sync.toCreate === 0 && sync.leadsToMark === 0 && sync.issues.length === 0 ? (
                 <p className="mt-4 text-[19px] text-ink-soft">
-                  Nothing to write. Everything in this report is already in Ledger.
+                  Nothing to write. Everything in this report is already in Ledger, and every lead
+                  behind it is already marked registered.
                 </p>
               ) : null}
 

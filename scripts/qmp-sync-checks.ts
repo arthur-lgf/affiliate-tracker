@@ -7,6 +7,7 @@
 //
 //   npx tsx scripts/qmp-sync-checks.ts
 import {
+  leadsToRegister,
   leadRefIn,
   markerIn,
   normalizeKey,
@@ -314,6 +315,48 @@ const defaulted = planSync({
 check('a keyless row lands on the default link', defaulted.create.length === 1);
 check('under that link\'s person', defaulted.create[0]!.usr === 'house');
 check('while var2 stays empty, as the report had it', defaulted.create[0]!.trackingKey === '');
+
+console.log('\n— the leads behind an approval —');
+/*
+ * A lead is marked registered by hand once somebody confirms the signup. An
+ * approval is that confirmation and a stronger one, so a lead left at pending
+ * under an approval is a gap rather than a decision. These pin which leads the
+ * sync closes and, just as importantly, which it leaves alone.
+ */
+const lead = (id: string, status: string) => ({ id, status });
+const withRef = (ref: string) => ({ notes: `Chase Sapphire · qmp:ab12cd3#1/1 · lead:${ref}` });
+
+const marks = leadsToRegister(
+  [withRef('rc7czk6xa61y'), withRef('zz9maybe')],
+  [lead('rc7czk6xa61y', 'pending'), lead('zz9maybe', 'registered'), lead('nobody', 'pending')],
+);
+check('a pending lead under an approval is marked', marks.includes('rc7czk6xa61y'));
+check('a lead already registered is left alone', !marks.includes('zz9maybe'));
+check('a lead with no approval is left alone', !marks.includes('nobody'));
+check('and nothing else comes back', marks.length === 1);
+
+// The reason this looks at every approval rather than the new ones: a second
+// sync skips what it already imported, so the backlog is only ever reachable
+// from the whole set.
+const backlog = leadsToRegister([withRef('older')], [lead('older', 'pending')]);
+check('an approval imported on an earlier run still closes its lead', backlog.length === 1);
+
+check('an approval with no lead reference marks nothing',
+  leadsToRegister([{ notes: 'Chase Sapphire · qmp:ab12cd3#1/1' }], [lead('rc7czk6xa61y', 'pending')]).length === 0);
+check('a reference matching no lead marks nothing',
+  leadsToRegister([withRef('deleted')], [lead('other', 'pending')]).length === 0);
+check('no approvals at all marks nothing',
+  leadsToRegister([], [lead('rc7czk6xa61y', 'pending')]).length === 0);
+check('empty notes are not a reference',
+  leadsToRegister([{ notes: '' }], [lead('rc7czk6xa61y', 'pending')]).length === 0);
+
+// Three approvals off one row all carry the same reference; the lead is one
+// lead and must be listed once, or the sync writes the same row three times.
+const repeated = leadsToRegister(
+  [withRef('rc7czk6xa61y'), withRef('rc7czk6xa61y'), withRef('rc7czk6xa61y')],
+  [lead('rc7czk6xa61y', 'pending')],
+);
+check('one lead under three approvals is written once', repeated.length === 1);
 
 console.log(`\nqmp-sync: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

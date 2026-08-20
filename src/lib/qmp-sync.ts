@@ -202,6 +202,40 @@ export function leadRefIn(notes: string): string {
 }
 
 /**
+ * The leads an approval proves have signed up.
+ *
+ * A lead starts pending and is marked registered by hand once somebody has
+ * confirmed they signed up. An approval is that confirmation, and a stronger
+ * one: the merchant has agreed to pay for this person. So a lead sitting at
+ * pending under an approval is not a state anybody chose, it is one nothing
+ * ever got round to updating.
+ *
+ * Every approval is considered, not only the ones a run has just written. That
+ * is deliberate and it is what makes this fix the backlog: a second sync skips
+ * rows it imported the first time, so if this only looked at new approvals, the
+ * leads behind everything already imported would stay pending forever.
+ *
+ * Already-registered leads are left alone rather than rewritten — there is
+ * nothing to change, and a write per row would cost a call to the spreadsheet
+ * for every lead on every sync.
+ */
+export function leadsToRegister(
+  conversions: { notes: string }[],
+  submissions: { id: string; status: string }[],
+): string[] {
+  const approved = new Set<string>();
+  for (const conversion of conversions) {
+    const ref = leadRefIn(conversion.notes ?? '');
+    if (ref) approved.add(ref);
+  }
+  // Matched on the submission's own id, which is what the lead reference is:
+  // the capture form puts the id in var3 and QMP hands it back on the report.
+  return submissions
+    .filter((row) => row.status !== 'registered' && approved.has(row.id))
+    .map((row) => row.id);
+}
+
+/**
  * The notes with the machine tags taken out, for showing to a person.
  *
  * `qmp:ab12cd3#1/3 · lead:rc7czk6xa61y` is bookkeeping. It has to be on the row

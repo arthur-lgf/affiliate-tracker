@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchQmpReport, QmpError, qmpConfig } from '@/lib/qmp';
-import { planSync } from '@/lib/qmp-sync';
+import { leadsToRegister, planSync } from '@/lib/qmp-sync';
 import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { getStore, statusForError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -73,8 +73,9 @@ export async function POST(request: Request) {
     [links, existing, submissions] = await Promise.all([
       store.listLinks(),
       store.listConversions(),
-      // Only to put a name next to each planned row. Nothing about what gets
-      // written depends on it.
+      // Two jobs: a name beside each planned row, and the leads an approval
+      // proves signed up. Nothing about which approvals get written depends on
+      // either.
       store.listSubmissions(),
     ]);
   } catch (error) {
@@ -92,6 +93,14 @@ export async function POST(request: Request) {
     defaultSlug: (process.env.QMP_DEFAULT_SLUG || '').trim(),
   });
 
+  /*
+   * The leads that approvals have already vouched for, counting the ones this
+   * run would write as well as everything imported before it. Computed against
+   * the whole picture rather than the new rows, so a run with nothing left to
+   * import still catches up the leads it never marked.
+   */
+  const leadIds = leadsToRegister([...existing, ...plan.create], submissions);
+
   const summary = {
     reportRows: report.table.rowCount,
     rowsWithApprovals: plan.rowsWithApprovals,
@@ -104,6 +113,8 @@ export async function POST(request: Request) {
     issues: plan.issues,
     unusable: plan.unusable,
     shape: report.table.shape,
+    /** Leads sitting at pending under an approval. */
+    leadsToMark: leadIds.length,
   };
 
   if (apply !== true) {
@@ -132,6 +143,7 @@ export async function POST(request: Request) {
   // these concurrently is how two rows end up on the same line.
   let created = 0;
   const failures: string[] = [];
+  let leadsMarked = 0;
   for (const row of plan.create) {
     try {
       await store.addConversion({
@@ -153,10 +165,31 @@ export async function POST(request: Request) {
     }
   }
 
+  /*
+   * The leads, after the money. In that order because the approval is the
+   * record that matters: if marking a lead fails, the payout is still written
+   * and correct, and the next sync will try the lead again. The reverse would
+   * leave a lead marked registered against an approval that never landed.
+   *
+   * A failure here is collected rather than thrown for the same reason. It is
+   * a status on a row nobody is paid from.
+   */
+  for (const id of leadIds) {
+    try {
+      await store.updateSubmission(id, { status: 'registered' });
+      leadsMarked += 1;
+    } catch (error) {
+      failures.push(
+        `lead ${id}: ${error instanceof Error ? error.message : 'could not be marked registered'}`,
+      );
+    }
+  }
+
   return NextResponse.json({
     applied: true,
     ...summary,
     created,
     failures,
+    leadsMarked,
   });
 }
