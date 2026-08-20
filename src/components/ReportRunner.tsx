@@ -12,6 +12,7 @@ import {
   type SortDirection,
 } from '@/lib/report-table';
 import { BusyLabel } from './Spinner';
+import { TableScroller } from './TableScroller';
 
 type ResolvedRow = { usr: string; person: string; leadRef: string; client: string };
 
@@ -96,7 +97,11 @@ type Line = { row: Record<string, unknown>; person: string; client: string };
 const PERSON_KEY = 'ledger:person';
 const CLIENT_KEY = 'ledger:client';
 
-const PER_PAGE_OPTIONS = [25, 50, 100, 250];
+/*
+ * Ten first and ten by default: a report is read a screenful at a time, and a
+ * first page you can take in without scrolling beats one that holds everything.
+ */
+const PER_PAGE_OPTIONS = [10, 25, 50, 100, 250];
 
 function readCell(line: Line, key: string): unknown {
   if (key === PERSON_KEY) return line.person;
@@ -118,7 +123,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   const [showRaw, setShowRaw] = useState(false);
   const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(50);
+  const [perPage, setPerPage] = useState(PER_PAGE_OPTIONS[0]);
   const [sync, setSync] = useState<SyncResult | null>(null);
   /** null, or which of the two sync buttons is running. */
   const [syncing, setSyncing] = useState<null | 'preview' | 'apply'>(null);
@@ -497,10 +502,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   : ' for this range. Try a wider one.'}
             </p>
           ) : (
-            // Wide content scrolls inside its own container so the page never
-            // does. `relative` keeps any absolutely positioned descendant from
-            // resolving against the document and stretching it.
-            <div className="relative -mx-2 mt-5 overflow-x-auto px-2">
+            <TableScroller className="mt-5" label="Report rows">
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b-2 border-edge">
@@ -569,7 +571,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   })}
                 </tbody>
               </table>
-            </div>
+            </TableScroller>
           )}
 
           {result.rowCount > 0 ? (
