@@ -3,7 +3,9 @@
 import { useMemo, useState } from 'react';
 import { CopyLink } from '@/components/CopyLink';
 import { LinkActions } from '@/components/LinkActions';
-import { formatPercent, initialsOf } from '@/lib/analytics';
+import { Pager } from '@/components/Pager';
+import { formatPercent, HOUSE_KEY, initialsOf } from '@/lib/analytics';
+import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import type { AffiliateLink } from '@/lib/types';
 import { prettyUrl } from '@/lib/url';
 
@@ -46,16 +48,47 @@ export function LinksBrowser({
 }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
+  const [person, setPerson] = useState('');
   // With the capture form hidden there are no leads to sort by, and a sort that
   // ranks everything equally reads as broken.
   const [sort, setSort] = useState<Sort>(capture ? 'leads' : 'visits');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
 
-  const liveCount = rows.filter((r) => r.active).length;
   const sorts = capture ? SORTS : SORTS.filter((option) => option.key !== 'leads');
 
-  const visible = useMemo(() => {
+  /**
+   * Everyone with a link here, newest link first so a rename shows the name
+   * they go by now. House links have no key of their own and answer to
+   * HOUSE_KEY, the same stand-in the earnings pages use, because an empty
+   * value already means "everyone" in this control.
+   */
+  const people = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const row of [...rows].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      const key = row.usr || HOUSE_KEY;
+      if (labels.has(key)) continue;
+      labels.set(key, key === HOUSE_KEY ? 'House links' : row.assignee || row.usr);
+    }
+    return [...labels]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows]);
+
+  /**
+   * One person's links, or everyone's. Held apart from the search and the
+   * status because the pills count within it: "All 42" over three visible
+   * cards is the page insisting a filter is off while it is on.
+   */
+  const scoped = useMemo(
+    () => (person ? rows.filter((row) => (row.usr || HOUSE_KEY) === person) : rows),
+    [rows, person],
+  );
+  const liveCount = scoped.filter((r) => r.active).length;
+
+  const matched = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const filtered = rows.filter((row) => {
+    const filtered = scoped.filter((row) => {
       if (status === 'live' && !row.active) return false;
       if (status === 'paused' && row.active) return false;
       if (!needle) return true;
@@ -81,7 +114,32 @@ export function LinksBrowser({
       }
     });
     return sorted;
-  }, [rows, query, status, sort]);
+  }, [scoped, query, status, sort]);
+
+  const visible = pageSlice(matched, page, perPage);
+
+  /*
+   * Narrowing the list starts it again at page one. Without this, filtering
+   * from four pages down to one leaves the reader on page 3 of 1 — pageSlice
+   * clamps it back to something real, but the page they asked for is gone and
+   * nobody told them.
+   */
+  function search(next: string) {
+    setQuery(next);
+    setPage(1);
+  }
+  function chooseStatus(next: StatusFilter) {
+    setStatus(next);
+    setPage(1);
+  }
+  function choosePerson(next: string) {
+    setPerson(next);
+    setPage(1);
+  }
+  function chooseSort(next: Sort) {
+    setSort(next);
+    setPage(1);
+  }
 
   return (
     <>
@@ -98,7 +156,7 @@ export function LinksBrowser({
             id="link-search"
             type="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => search(e.target.value)}
             placeholder="Search a link, campaign or person…"
             className="field"
           />
@@ -110,16 +168,16 @@ export function LinksBrowser({
             className="pill-filter"
             aria-pressed={status === 'all'}
             data-active={status === 'all'}
-            onClick={() => setStatus('all')}
+            onClick={() => chooseStatus('all')}
           >
-            All {rows.length}
+            All {scoped.length}
           </button>
           <button
             type="button"
             className="pill-filter"
             aria-pressed={status === 'live'}
             data-active={status === 'live'}
-            onClick={() => setStatus('live')}
+            onClick={() => chooseStatus('live')}
           >
             Live {liveCount}
           </button>
@@ -128,17 +186,46 @@ export function LinksBrowser({
             className="pill-filter"
             aria-pressed={status === 'paused'}
             data-active={status === 'paused'}
-            onClick={() => setStatus('paused')}
+            onClick={() => chooseStatus('paused')}
           >
-            Paused {rows.length - liveCount}
+            Paused {scoped.length - liveCount}
           </button>
+          {/* Only worth drawing when there is more than one person to choose
+              between: an affiliate sees their own links and nobody else's, so
+              for them this would be a control with a single answer. */}
+          {people.length > 1 ? (
+            <>
+              <label className="sr-only" htmlFor="link-person">
+                Filter links by person
+              </label>
+              <select
+                id="link-person"
+                value={person}
+                onChange={(e) => choosePerson(e.target.value)}
+                className="field w-auto max-w-[240px] truncate"
+                style={{
+                  minHeight: '56px',
+                  fontSize: '19px',
+                  fontWeight: 600,
+                  borderColor: 'var(--color-ink)',
+                }}
+              >
+                <option value="">Everyone</option>
+                {people.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
           <label className="sr-only" htmlFor="link-sort">
             Sort links
           </label>
           <select
             id="link-sort"
             value={sort}
-            onChange={(e) => setSort(e.target.value as Sort)}
+            onChange={(e) => chooseSort(e.target.value as Sort)}
             className="field w-auto"
             style={{
               minHeight: '56px',
@@ -157,7 +244,7 @@ export function LinksBrowser({
       </div>
 
       {/* Rows */}
-      {visible.length === 0 ? (
+      {matched.length === 0 ? (
         <p className="mt-8 rounded-[20px] border-2 border-dashed border-edge-strong bg-panel px-6 py-16 text-center text-[20px] text-ink-soft">
           {rows.length === 0
             ? 'No links yet.'
@@ -248,9 +335,18 @@ export function LinksBrowser({
         </ul>
       )}
 
-      <p role="status" aria-live="polite" className="mt-6 text-[19px] text-ink-soft">
-        Showing {visible.length} of {rows.length}
-      </p>
+      <Pager
+        total={matched.length}
+        page={page}
+        perPage={perPage}
+        onPage={setPage}
+        onPerPage={setPerPage}
+        label="Links"
+        /* The whole count stays on screen while a filter is on, so the number
+           of links you have never depends on which filter you left running. */
+        note={matched.length === rows.length ? '' : ` · ${rows.length} in total`}
+        className="mt-6"
+      />
     </>
   );
 }

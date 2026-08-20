@@ -189,11 +189,6 @@ function compare(a: unknown, b: unknown, kind: ColumnKind): number {
   return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
 }
 
-/** Where a page starts and ends, clamped to what actually exists. */
-export function pageBounds(total: number, page: number, perPage: number) {
-  const pages = Math.max(1, Math.ceil(total / perPage));
-  const current = Math.min(Math.max(1, page), pages);
-  const from = total === 0 ? 0 : (current - 1) * perPage + 1;
-  const to = Math.min(current * perPage, total);
-  return { pages, current, from, to };
-}
+/* Paging used to live here too. It moved to lib/paging once the links and the
+   accounts wanted the same thing: where a page starts is not a decision about
+   what a QMP column means, which is all this module is for. */

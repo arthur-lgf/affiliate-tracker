@@ -6,11 +6,12 @@ import {
   BLANK,
   columnKind,
   formatCell,
-  pageBounds,
   sortRows,
   type ColumnKind,
   type SortDirection,
 } from '@/lib/report-table';
+import { PAGE_SIZES, pageBounds, pageSlice } from '@/lib/paging';
+import { Pager } from './Pager';
 import { BusyLabel } from './Spinner';
 import { TableScroller } from './TableScroller';
 
@@ -103,12 +104,6 @@ type Line = { row: Record<string, unknown>; person: string; client: string };
 const PERSON_KEY = 'ledger:person';
 const CLIENT_KEY = 'ledger:client';
 
-/*
- * Ten first and ten by default: a report is read a screenful at a time, and a
- * first page you can take in without scrolling beats one that holds everything.
- */
-const PER_PAGE_OPTIONS = [10, 25, 50, 100, 250];
-
 function readCell(line: Line, key: string): unknown {
   if (key === PERSON_KEY) return line.person;
   if (key === CLIENT_KEY) return line.client;
@@ -129,7 +124,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   const [showRaw, setShowRaw] = useState(false);
   const [sort, setSort] = useState<{ key: string; direction: SortDirection } | null>(null);
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(PER_PAGE_OPTIONS[0]);
+  const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const [sync, setSync] = useState<SyncResult | null>(null);
   /** null, or which of the two sync buttons is running. */
   const [syncing, setSyncing] = useState<null | 'preview' | 'apply'>(null);
@@ -176,8 +171,11 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
     );
   }, [lines, sort, kinds]);
 
+  // The bounds are read for the row keys as well as the slice: a key that is
+  // only the row's index would be the same string on every page, so React would
+  // keep the old <tr> and just swap the text inside it.
   const bounds = pageBounds(sorted.length, page, perPage);
-  const visible = sorted.slice((bounds.current - 1) * perPage, bounds.current * perPage);
+  const visible = pageSlice(sorted, page, perPage);
 
   /** Ascending, then descending, then back to the order QMP sent. */
   function toggleSort(key: string) {
@@ -581,53 +579,14 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
           )}
 
           {result.rowCount > 0 ? (
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
-              <span className="text-[19px] text-ink-soft" role="status">
-                Showing {bounds.from.toLocaleString()}–{bounds.to.toLocaleString()} of{' '}
-                {sorted.length.toLocaleString()}
-                {sort ? ', sorted' : ''}
-              </span>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2.5 text-[18px] text-ink-soft">
-                  Rows
-                  <select
-                    className="field"
-                    style={{ minHeight: '48px', fontSize: '18px', padding: '0 12px' }}
-                    value={perPage}
-                    onChange={(event) => {
-                      setPerPage(Number(event.target.value));
-                      setPage(1);
-                    }}
-                  >
-                    {PER_PAGE_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="btn-quiet btn-sm"
-                  onClick={() => setPage(bounds.current - 1)}
-                  disabled={bounds.current <= 1}
-                >
-                  ← Previous
-                </button>
-                <span className="tnum text-[18px] font-semibold">
-                  Page {bounds.current} of {bounds.pages}
-                </span>
-                <button
-                  type="button"
-                  className="btn-quiet btn-sm"
-                  onClick={() => setPage(bounds.current + 1)}
-                  disabled={bounds.current >= bounds.pages}
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
+            <Pager
+              total={sorted.length}
+              page={page}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={setPerPage}
+              note={sort ? ', sorted' : ''}
+            />
           ) : null}
 
           {result.hidden > 0 ? (

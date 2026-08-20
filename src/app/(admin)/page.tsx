@@ -1,6 +1,7 @@
 import Link from 'next/link';
+import { ApprovalsList } from '@/components/ApprovalsList';
 import { ConversionForm, type ApprovalTarget } from '@/components/ConversionForm';
-import { DeleteApproval } from '@/components/DeleteApproval';
+import { EarnersTable } from '@/components/EarnersTable';
 import { EarningsChart } from '@/components/EarningsChart';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
@@ -12,11 +13,9 @@ import {
   buildEarnings,
   describeConversions,
   formatDateTime,
-  formatDay,
   formatMoney,
   formatPercent,
   formatRelative,
-  initialsOf,
   PERIODS,
   type Period,
 } from '@/lib/analytics';
@@ -26,8 +25,15 @@ import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * How much history the two paged lists carry.
+ *
+ * The approvals list used to stop at eight, which is as far as a list with no
+ * controls can honestly go. It pages now, so it gets the same window the leads
+ * do — far enough back to be worth paging through, short enough that the page
+ * is not shipping a year of rows to a browser that will show ten.
+ */
 const RECENT_LIMIT = 200;
-const RECENT_APPROVALS = 8;
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -108,7 +114,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // The client comes from the lead reference the sync kept on the row.
   const recentApprovals = describeConversions(
     links,
-    conversions.slice(0, RECENT_APPROVALS),
+    conversions.slice(0, RECENT_LIMIT),
     submissions,
   );
 
@@ -255,91 +261,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             Nothing in this window. Try a longer period{usr ? ' or everyone' : ''}.
           </p>
         ) : (
-          // Wide content scrolls inside its own container so the page never
-          // does. `relative` matters: an absolutely positioned descendant (an
-          // sr-only label, say) would otherwise resolve against the document
-          // and stretch it to the table's full 760px on a phone.
-          <div className="relative -mx-2 mt-5 overflow-x-auto px-2">
-            <table className="w-full min-w-[760px] border-collapse text-left">
-              <thead>
-                <tr className="border-b-2 border-edge">
-                  <Th>Person</Th>
-                  <Th align="right">Visits</Th>
-                  <Th align="right">Approved</Th>
-                  <Th align="right">Total earnings</Th>
-                  {/* Deliberately empty: every button in the column carries its
-                      own "Open <person>" label, so a header here would only
-                      repeat itself once per row. */}
-                  <th className="pb-3" />
-
-                </tr>
-              </thead>
-              <tbody>
-                {view.rows.map((row) => (
-                  <tr key={row.key} className="divider-row last:border-0">
-                    <td className="py-5 pr-4">
-                      <div className="flex items-center gap-4.5">
-                        <span aria-hidden className="disc h-14 w-14 text-[19px]">
-                          {row.usr ? initialsOf(row.person) : 'H'}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-[23px] font-semibold">
-                            {row.person}
-                          </span>
-                          <span className="mt-1 block truncate text-[18px] text-ink-soft">
-                            {row.cardCount} card{row.cardCount === 1 ? '' : 's'}
-                            {row.usr ? ` · usr=${row.usr}` : ' · no usr'}
-                          </span>
-                        </span>
-                      </div>
-                    </td>
-                    <td className="tnum py-5 pr-4 text-right text-[28px] font-semibold">
-                      {row.visits.toLocaleString()}
-                    </td>
-                    <td className="py-5 pr-4 text-right">
-                      <span className="tnum block text-[28px] font-semibold">{row.approved}</span>
-                      {row.visits > 0 && row.approved > 0 ? (
-                        <span className="mt-0.5 block text-[17px] text-ink-soft">
-                          {formatPercent(row.approvalRate, 1)} of visits
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
-                      {formatMoney(row.earnings)}
-                    </td>
-                    <td className="py-5 text-right">
-                      {/* One link per row rather than a whole-row target: the
-                          thing you can click is then something you can see. */}
-                      <Link
-                        href={affiliateHref(row.usr, period)}
-                        className="btn-outline btn-sm"
-                        aria-label={`Open ${row.person}`}
-                      >
-                        Open
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-edge-strong">
-                  <td className="py-5 text-[21px] font-bold">Total</td>
-                  <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
-                    {view.totals.visits.toLocaleString()}
-                  </td>
-                  <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
-                    {view.totals.approved.toLocaleString()}
-                  </td>
-                  <td className="py-5 pr-4 text-right">
-                    <span className="mark tnum font-display text-[30px] font-bold">
-                      {formatMoney(view.totals.earnings)}
-                    </span>
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <EarnersTable rows={view.rows} totals={view.totals} period={period} />
         )}
       </section>
 
@@ -349,7 +271,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <div>
             <h2 className="font-display text-[32px]">Approvals</h2>
             <p className="plain mt-1">
-              {conversions.length} recorded · all time.{' '}
+              {conversions.length > recentApprovals.length
+                ? `Latest ${recentApprovals.length} of ${conversions.length.toLocaleString()}.`
+                : `${conversions.length} recorded · all time.`}{' '}
               {isAdmin
                 ? 'Nothing adds these on its own.'
                 : 'Recorded by your admin as the merchant confirms them.'}
@@ -358,40 +282,15 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           {isAdmin ? <ConversionForm targets={targets} /> : null}
         </div>
 
-        {recentApprovals.length > 0 ? (
-          <ul className="mt-6 flex flex-col gap-4">
-            {recentApprovals.map((row) => (
-              <li
-                key={row.id}
-                className="card-row-lit flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[22px] font-semibold">{row.person}</span>
-                  <span className="mt-0.5 block truncate text-[18px] text-ink-soft">
-                    {row.card} ·{' '}
-                    <span className={row.client === '-' ? 'text-ink-dim' : undefined}>
-                      {row.client}
-                    </span>
-                    {row.note ? ` · ${row.note}` : ''}
-                  </span>
-                </span>
-                <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>
-                <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
-                  {formatMoney(row.amount)}
-                </span>
-                {isAdmin ? (
-                  <DeleteApproval id={row.id} label={`${row.person} · ${row.card}`} />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="plain mt-6">
-            {isAdmin
+        <ApprovalsList
+          rows={recentApprovals}
+          canEdit={isAdmin}
+          empty={
+            isAdmin
               ? 'None recorded yet. Add one here, or type it straight into the Conversions tab of your sheet.'
-              : 'None recorded against your links yet.'}
-          </p>
-        )}
+              : 'None recorded against your links yet.'
+          }
+        />
       </section>
 
       {/* Lead capture, only while the form is switched on */}
@@ -399,17 +298,6 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <LeadsPanel rows={leadRows} total={submissions.length} canEdit={isAdmin} />
       ) : null}
     </div>
-  );
-}
-
-function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return (
-    <th
-      scope="col"
-      className={`label-cap pb-3 pr-4 ${align === 'right' ? 'text-right' : 'text-left'}`}
-    >
-      {children}
-    </th>
   );
 }
 

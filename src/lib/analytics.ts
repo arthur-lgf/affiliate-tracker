@@ -873,6 +873,21 @@ function monthSeries(
   };
 }
 
+/** The affiliate's share of an approval: half of what the merchant paid. */
+export const AFFILIATE_SHARE = 0.5;
+
+/**
+ * The affiliate's revenue on one approval, rounded to the cent.
+ *
+ * Rounded here rather than at the point it is printed, so that a column of them
+ * and the total under it are the same arithmetic. Halving the total instead
+ * would be a cent out from the sum of the rows above it often enough to be
+ * noticed, and the reader can only check the version that adds up.
+ */
+export function affiliateRevenueOf(amount: number): number {
+  return Math.round(amount * AFFILIATE_SHARE * 100) / 100;
+}
+
 /** Whole-unit currency for dense table cells: 1250 → "$1,250". */
 export function formatMoney(value: number): string {
   const rounded = Math.round(value * 100) / 100;

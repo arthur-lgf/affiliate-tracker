@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { initialsOf } from '@/lib/analytics';
+import { PAGE_SIZES, pageSlice } from '@/lib/paging';
+import { Pager } from './Pager';
 import { BusyLabel } from './Spinner';
 
 export type AccountRow = {
@@ -68,7 +70,16 @@ export function UsersPanel({
     null,
   );
   const [issued, setIssued] = useState<Issued | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const issuedRef = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Sliced rather than cut: an account disabled or deleted from the last page
+   * shortens the list under a page number this component is still holding, and
+   * pageSlice clamps that back to the last page there is.
+   */
+  const visible = pageSlice(rows, page, perPage);
 
   // Move focus to the password the moment it appears. It is shown exactly once,
   // so a screen reader user must not have to go looking for it, and a sighted
@@ -314,7 +325,7 @@ export function UsersPanel({
           </p>
         ) : (
           <ul className="mt-6 flex flex-col gap-4">
-            {rows.map((row) => {
+            {visible.map((row) => {
               const isSelf = row.id === viewerId;
               const working = busy === row.id;
               return (
@@ -408,6 +419,19 @@ export function UsersPanel({
             })}
           </ul>
         )}
+
+        {/* Nothing to page through when there is nobody: the line above
+            already says so, and better than a count of zero would. */}
+        {rows.length > 0 ? (
+          <Pager
+            total={rows.length}
+            page={page}
+            perPage={perPage}
+            onPage={setPage}
+            onPerPage={setPerPage}
+            label="Accounts"
+          />
+        ) : null}
       </section>
     </div>
   );

@@ -2,8 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { Pager } from './Pager';
 import { Spinner } from './Spinner';
 import { isLeadId } from '@/lib/lead-id';
+import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { statusLabel } from '@/lib/status';
 import type { LeadStatus } from '@/lib/types';
 
@@ -29,8 +31,6 @@ export type LeadRow = {
 };
 
 type Filter = 'all' | 'pending' | 'registered';
-
-const PAGE = 12;
 
 /**
  * `canEdit` hides the status toggle for an affiliate, who may read their own
@@ -70,7 +70,8 @@ export function LeadsPanel({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [filter, setFilter] = useState<Filter>('all');
-  const [limit, setLimit] = useState(PAGE);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -96,7 +97,13 @@ export function LeadsPanel({
   };
 
   const matching = withStatus.filter((row) => filter === 'all' || row.status === filter);
-  const visible = matching.slice(0, limit);
+  const visible = pageSlice(matching, page, perPage);
+
+  /** A different set of leads is a different first page, not page 4 of it. */
+  function choose(next: Filter) {
+    setFilter(next);
+    setPage(1);
+  }
 
   async function setStatus(row: LeadRow, next: LeadStatus) {
     setBusyId(row.id);
@@ -151,7 +158,7 @@ export function LeadsPanel({
                 className="pill-filter"
                 aria-pressed={filter === key}
                 data-active={filter === key}
-                onClick={() => setFilter(key)}
+                onClick={() => choose(key)}
               >
                 {key === 'all' ? 'All' : statusLabel(key)} {counts[key]}
               </button>
@@ -271,14 +278,17 @@ export function LeadsPanel({
             </ul>
           )}
 
-          {matching.length > visible.length ? (
-            <button
-              type="button"
-              className="btn-quiet btn-sm mt-5"
-              onClick={() => setLimit((current) => current + PAGE * 2)}
-            >
-              Show {Math.min(PAGE * 2, matching.length - visible.length)} more
-            </button>
+          {/* The line above already says the filter found nothing, and
+              says it better than a count of zero would. */}
+          {matching.length > 0 ? (
+            <Pager
+              total={matching.length}
+              page={page}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={setPerPage}
+              label="Leads"
+            />
           ) : null}
 
           <p role="status" aria-live="polite" className="sr-only left-0">

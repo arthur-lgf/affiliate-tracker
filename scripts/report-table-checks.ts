@@ -13,7 +13,6 @@ import {
   formatCell,
   isBlank,
   numericValue,
-  pageBounds,
   sortRows,
 } from '../src/lib/report-table';
 import { parseNumber } from '../src/lib/qmp-sync';
@@ -180,23 +179,7 @@ const byCard = sortRows(rows, (r) => r.card, 'text', 'asc').map((r) => r.card);
 check('case does not split the order', byCard[0] === 'Amex Gold');
 check('"Card 2" comes before "Card 10"', byCard.indexOf('Card 2') < byCard.indexOf('Card 10'));
 
-console.log('\n— pages —');
-const p1 = pageBounds(358, 1, 50);
-check('page 1 starts at 1', p1.from === 1 && p1.to === 50);
-check('and there are 8 pages', p1.pages === 8);
-const last = pageBounds(358, 8, 50);
-check('the last page stops at the last row', last.from === 351 && last.to === 358);
-const beyond = pageBounds(358, 99, 50);
-check('a page past the end clamps', beyond.current === 8 && beyond.to === 358);
-const before = pageBounds(358, 0, 50);
-check('a page before the start clamps', before.current === 1 && before.from === 1);
-const none = pageBounds(0, 1, 50);
-check('no rows means no first row', none.from === 0 && none.to === 0);
-check('but still one page', none.pages === 1);
-const exact = pageBounds(100, 2, 50);
-check('an exact fit has no empty last page', exact.pages === 2 && exact.to === 100);
-const one = pageBounds(1, 1, 50);
-check('a single row is 1 to 1', one.from === 1 && one.to === 1 && one.pages === 1);
+// Paging moved to scripts/paging-checks.ts along with the code.
 
 console.log(`\nreport-table: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;
