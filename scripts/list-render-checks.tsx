@@ -16,10 +16,12 @@
 //   npx tsx --tsconfig scripts/render.tsconfig.json scripts/list-render-checks.tsx
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ApprovalsList } from '../src/components/ApprovalsList';
+import { CpaBrowser } from '../src/components/CpaBrowser';
 import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
 import { Pager } from '../src/components/Pager';
 import { affiliateRevenueOf, formatMoney, type ConversionView, type EarningsRow } from '../src/lib/analytics';
+import type { CpaRate } from '../src/lib/types';
 
 let pass = 0;
 let fail = 0;
@@ -152,6 +154,32 @@ check('ten approvals to a page', (list.match(/<li /g) || []).length === 10);
 check('with the rest a page away', list.includes('Showing 1–10 of 23'));
 const noApprovals = renderToStaticMarkup(<ApprovalsList rows={[]} canEdit={false} empty="none yet" />);
 check('an empty history says so and stops', noApprovals.includes('none yet') && !noApprovals.includes('Showing'));
+
+console.log('\n— the CPA rate card —');
+const rates: CpaRate[] = Array.from({ length: 23 }, (_, i) => ({
+  placement: '714025 - LGF',
+  issuer: i % 2 === 0 ? 'AmEx Consumer' : 'Capital One',
+  card: 'Card ' + i,
+  tier: i % 3 === 0 ? '' : 'Tier ' + ((i % 3) + 1),
+  current: i === 5 ? 0 : 100 + i,
+  previous: i === 7 ? null : 90 + i,
+  change: i === 7 ? null : 0.1,
+  changedOn: i === 9 ? '' : '2026-07-01',
+}));
+const card = renderToStaticMarkup(<CpaBrowser rows={rates} />);
+check('ten rates to a page', (card.match(/<tr class="divider-row/g) || []).length === 10);
+check('with the rest a page away', card.includes('Showing 1–10 of 23'));
+check('there is a search box', card.includes('id="cpa-search"'));
+check('the columns are sortable', card.includes('aria-sort'));
+check('the rate column is named for what it answers', card.includes('Pays now'));
+// A card at zero has been switched off; a blank previous rate only means the
+// card is new. The two must not render the same way.
+check('a rate of zero reads as money', card.includes('$0'));
+check('a card with one rate says so', card.includes('One rate'));
+check('a tier is labelled', card.includes('Tier 2'));
+const noRates = renderToStaticMarkup(<CpaBrowser rows={[]} />);
+check('an empty card says nothing is uploaded', noRates.includes('No rates uploaded yet'));
+check('and offers no page controls', !noRates.includes('Previous'));
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

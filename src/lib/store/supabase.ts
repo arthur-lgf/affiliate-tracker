@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import type {
   AffiliateLink,
   Conversion,
+  CpaRate,
+  CpaReport,
   NewAffiliateLink,
   NewConversion,
   NewSubmission,
@@ -34,6 +36,13 @@ import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './erro
  */
 
 const PAGE_SIZE = 1000;
+
+/**
+ * How many rate rows go in one insert. A rate card is a couple of hundred rows
+ * today; the chunk is what keeps a much larger one from being one request that
+ * PostgREST refuses on size.
+ */
+const INSERT_CHUNK = 500;
 const MAX_ROWS = 500_000;
 
 export function isSupabaseConfigured(): boolean {
@@ -114,6 +123,24 @@ function fail(context: string, error: PostgrestErrorish): never {
  * `range` is inclusive at both ends. The loop stops when a page comes back
  * short, which is the only reliable signal that there is nothing after it.
  */
+function cpaRateFromRow(row: Record<string, unknown>): CpaRate {
+  const money = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    placement: text(row.placement),
+    issuer: text(row.issuer),
+    card: text(row.card),
+    tier: text(row.tier),
+    current: money(row.current),
+    previous: money(row.previous),
+    change: money(row.change),
+    changedOn: text(row.changed_on),
+  };
+}
+
 async function readAll<T>(table: string, order: { column: string; ascending: boolean }): Promise<T[]> {
   const supabase = getSupabaseClient();
   const rows: T[] = [];
@@ -389,6 +416,75 @@ export function createSupabaseStore(): Store {
       const { data, error } = await supabase().from('conversions').insert(row).select().single();
       if (error) fail('recording an approval', error);
       return conversionFromRow(data as Record<string, unknown>);
+    },
+
+    /**
+     * The newest upload's rows.
+     *
+     * Every upload writes a fresh batch and then deletes the old ones, so this
+     * table normally holds exactly one. Picking the newest batch out of
+     * whatever is there covers the case where that cleanup failed: the reader
+     * still sees one complete rate card rather than two spliced together.
+     */
+    async readCpaReport() {
+      const rows = await readAll<Record<string, unknown>>('cpa_rates', {
+        column: 'uploaded_at',
+        ascending: false,
+      });
+      if (rows.length === 0) return null;
+
+      const newest = text(rows[0]!.batch_id);
+      const batch = rows.filter((row) => text(row.batch_id) === newest);
+      const first = batch[0]!;
+      return {
+        reportDate: text(first.report_date),
+        updatedAt: text(first.uploaded_at),
+        updatedBy: text(first.uploaded_by),
+        source: text(first.source),
+        rows: batch.map(cpaRateFromRow),
+      } satisfies CpaReport;
+    },
+
+    /**
+     * Insert the new card, then drop everything that is not it.
+     *
+     * In that order on purpose. Deleting first would leave the page showing an
+     * empty rate card for as long as the insert took, and PostgREST has no
+     * transaction to hide that in. Inserting first means a reader either sees
+     * the old card or the new one, never neither.
+     */
+    async writeCpaReport(report: CpaReport) {
+      const supabase = getSupabaseClient();
+      const batchId = randomUUID();
+      const uploadedAt = report.updatedAt || new Date().toISOString();
+
+      const rows = report.rows.map((rate) => ({
+        batch_id: batchId,
+        uploaded_at: uploadedAt,
+        uploaded_by: report.updatedBy,
+        report_date: report.reportDate,
+        source: report.source,
+        placement: rate.placement,
+        issuer: rate.issuer,
+        card: rate.card,
+        tier: rate.tier,
+        current: rate.current,
+        previous: rate.previous,
+        change: rate.change,
+        changed_on: rate.changedOn,
+      }));
+
+      for (let from = 0; from < rows.length; from += INSERT_CHUNK) {
+        const { error } = await supabase
+          .from('cpa_rates')
+          .insert(rows.slice(from, from + INSERT_CHUNK));
+        if (error) fail('saving the CPA report', error);
+      }
+
+      const { error } = await supabase.from('cpa_rates').delete().neq('batch_id', batchId);
+      // A failed cleanup leaves an old batch behind, which readCpaReport steps
+      // over. Not worth failing an upload that has already landed.
+      if (error) console.warn('[supabase] could not clear the previous CPA batch', error.message);
     },
 
     async deleteConversion(id: string) {

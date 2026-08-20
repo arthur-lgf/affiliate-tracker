@@ -116,6 +116,51 @@ export type Conversion = {
 
 export type NewConversion = Omit<Conversion, 'id' | 'createdAt'>;
 
+/**
+ * One rate on the CPA report: what an issuer pays for an approval on one card,
+ * at one tier.
+ *
+ * Every money field is nullable and that matters. The export writes "-" for
+ * "no value", which is not the same as zero: a card at $0 has been switched
+ * off and is worth seeing, while a blank previous rate only means the card is
+ * new. Collapsing the two would quietly turn every new card into a 100% cut.
+ */
+export type CpaRate = {
+  /** QMP's placement. The same for every row today; kept so a second can be added. */
+  placement: string;
+  issuer: string;
+  card: string;
+  /** "Tier 1" … "Tier 10", or "" when the card pays one rate. */
+  tier: string;
+  /** Dollars per approval now. */
+  current: number | null;
+  /** What it paid before the last change. */
+  previous: number | null;
+  /** 0.1 for a 10% rise. Null when the report gives none. */
+  change: number | null;
+  /** ISO day the current rate took effect, or "" when unknown. */
+  changedOn: string;
+};
+
+/**
+ * The whole rate card, as one upload.
+ *
+ * A snapshot rather than a table that is edited row by row: it arrives as a
+ * file, in full, and replaces what was there. The stamps are what the page
+ * shows so nobody reads a rate card without knowing how old it is.
+ */
+export type CpaReport = {
+  /** The "Day of" line from the export: when QMP read these rates. */
+  reportDate: string;
+  /** When it was uploaded here. ISO, or "" when nothing has been. */
+  updatedAt: string;
+  /** The username of the admin who uploaded it. */
+  updatedBy: string;
+  /** The name of the uploaded file, so a wrong one is recognisable. */
+  source: string;
+  rows: CpaRate[];
+};
+
 export interface Store {
   /** Which backend is actually serving requests — surfaced in the UI. */
   readonly kind: 'sheets' | 'local' | 'supabase';
@@ -135,4 +180,13 @@ export interface Store {
   listConversions(): Promise<Conversion[]>;
   addConversion(input: NewConversion): Promise<Conversion>;
   deleteConversion(id: string): Promise<void>;
+
+  /**
+   * The current rate card, or null when none has been uploaded.
+   *
+   * Read and replaced whole rather than by row, because that is what it is:
+   * one export of one report, superseded by the next one.
+   */
+  readCpaReport(): Promise<CpaReport | null>;
+  writeCpaReport(report: CpaReport): Promise<void>;
 }

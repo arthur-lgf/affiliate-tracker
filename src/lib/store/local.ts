@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import { conversionFromCells, conversionToCells } from './conversion-row';
+import { cpaReportFromCells, cpaRowToCells } from './cpa-row';
 import { makeRowId, parseRowId, rowFingerprint } from './row-id';
 
 /**
@@ -17,6 +18,7 @@ import type {
   NewConversion,
   NewSubmission,
   NewVisit,
+  CpaReport,
   Store,
   Submission,
   SubmissionPatch,
@@ -38,6 +40,9 @@ const FILES = {
   submissions: path.join(DATA_DIR, 'submissions.json'),
   visits: path.join(DATA_DIR, 'visits.json'),
   conversions: path.join(DATA_DIR, 'conversions.json'),
+  // Rows of cells rather than objects, so the file is the CPA tab of the
+  // spreadsheet written out — same as every other file here.
+  cpa: path.join(DATA_DIR, 'cpa.json'),
 } as const;
 
 /**
@@ -233,6 +238,22 @@ export function createLocalStore(): Store {
         await writeFile(FILES.conversions, rows);
         const cells = conversionToCells(row);
         return conversionFromCells(cells, makeRowId(rows.length - 1, cells));
+      });
+    },
+
+    async readCpaReport() {
+      const rows = await readFile<string[]>(FILES.cpa);
+      return cpaReportFromCells(rows);
+    },
+
+    async writeCpaReport(report: CpaReport) {
+      // Whole-file replace under the same lock as everything else: half a rate
+      // card is worse than none, and a reader must never catch it mid-write.
+      return withLock(async () => {
+        await writeFile(
+          FILES.cpa,
+          report.rows.map((rate) => cpaRowToCells(report, rate)),
+        );
       });
     },
 

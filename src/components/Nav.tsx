@@ -12,6 +12,10 @@ const ITEMS: Item[] = [
   // The page hands them themselves instead of a picker, and the route decides
   // ownership again from the session whatever the form posts.
   { href: '/links/new', label: 'Create' },
+  // Everyone: an affiliate quoting a card needs to know what it pays as much
+  // as an admin does, and none of it is anybody's personal data. Only the
+  // upload on that page is admin-only, and the route enforces that itself.
+  { href: '/cpa', label: 'CPA', },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
 ];
@@ -30,6 +34,7 @@ function visibleItems(isAdmin: boolean): Item[] {
 function isActive(href: string, pathname: string): boolean {
   if (href === '/') return pathname === '/' || pathname.startsWith('/affiliate');
   if (href === '/links') return pathname === '/links';
+  if (href === '/cpa') return pathname.startsWith('/cpa');
   if (href === '/reports') return pathname.startsWith('/reports');
   if (href === '/users') return pathname.startsWith('/users');
   return pathname.startsWith('/links/new');

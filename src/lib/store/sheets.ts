@@ -4,9 +4,11 @@ import { SHEET_HEADERS, SHEET_TABS } from '../config';
 import { resolveGoogleCredentials } from '../google-credentials';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import { conversionFromCells, conversionToCells } from './conversion-row';
+import { cpaReportFromCells, cpaRowToCells } from './cpa-row';
 import { makeRowId, parseRowId, rowFingerprint } from './row-id';
 import type {
   AffiliateLink,
+  CpaReport,
   NewAffiliateLink,
   NewConversion,
   NewSubmission,
@@ -282,6 +284,30 @@ async function readNumberedRows(tab: TabName): Promise<NumberedRow[]> {
 
 async function readRows(tab: TabName): Promise<string[][]> {
   return (await readNumberedRows(tab)).map((row) => row.cells);
+}
+
+/**
+ * Replace every data row on a tab, leaving the header alone.
+ *
+ * Clear then write, which is two calls and therefore a moment where the tab is
+ * empty. Acceptable only because this is used for the rate card, which is a
+ * whole-file upload done by hand every few weeks — not for anything a visitor
+ * can trigger.
+ */
+async function replaceRows(tab: TabName, values: string[][]): Promise<void> {
+  await ensureTabs();
+  const sheets = await getClient();
+  const id = spreadsheetId();
+
+  await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: tabRange(tab, 2) });
+  if (values.length === 0) return;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: id,
+    range: tabRange(tab, 2),
+    valueInputOption: 'RAW',
+    requestBody: { values },
+  });
 }
 
 async function appendRow(tab: TabName, values: string[]): Promise<void> {
@@ -637,6 +663,17 @@ export function createSheetsStore(): Store {
       // The row number is only known after a re-read; the caller uses the
       // returned row for a confirmation message, not for addressing.
       return conversionFromCells(cells, '');
+    },
+
+    async readCpaReport() {
+      return cpaReportFromCells(await readRows('cpa'));
+    },
+
+    async writeCpaReport(report: CpaReport) {
+      await replaceRows(
+        'cpa',
+        report.rows.map((rate) => cpaRowToCells(report, rate)),
+      );
     },
 
     async deleteConversion(id: string) {

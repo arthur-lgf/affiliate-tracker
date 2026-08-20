@@ -12,6 +12,7 @@ import {
 } from '@/lib/report-table';
 import { PAGE_SIZES, pageBounds, pageSlice } from '@/lib/paging';
 import { Pager } from './Pager';
+import { SortHeader, nextSort } from './SortHeader';
 import { BusyLabel } from './Spinner';
 import { TableScroller } from './TableScroller';
 
@@ -177,14 +178,9 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   const bounds = pageBounds(sorted.length, page, perPage);
   const visible = pageSlice(sorted, page, perPage);
 
-  /** Ascending, then descending, then back to the order QMP sent. */
   function toggleSort(key: string) {
     setPage(1);
-    setSort((current) => {
-      if (!current || current.key !== key) return { key, direction: 'asc' };
-      if (current.direction === 'asc') return { key, direction: 'desc' };
-      return null;
-    });
+    setSort((current) => nextSort(current, key));
   }
 
   async function readError(response: Response): Promise<{ message: string; hint?: string }> {
@@ -811,61 +807,6 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   );
 }
 
-/**
- * A column heading you can sort by.
- *
- * A real <button> inside the <th>, not a click handler on the cell: sorting a
- * table is an action, and an action has to be reachable by keyboard and
- * announced as one. `aria-sort` on the header is what tells a screen reader
- * which column the order is coming from.
- *
- * The arrow is always rendered, dimmed when the column is not the one in play,
- * so the heading row does not reflow when a sort is applied.
- */
-function SortHeader({
-  label,
-  sortKey,
-  sort,
-  onSort,
-  right,
-}: {
-  label: string;
-  sortKey: string;
-  sort: { key: string; direction: SortDirection } | null;
-  onSort: (key: string) => void;
-  right: boolean;
-}) {
-  const active = sort?.key === sortKey;
-  const direction = active ? sort.direction : null;
-
-  return (
-    <th
-      scope="col"
-      className="whitespace-nowrap p-0 pb-3"
-      aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={`label-cap flex w-full items-center gap-1.5 rounded-lg px-3 py-1 hover:text-ink ${
-          right ? 'justify-end' : 'justify-start'
-        }`}
-        title={
-          direction === 'asc'
-            ? `Sorted by ${label}, lowest first. Click for highest first.`
-            : direction === 'desc'
-              ? `Sorted by ${label}, highest first. Click to clear.`
-              : `Sort by ${label}`
-        }
-      >
-        {label}
-        <span aria-hidden className={active ? 'text-ink' : 'text-ink-dim'}>
-          {direction === 'desc' ? '↓' : '↑'}
-        </span>
-      </button>
-    </th>
-  );
-}
 
 function Figure({ label, value, note }: { label: string; value: string; note: string }) {
   return (

@@ -141,6 +141,12 @@ export const config = {
     // listing what every affiliate is paid.
     '/affiliate',
     '/affiliate/:path*',
+    // The CPA rate card. Everyone signed in may read it; nobody signed out
+    // may, because it is the whole commercial arrangement in one table.
+    '/cpa',
+    '/cpa/:path*',
+    '/api/cpa',
+    '/api/cpa/:path*',
     // QMP reports. The page shows revenue and the route behind it spends the
     // account's API credentials, so both are gated exactly like the rest.
     '/reports',

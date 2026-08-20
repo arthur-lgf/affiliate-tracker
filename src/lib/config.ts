@@ -35,10 +35,31 @@ export const SHEET_TABS = {
   submissions: 'Submissions',
   visits: 'Visits',
   conversions: 'Conversions',
+  cpa: 'CPA',
 } as const;
 
 /** Column order for each tab. Changing this changes the sheet layout. */
 export const SHEET_HEADERS = {
+  /*
+   * The rate card. Unlike every other tab this one is replaced wholesale on
+   * each upload, so the four stamps repeat down every row: a sheet has nowhere
+   * else to put them, and repeating them keeps a row self-describing if
+   * somebody copies one out.
+   */
+  cpa: [
+    'report_date',
+    'updated_at',
+    'updated_by',
+    'source',
+    'placement',
+    'issuer',
+    'card',
+    'tier',
+    'current',
+    'previous',
+    'change',
+    'changed_on',
+  ],
   links: [
     'id',
     'created_at',
