@@ -132,5 +132,19 @@ const sorted = sortRates([
 check('issuers come first', sorted[0]!.issuer === 'A');
 check('and tier 10 lands after tier 9, not between 1 and 2', sorted[1]!.tier === 'Tier 9' && sorted[2]!.tier === 'Tier 10');
 
+// A store with no order of its own hands the rows back shuffled — Postgres
+// does exactly that, since every row of an upload shares its timestamp and the
+// tiebreaker is a random uuid. Sorting has to be able to put any order right.
+const shuffled = sortRates([
+  { placement: '', issuer: 'B', card: 'Two', tier: 'Tier 2', current: 2, previous: null, change: null, changedOn: '' },
+  { placement: '', issuer: 'A', card: 'One', tier: 'Tier 3', current: 3, previous: null, change: null, changedOn: '' },
+  { placement: '', issuer: 'B', card: 'Two', tier: 'Tier 1', current: 1, previous: null, change: null, changedOn: '' },
+  { placement: '', issuer: 'A', card: 'One', tier: 'Tier 1', current: 1, previous: null, change: null, changedOn: '' },
+]);
+check('a shuffled card is put back in tier order',
+  shuffled.map((r) => r.issuer + r.tier).join('|') === 'ATier 1|ATier 3|BTier 1|BTier 2');
+check('and its rows end up next to each other',
+  shuffled[0]!.card === shuffled[1]!.card && shuffled[2]!.card === shuffled[3]!.card);
+
 console.log(`\ncpa: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

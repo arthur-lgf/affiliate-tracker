@@ -43,11 +43,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen bg-paper">
-      {/* The rule spans the window, but the contents share the column the pages
-          use — otherwise the wordmark drifts hundreds of px from the panels on
-          a wide monitor. */}
+      {/* The header uses the same width and the same side padding as the pages
+          below it, so the wordmark sits over the left edge of the panels and
+          Sign out over their right edge however wide the window is. Those two
+          values have to stay in step with <main>. */}
       <header className="border-b-2 border-edge bg-panel">
-        <div className="mx-auto flex w-full max-w-[1360px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-4 sm:px-7">
+        <div className="flex w-full flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-4 sm:px-7 2xl:px-10">
           {/* py-1.5 takes the wordmark from 36px to a 48px target — it is the
               "go home" link, not an inline link in a sentence. */}
           <Link href="/" className="flex flex-none items-center gap-3.5 rounded-xl py-1.5">
@@ -88,9 +89,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
-      {/* pb-28 on phones clears the fixed tab bar; the last panel would
+      {/* Full width on purpose: the tables here are the point of the tool, and
+          a rate card or a QMP report has more columns than a reading column can
+          hold. Prose is not dragged along with it — every paragraph on every
+          page carries its own max-width, so sentences stay the length a person
+          can read while the tables get the whole monitor.
+
+          pb-28 on phones clears the fixed tab bar; the last panel would
           otherwise sit underneath it and be unreachable at the end of a scroll. */}
-      <main className="mx-auto w-full max-w-[1360px] px-5 pb-28 pt-6 sm:px-7 md:pb-20">
+      <main className="w-full px-5 pb-28 pt-6 sm:px-7 2xl:px-10 md:pb-20">
         {children}
       </main>
 

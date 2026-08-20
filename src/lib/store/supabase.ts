@@ -14,6 +14,7 @@ import type {
   SubmissionPatch,
   Visit,
 } from '../types';
+import { sortRates } from '../cpa';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './errors';
 
@@ -441,7 +442,15 @@ export function createSupabaseStore(): Store {
         updatedAt: text(first.uploaded_at),
         updatedBy: text(first.uploaded_by),
         source: text(first.source),
-        rows: batch.map(cpaRateFromRow),
+        /*
+         * Put back in report order, because Postgres has none to give. Every
+         * row of an upload shares its uploaded_at, so the tiebreaker in readAll
+         * decides the order, and that tiebreaker is a random uuid: without this
+         * the tiers of a card come back as 1, 3, 2 and the issuers in no order
+         * at all. Sorted here rather than in the page so the other two adapters
+         * and this one keep the same promise.
+         */
+        rows: sortRates(batch.map(cpaRateFromRow)),
       } satisfies CpaReport;
     },
 

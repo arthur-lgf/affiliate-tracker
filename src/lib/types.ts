@@ -186,6 +186,9 @@ export interface Store {
    *
    * Read and replaced whole rather than by row, because that is what it is:
    * one export of one report, superseded by the next one.
+   *
+   * Rows come back in report order — issuer, then card, then tier — whichever
+   * adapter answers. A store with no order of its own has to put it back.
    */
   readCpaReport(): Promise<CpaReport | null>;
   writeCpaReport(report: CpaReport): Promise<void>;

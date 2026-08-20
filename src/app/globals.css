@@ -132,10 +132,14 @@
 
   /* The plain-English line that sits under a label. Every metric gets one:
      the jargon stays, and this says the same thing again in words. */
+  /* A measure, not a width. The pages run the full width of the window so the
+     tables can, and a sentence that runs 2,000px between the left margin and
+     the right is one the eye loses its place in on every line. */
   .plain {
     font-size: 18px;
     line-height: 1.5;
     color: var(--color-ink-soft);
+    max-width: 78ch;
   }
 
   /* A longer explanation, called out with a green rule. */
@@ -147,6 +151,7 @@
     font-size: 19px;
     line-height: 1.6;
     color: #2c3f35;
+    max-width: 88ch;
   }
 
   /* ---- Surfaces ------------------------------------------------ */
