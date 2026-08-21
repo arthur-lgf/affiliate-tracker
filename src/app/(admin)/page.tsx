@@ -209,7 +209,6 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <p className="plain-note mt-6">
             A <strong>visit</strong> is counted the moment someone opens one of your links. An{' '}
             <strong>approval</strong> is a visit the merchant agreed to pay you for.
-            {gross ? '' : ' Every figure here is your half of that payout.'}
           </p>
 
           <Link
@@ -299,7 +298,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 : `${conversions.length} recorded · all time.`}{' '}
               {isAdmin
                 ? 'Nothing adds these on its own.'
-                : 'Recorded by your admin as the merchant confirms them. Each figure is your half.'}
+                : 'Recorded by your admin as the merchant confirms them.'}
             </p>
           </div>
           {isAdmin ? <ConversionForm targets={targets} /> : null}
@@ -308,6 +307,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <ApprovalsList
           rows={recentApprovals}
           canEdit={isAdmin}
+          gross={gross}
           empty={
             isAdmin
               ? 'None recorded yet. Add one here, or type it straight into the Conversions tab of your sheet.'

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { DeleteApproval } from '@/components/DeleteApproval';
+import { ApprovalsList } from '@/components/ApprovalsList';
 import { EarningsChart } from '@/components/EarningsChart';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LeadsPanel, type LeadRow } from '@/components/LeadsPanel';
@@ -10,7 +10,6 @@ import {
   buildEarnings,
   describeConversions,
   formatDateTime,
-  formatDay,
   formatMoney,
   formatPercent,
   formatRelative,
@@ -236,9 +235,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
           <p className="plain-note mt-6">
             {view.rows.length === 0
               ? 'Nothing landed in this window. Try a longer period. The numbers below follow the same dates.'
-              : `Everything here is ${usr ? `${name}'s` : 'house'} traffic only. Visits count when the click happens, approvals on the day they were approved.${
-                  gross ? '' : ' Every payout below is your half of it.'
-                }`}
+              : `Everything here is ${usr ? `${name}'s` : 'house'} traffic only. Visits count when the click happens, approvals on the day they were approved.`}
           </p>
         </div>
 
@@ -313,43 +310,20 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
           <h2 className="font-display text-[18px]">{usr ? `${name}'s approvals` : 'House approvals'}</h2>
-          <span className="text-[13px] text-ink-soft">
-            All time{gross ? '' : ' · your half of each'}
-          </span>
+          <span className="text-[13px] text-ink-soft">All time</span>
         </div>
 
-        {theirApprovals.length === 0 ? (
-          <p className="py-10 text-center text-[13px] text-ink-soft">
-            None recorded for {name} yet.
-          </p>
-        ) : (
-          <ul className="mt-5 flex flex-col gap-4">
-            {theirApprovals.map((row) => (
-              <li
-                key={row.id}
-                className="card-row-lit flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-semibold">{row.card}</span>
-                  {/* Who the approval was for. A dash means the report row
-                      carried no var3, or one that matches no lead here. */}
-                  <span className="mt-0.5 block truncate text-[12px]">
-                    <span className="text-ink-soft">Client </span>
-                    <span className={row.client === '-' ? 'text-ink-dim' : 'font-semibold'}>
-                      {row.client}
-                    </span>
-                    {row.note ? <span className="text-ink-soft"> · {row.note}</span> : null}
-                  </span>
-                </span>
-                <span className="text-[13px] text-ink-soft">{formatDay(row.approvedOn)}</span>
-                <span className="tnum min-w-[110px] text-right text-[16px] font-semibold">
-                  {formatMoney(row.amount)}
-                </span>
-                {isAdmin ? <DeleteApproval id={row.id} label={`${name} · ${row.card}`} /> : null}
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* The dashboard's table, without the Person column: this page is one
+            person, and their name down the side of their own rows is a column
+            that never changes. Shared rather than copied, so the two lists of
+            approvals cannot drift apart. */}
+        <ApprovalsList
+          rows={theirApprovals}
+          canEdit={isAdmin}
+          gross={gross}
+          showPerson={false}
+          empty={`None recorded for ${name} yet.`}
+        />
       </section>
 
       {/* The people themselves. Kept behind the same switch as the dashboard's

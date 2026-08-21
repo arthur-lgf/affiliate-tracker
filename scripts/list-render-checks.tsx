@@ -206,10 +206,51 @@ const approvals: ConversionView[] = Array.from({ length: 23 }, (_, i) => ({
   client: '-',
   note: '',
 }));
-const list = renderToStaticMarkup(<ApprovalsList rows={approvals} canEdit={false} empty="none" />);
-check('ten approvals to a page', (list.match(/<li /g) || []).length === 10);
+/*
+ * canEdit stays false throughout: DeleteApproval calls useRouter, which cannot
+ * be mounted outside a Next request. What that costs is one column; what it
+ * buys is the ability to check the two that matter here.
+ */
+const list = renderToStaticMarkup(
+  <ApprovalsList rows={approvals} canEdit={false} gross empty="none" />,
+);
+check('ten approvals to a page', (list.match(/<tr class="divider-row/g) || []).length === 10);
 check('with the rest a page away', list.includes('Showing 1–10 of 23'));
-const noApprovals = renderToStaticMarkup(<ApprovalsList rows={[]} canEdit={false} empty="none yet" />);
+for (const heading of ['Date', 'Person', 'Card']) {
+  check(`the ${heading} column is drawn`, list.includes(`>${heading}</th>`));
+}
+check('an admin sees what the merchant paid', list.includes('>Payout</th>'));
+check('and the share of it beside', list.includes('>Affiliate share</th>'));
+check('with both figures on the row', list.includes(formatMoney(100)));
+check('and the share worked out', list.includes(formatMoney(affiliateRevenueOf(100))));
+check('nothing to press without the right to press it', !list.includes('>Actions</th>'));
+
+/*
+ * The same rows as an affiliate reads them. Their amounts arrive already
+ * worked out, so there is one money column, it is called Amount, and it prints
+ * what it was given: halving an already-halved figure would quarter it, and a
+ * column called "affiliate share" would name a split they are not shown.
+ */
+const theirs = renderToStaticMarkup(
+  <ApprovalsList rows={approvals} canEdit={false} gross={false} empty="none" />,
+);
+check('an affiliate gets one money column', theirs.includes('>Amount</th>'));
+check('not the merchant payout', !theirs.includes('>Payout</th>'));
+check('and nothing calling it a share', !theirs.includes('>Affiliate share</th>'));
+check('their figure is printed as it arrived', theirs.includes(formatMoney(100)));
+check('not halved a second time', !theirs.includes(formatMoney(affiliateRevenueOf(100))));
+
+// One person's own page: the heading names them, so the column would be that
+// name repeated down the side of it.
+const solo = renderToStaticMarkup(
+  <ApprovalsList rows={approvals} canEdit={false} gross={false} showPerson={false} empty="none" />,
+);
+check('their own page drops the Person column', !solo.includes('>Person</th>'));
+check('but keeps the card', solo.includes('>Card</th>'));
+
+const noApprovals = renderToStaticMarkup(
+  <ApprovalsList rows={[]} canEdit={false} gross empty="none yet" />,
+);
 check('an empty history says so and stops', noApprovals.includes('none yet') && !noApprovals.includes('Showing'));
 
 console.log('\n— the CPA rate card —');

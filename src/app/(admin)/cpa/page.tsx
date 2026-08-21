@@ -49,7 +49,7 @@ export default async function CpaPage() {
         <p className="mt-3 max-w-[720px] text-[13px] leading-relaxed text-ink-soft">
           {isAdmin
             ? 'What each card pays for an approval, and half of it beside, which is what the affiliate keeps.'
-            : 'What you earn for an approval on each card, which is half of what the merchant pays.'}{' '}
+            : 'What you earn for an approval on each card.'}{' '}
           Where a card is tiered, every tier is listed separately, because the tier is what decides
           the payout.
         </p>
