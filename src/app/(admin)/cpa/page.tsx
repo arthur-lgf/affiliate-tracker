@@ -53,6 +53,22 @@ export default async function CpaPage() {
           Where a card is tiered, every tier is listed separately, because the tier is what decides
           the payout.
         </p>
+
+        {/*
+          The caveat that has to travel with every figure on this page.
+
+          A rate card reads like a price list, and a price list implies a
+          promise. This one is a snapshot of what the merchant pays today, and
+          the merchant can revise an amount after an approval has already gone
+          through — so the number beside a card is the current rate, not a
+          quote. Said once, at the top, rather than as a footnote nobody scrolls
+          to.
+        */}
+        <p className="plain-note mt-4">
+          <strong>This can change after the approval.</strong> These are the rates as they stand
+          today. An amount can still be revised once an approval has gone through, so treat a figure
+          here as what a card pays now rather than a settled payout.
+        </p>
       </div>
 
       {error ? (

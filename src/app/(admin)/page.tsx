@@ -187,7 +187,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           {/* An affiliate is never shown the merchant's gross, so the word
               "earnings" would be naming a figure that is not on the page. */}
           <h2 className="label-cap">
-            {gross ? (person ? `${person.name}'s earnings` : 'Total earnings') : 'Your affiliate revenue'}{' '}
+            {gross ? (person ? `${person.name}'s earnings` : 'Total earnings') : 'Your potential revenue'}{' '}
             · {periodLabel.toLowerCase()}
           </h2>
           {/* Clamped, not stepped: a money figure is one unbreakable token, so

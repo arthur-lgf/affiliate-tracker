@@ -160,7 +160,7 @@ const table = renderToStaticMarkup(
 );
 check('ten people to a page', (table.match(/<tr class="divider-row/g) || []).length === 10);
 check('the money column is called Amount now', table.includes('>Amount</th>'));
-check('and it is joined by the affiliate share', table.includes('>Affiliate revenue</th>'));
+check('and it is joined by what the affiliate stands to make', table.includes('>Potential revenue</th>'));
 check('earnings is not a column heading any more', !table.includes('>Total earnings</th>'));
 check('a row shows half of its own amount', table.includes(formatMoney(affiliateRevenueOf(12.35))));
 // The footer is the whole window, not the page, and it says so.
@@ -183,7 +183,7 @@ const ownTable = renderToStaticMarkup(
   />,
 );
 check('an affiliate is shown no Amount column', !ownTable.includes('>Amount</th>'));
-check('but still the affiliate revenue', ownTable.includes('>Affiliate revenue</th>'));
+check('but still the potential revenue', ownTable.includes('>Potential revenue</th>'));
 check('their row is their half, not a quarter of it', ownTable.includes(formatMoney(affiliateRevenueOf(12.35))));
 check(
   'and the merchant gross is nowhere in the page',
@@ -294,7 +294,7 @@ check('and names them', card.includes('Cards'));
 check('there is a search box', card.includes('id="cpa-search"'));
 check('the columns are sortable', card.includes('aria-sort'));
 check('the rate column is named for what it answers', card.includes('Pays now'));
-check('the affiliate half has a column', card.includes('Affiliate revenue'));
+check('the affiliate half has a column', card.includes('Potential revenue'));
 // 100 for the first flat card, so the affiliate keeps 50.
 check('and it is half of what the card pays', card.includes(formatMoney(affiliateRevenueOf(100))));
 check('a card at zero pays the affiliate zero, not a dash', (card.match(/\$0/g) || []).length >= 2);
@@ -389,7 +389,7 @@ check('no Paid before column', !ownCard.includes('Paid before'));
 // The quote at the end is load-bearing: 'Sort by Change' is a prefix of
 // 'Sort by Changed', and the Changed column is one this reader keeps.
 check('no Change column', !ownCard.includes('title="Sort by Change"'));
-check('the affiliate revenue stays', ownCard.includes('Affiliate revenue'));
+check('the potential revenue stays', ownCard.includes('Potential revenue'));
 check('and so does the day the rate changed', ownCard.includes('title="Sort by Changed"'));
 // 700 is the top tier of the Platinum fixture, so 350 is the half.
 check('the half is printed', ownCard.includes(formatMoney(350)));

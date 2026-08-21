@@ -113,11 +113,11 @@ const COLUMNS: Column[] = [
   { key: 'current', label: 'Pays now', right: true, read: (g) => best(g)?.current ?? null, kind: 'currency' },
   /*
    * Half of what the card pays, through the same helper the dashboard's
-   * Affiliate revenue column uses. One definition of the share, in
+   * Potential revenue column uses. One definition of the share, in
    * AFFILIATE_SHARE, so the rate card and the earnings table can never quote
    * two different splits for the same dollar.
    */
-  { key: 'affiliate', label: 'Affiliate revenue', right: true, read: (g) => best(g)?.revenue ?? null, kind: 'currency' },
+  { key: 'affiliate', label: 'Potential revenue', right: true, read: (g) => best(g)?.revenue ?? null, kind: 'currency' },
   { key: 'previous', label: 'Paid before', right: true, read: (g) => best(g)?.previous ?? null, kind: 'currency' },
   { key: 'change', label: 'Change', right: true, read: (g) => best(g)?.change ?? null, kind: 'percent' },
   { key: 'changedOn', label: 'Changed', right: true, read: (g) => best(g)?.changedOn ?? '', kind: 'text' },

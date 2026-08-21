@@ -210,12 +210,12 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
       <section className="rise panel mt-5 grid gap-10 p-6 sm:p-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
         <div className="min-w-0">
           {/* Named for what the figure under it actually is: the merchant's
-              payout for an admin reading somebody's page, that person's own
-              half when they are reading it themselves. */}
+              payout for an admin reading somebody's page, the revenue this
+              person stands to make when they are reading it themselves. */}
           <h2 className="label-cap">
             {usr
-              ? `${name.split(' ')[0]}'s ${gross ? 'earnings' : 'affiliate revenue'}`
-              : `House ${gross ? 'earnings' : 'affiliate revenue'}`}{' '}
+              ? `${name.split(' ')[0]}'s ${gross ? 'earnings' : 'potential revenue'}`
+              : `House ${gross ? 'earnings' : 'potential revenue'}`}{' '}
             · {periodLabel.toLowerCase()}
           </h2>
           {/* See the dashboard hero: clamped so a long total cannot widen the page. */}
@@ -279,7 +279,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                     <CardStat label="Visits" value={row.visits.toLocaleString()} />
                     <CardStat label="Approved" value={row.approved.toLocaleString()} muted={row.approved === 0} />
                     <CardStat
-                      label={gross ? 'Earnings' : 'Revenue'}
+                      label={gross ? 'Earnings' : 'Potential revenue'}
                       value={formatMoney(row.earnings)}
                       muted={!earned}
                       display
@@ -296,7 +296,9 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
               <CardStat label="Visits" value={view.totals.visits.toLocaleString()} />
               <CardStat label="Approved" value={view.totals.approved.toLocaleString()} />
               <div className="lg:text-right">
-                <span className="label-cap block">{gross ? 'Earnings' : 'Revenue'}</span>
+                <span className="label-cap block">
+                  {gross ? 'Earnings' : 'Potential revenue'}
+                </span>
                 <span className="mark tnum mt-1 inline-block text-[18px] font-bold">
                   {formatMoney(view.totals.earnings)}
                 </span>
