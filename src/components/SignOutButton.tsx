@@ -3,7 +3,13 @@
 import { useState } from 'react';
 import { BusyLabel } from './Spinner';
 
-/** Drops the session cookie and returns to the sign-in page. */
+/**
+ * Drops the session cookie and returns to the sign-in page.
+ *
+ * A plain word rather than a button: it lives on the navy bar, where a boxed
+ * control would be the most prominent thing in the header — and signing out is
+ * not what anybody came here to do.
+ */
 export function SignOutButton() {
   const [busy, setBusy] = useState(false);
 
@@ -26,7 +32,7 @@ export function SignOutButton() {
       onClick={signOut}
       disabled={busy}
       aria-busy={busy}
-      className="btn-quiet btn-sm"
+      className="flex-none whitespace-nowrap text-[12px] text-navy-mute transition-colors hover:text-white disabled:text-navy-dim"
     >
       <BusyLabel busy={busy} idle="Sign out" busyLabel="Signing out…" />
     </button>

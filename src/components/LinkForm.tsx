@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SharingRule } from './SharingRule';
 import { initialsOf } from '@/lib/analytics';
 import { withTrackingKey, type CampaignOption } from '@/lib/campaigns';
 import { BusyLabel } from './Spinner';
@@ -297,10 +298,10 @@ export function LinkForm({
   return (
     <form onSubmit={onSubmit} noValidate className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
       <div className="min-w-0">
-        <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">
+        <h1 className="font-display text-[26px] leading-[1.15]">
           {lockedTo ? 'Create your affiliate link' : 'Create an affiliate link'}
         </h1>
-        <p className="mt-3 max-w-[640px] text-[20px] leading-relaxed text-ink-soft">
+        <p className="mt-3 max-w-[640px] text-[13px] leading-relaxed text-ink-soft">
           {lockedTo ? (
             <>
               Every link you make here is tracked to your key, so the clicks and the payouts land on
@@ -314,12 +315,17 @@ export function LinkForm({
           )}
         </p>
 
+        {/* Before the link exists, rather than beside it afterwards. Same words
+            as the links page, from the same component, so the rule cannot read
+            one way here and another way there. */}
+        <SharingRule className="mt-5 max-w-[640px]" />
+
         {formError ? (
           <p
             ref={bannerRef}
             tabIndex={-1}
             role="alert"
-            className="mt-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[19px] font-semibold text-alarm outline-none"
+            className="mt-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[13px] font-semibold text-alarm outline-none"
           >
             {formError}
           </p>
@@ -433,7 +439,7 @@ export function LinkForm({
                 id="slug-status"
                 role="status"
                 aria-live="polite"
-                className="mt-2 flex items-center gap-2.5 text-[18px] font-semibold"
+                className="mt-2 flex items-center gap-2.5 text-[12px] font-semibold"
                 style={{
                   color: slugTaken ? 'var(--color-alarm)' : 'var(--color-leaf-text)',
                 }}
@@ -479,18 +485,18 @@ export function LinkForm({
                     >
                       <span
                         aria-hidden
-                        className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 text-[17px] font-bold"
+                        className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 text-[12px] font-bold"
                         style={
                           active
                             ? {
-                                background: 'var(--color-gold)',
-                                borderColor: 'var(--color-gold-edge)',
-                                color: 'var(--color-gold-ink)',
+                                background: 'var(--color-navy)',
+                                borderColor: 'var(--color-navy)',
+                                color: '#ffffff',
                               }
                             : {
-                                background: 'var(--color-leaf-wash)',
-                                borderColor: 'var(--color-leaf-edge)',
-                                color: 'var(--color-leaf-text)',
+                                background: 'var(--color-paper-sunk)',
+                                borderColor: 'var(--color-edge)',
+                                color: 'var(--color-ink-soft)',
                               }
                         }
                       >
@@ -501,10 +507,10 @@ export function LinkForm({
                           shown too, because two people can share a display name and
                           the key is the thing that decides who gets paid. */}
                       <span className="min-w-0 text-left">
-                        <span className="block truncate text-[20px] font-semibold leading-tight">
+                        <span className="block truncate text-[13px] font-semibold leading-tight">
                           {person.assignee || person.username || person.usr}
                         </span>
-                        <span className="tnum block truncate text-[16px] leading-tight text-ink-soft">
+                        <span className="tnum block truncate text-[11px] leading-tight text-ink-soft">
                           usr={person.usr}
                         </span>
                       </span>
@@ -516,7 +522,7 @@ export function LinkForm({
                   aria-pressed={personMode === 'house'}
                   data-active={personMode === 'house'}
                   onClick={keepInHouse}
-                  className="pill-filter h-[68px] px-7 text-[20px]"
+                  className="pill-filter h-[68px] px-7 text-[13px]"
                 >
                   Keep it in house
                 </button>
@@ -545,7 +551,7 @@ export function LinkForm({
                   here would point the link at a key nobody can sign in as. */}
               <div className="panel-sunk p-5">
                 <span className="label-cap block">Tracking key</span>
-                <p className="tnum mt-2 text-[26px] font-bold">{picked.usr}</p>
+                <p className="tnum mt-2 text-[15px] font-bold">{picked.usr}</p>
                 <p className="field-note">
                   Appears in the link as <code>?usr={picked.usr}</code>, and is what lets{' '}
                   {lockedTo ? (
@@ -659,7 +665,7 @@ export function LinkForm({
         <div className="mt-7 flex flex-wrap items-center gap-5">
           <button
             type="submit"
-            className="btn-primary h-[68px] px-10 text-[22px]"
+            className="btn-primary h-[68px] px-10 text-[14px]"
             disabled={submitting}
             aria-busy={submitting}
           >
@@ -685,7 +691,7 @@ export function LinkForm({
           >
             Start over
           </button>
-          <span className="text-[19px] text-ink-soft">{storageLabel}</span>
+          <span className="text-[13px] text-ink-soft">{storageLabel}</span>
         </div>
       </div>
 
@@ -694,7 +700,7 @@ export function LinkForm({
         <div className="panel-sunk p-6 sm:p-7">
           <h2 className="label-cap">The link you are making</h2>
           {/* anywhere, not break-all: wraps at ? and / before splitting a word */}
-          <p className="mt-3.5 text-[22px] font-bold leading-[1.4]" style={{ overflowWrap: 'anywhere' }}>
+          <p className="mt-3.5 text-[14px] font-bold leading-[1.4]" style={{ overflowWrap: 'anywhere' }}>
             {previewUrl.split('?')[0]}
             {usr ? <span className="text-ink-soft">?usr={usr}</span> : null}
           </p>
@@ -711,21 +717,21 @@ export function LinkForm({
           <div className="panel p-6 sm:p-7">
             <h2 className="label-cap">What the visitor will see</h2>
             <div className="mt-4 rounded-2xl border-2 border-edge-soft bg-paper-sunk p-6">
-              <p className="text-[17px] text-ink-soft">{values.campaign || 'Your campaign'}</p>
-              <p className="mt-3 font-display text-[28px] font-semibold leading-[1.2]">
+              <p className="text-[12px] text-ink-soft">{values.campaign || 'Your campaign'}</p>
+              <p className="mt-3 font-display text-[16px] font-semibold leading-[1.2]">
                 {values.headline || values.campaign || 'Your headline'}
               </p>
-              <p className="mt-4 text-[18px] font-semibold">Full name</p>
+              <p className="mt-4 text-[12px] font-semibold">Full name</p>
               <div className="mt-2 h-14 rounded-xl border-2 border-edge-field bg-panel" />
-              <p className="mt-4 text-[18px] font-semibold">Email address</p>
+              <p className="mt-4 text-[12px] font-semibold">Email address</p>
               <div className="mt-2 h-14 rounded-xl border-2 border-edge-field bg-panel" />
               {values.requirePhone ? (
                 <>
-                  <p className="mt-4 text-[18px] font-semibold">Phone number</p>
+                  <p className="mt-4 text-[12px] font-semibold">Phone number</p>
                   <div className="mt-2 h-14 rounded-xl border-2 border-edge-field bg-panel" />
                 </>
               ) : null}
-              <div className="mt-5 flex h-[60px] items-center justify-center rounded-full border-2 border-gold-edge bg-gold text-[20px] font-bold text-gold-ink">
+              <div className="mt-5 flex h-10 items-center justify-center rounded-[3px] bg-navy text-[13px] font-medium text-white">
                 {values.ctaLabel || 'Continue to the offer'}
               </div>
             </div>
@@ -807,11 +813,11 @@ function Step({
       <div className="flex flex-wrap items-center gap-4">
         <span
           aria-hidden
-          className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-gold-edge bg-gold text-[21px] font-bold text-gold-ink"
+          className="tnum flex h-6 w-6 flex-none items-center justify-center rounded-[2px] bg-navy text-[12px] font-semibold text-white"
         >
           {number}
         </span>
-        <h2 className="font-display text-[28px] sm:text-[32px]">
+        <h2 className="font-display text-[16px] sm:text-[18px]">
           {/* The number is decorative in the circle and read here instead, so
               the heading list still says "Step 1" out loud. */}
           <span className="sr-only">Step {number}: </span>
@@ -920,9 +926,9 @@ function Toggle({
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="min-w-0">
-        <span className="block text-[20px] font-semibold">{label}</span>
+        <span className="block text-[13px] font-semibold">{label}</span>
         <span
-          className={`mt-0.5 block text-[18px] ${
+          className={`mt-0.5 block text-[12px] ${
             checked ? 'font-semibold text-leaf-text' : 'text-ink-soft'
           }`}
         >
@@ -950,10 +956,10 @@ function Toggle({
 
 function Check({ ok, pending, text }: { ok: boolean; pending: boolean; text: string }) {
   return (
-    <li className="flex items-center gap-3.5 text-[19px]">
+    <li className="flex items-center gap-3.5 text-[13px]">
       <span
         aria-hidden
-        className="flex h-8 w-8 flex-none items-center justify-center rounded-full border-2 text-[17px] font-bold"
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-full border-2 text-[12px] font-bold"
         style={
           pending
             ? {

@@ -20,8 +20,8 @@ export function LeadsChart({ series }: { series: DayBucket[] }) {
       {/* wraps rather than overflowing: 30 columns plus a legend does not fit
           on a phone in one row */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <h2 className="font-display text-[26px]">Thirty days of leads</h2>
-        <span className="flex flex-wrap gap-x-6 gap-y-2 text-[18px] text-ink-soft">
+        <h2 className="font-display text-[15px]">Thirty days of leads</h2>
+        <span className="flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-ink-soft">
           <span className="flex items-center gap-2.5">
             <span aria-hidden className="h-4 w-4 rounded bg-leaf-bar" />
             Earlier
@@ -97,7 +97,7 @@ export function LeadsChart({ series }: { series: DayBucket[] }) {
         </table>
       </div>
 
-      <figcaption className="mt-3 flex justify-between text-[18px] text-ink-soft">
+      <figcaption className="mt-3 flex justify-between text-[12px] text-ink-soft">
         <span>{first?.label}</span>
         <span>{mid?.label}</span>
         <span>Today</span>

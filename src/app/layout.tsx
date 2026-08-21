@@ -1,20 +1,24 @@
 import type { Metadata } from 'next';
-import { Public_Sans, Source_Serif_4 } from 'next/font/google';
+import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import './globals.css';
 
-/* Figures and headings. A serif at 60-80px is what makes a number read as an
-   amount of money rather than as a label. */
-const sourceSerif = Source_Serif_4({
+/* Everything that is words. IBM Plex Sans has open apertures and an
+   unambiguous 1/l/I, which matters on a page where a tracking key is read
+   character by character. */
+const plexSans = IBM_Plex_Sans({
   subsets: ['latin'],
-  variable: '--font-source-serif',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-plex-sans',
   display: 'swap',
 });
 
-/* Everything else. Public Sans has open apertures and unambiguous 1/l/I,
-   which is the whole reason it is here rather than a geometric sans. */
-const publicSans = Public_Sans({
+/* Everything that is a number: money, counts, keys, URLs. A monospace figure
+   is what lets a column of amounts be compared down its right edge rather than
+   read one by one, and it is why every numeric cell in the app carries .tnum. */
+const plexMono = IBM_Plex_Mono({
   subsets: ['latin'],
-  variable: '--font-public-sans',
+  weight: ['400', '500', '600'],
+  variable: '--font-plex-mono',
   display: 'swap',
 });
 
@@ -28,7 +32,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sourceSerif.variable} ${publicSans.variable}`}>
+    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
       <body className="min-h-screen antialiased">{children}</body>
     </html>
   );

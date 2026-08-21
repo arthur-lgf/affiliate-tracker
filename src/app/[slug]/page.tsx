@@ -121,15 +121,15 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
     <main className="min-h-screen bg-paper px-5 py-10 sm:px-8 sm:py-14">
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-[680px] flex-col sm:min-h-[calc(100vh-7rem)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <span className="flex items-center gap-3 text-[18px] text-ink-soft">
-            <span aria-hidden className="h-7 w-7 rounded-full border-2 border-ink bg-gold" />
+          <span className="flex items-center gap-3 text-[12px] text-ink-soft">
+            <span aria-hidden className="h-4 w-4 bg-gold" />
             {link.campaign}
           </span>
-          <span className="text-[18px] text-ink-soft">One short step</span>
+          <span className="text-[12px] text-ink-soft">One short step</span>
         </div>
 
         <div className="rise mt-10">
-          <h1 className="font-display text-[42px] leading-[1.05] sm:text-[54px]">
+          <h1 className="font-display text-[26px] leading-[1.05] sm:text-[26px]">
             {lead}
             {accentTail ? (
               <>
@@ -138,7 +138,7 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
               </>
             ) : null}
           </h1>
-          <p className="mt-5 max-w-[540px] text-[21px] leading-[1.6] text-ink-soft">
+          <p className="mt-5 max-w-[540px] text-[14px] leading-[1.6] text-ink-soft">
             {subheadline}
           </p>
         </div>
@@ -148,7 +148,7 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
             <li key={item} className="chip chip-quiet min-h-[48px] font-normal">
               <span
                 aria-hidden
-                className="flex h-7 w-7 flex-none items-center justify-center rounded-full border-2 border-leaf-live bg-leaf-wash text-[16px] font-bold text-leaf-text"
+                className="flex h-7 w-7 flex-none items-center justify-center rounded-full border-2 border-leaf-live bg-leaf-wash text-[11px] font-bold text-leaf-text"
               >
                 ✓
               </span>
@@ -165,10 +165,10 @@ export default async function LandingPage({ params, searchParams }: PageProps) {
 
         {assigned && link.assignee ? (
           <div className="mt-10 flex items-center gap-4 border-t-2 border-edge pt-6">
-            <span aria-hidden className="disc h-12 w-12 text-[17px]">
+            <span aria-hidden className="disc h-12 w-12 text-[12px]">
               {initialsOf(link.assignee)}
             </span>
-            <span className="text-[18px] leading-[1.5] text-ink-soft">
+            <span className="text-[12px] leading-[1.5] text-ink-soft">
               Prepared for you by
               <br />
               <span className="font-semibold text-ink">{link.assignee}</span>
@@ -184,9 +184,9 @@ function Notice({ title, body }: { title: string; body: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-paper px-6 py-20">
       <div className="w-full max-w-xl text-center">
-        <div aria-hidden className="mx-auto mb-8 h-3 w-3 rounded-full border-2 border-ink bg-gold" />
-        <h1 className="font-display text-[42px] leading-tight">{title}</h1>
-        <p className="mt-5 text-[21px] leading-relaxed text-ink-soft">{body}</p>
+        <div aria-hidden className="mx-auto mb-8 h-3 w-3 bg-gold" />
+        <h1 className="font-display text-[26px] leading-tight">{title}</h1>
+        <p className="mt-5 text-[14px] leading-relaxed text-ink-soft">{body}</p>
       </div>
     </main>
   );

@@ -169,7 +169,7 @@ export function ConversionForm({ targets }: { targets: ApprovalTarget[] }) {
           Close
         </button>
         {done ? (
-          <span role="status" className="text-[19px] font-semibold text-leaf-text">
+          <span role="status" className="text-[13px] font-semibold text-leaf-text">
             {done}
           </span>
         ) : null}

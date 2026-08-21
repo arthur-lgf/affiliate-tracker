@@ -323,7 +323,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
   return (
     <>
       <section className="rise panel mt-5 p-6 sm:p-8">
-        <h2 className="font-display text-[32px]">Run a report</h2>
+        <h2 className="font-display text-[18px]">Run a report</h2>
         <p className="plain mt-2">
           Pulls the report named in the environment. Pick a date range, or leave it off for every
           date QMP has.
@@ -335,7 +335,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               <span className="field-label">Report</span>
               {/* A URL is one unbreakable token. Without this it sets the
                   minimum width of the whole page on a phone. */}
-              <p className="mt-1 text-[19px] [overflow-wrap:anywhere]">
+              <p className="mt-1 text-[13px] [overflow-wrap:anywhere]">
                 {baseUrl}/api/{app}/download/<strong>{reportId}</strong>
               </p>
               <span className="field-note">Fixed by REPORT_ID. Change it there, not here.</span>
@@ -351,7 +351,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   checked={useRange}
                   onChange={(event) => setUseRange(event.target.checked)}
                 />
-                <span className="text-[19px]">Limit to a date range</span>
+                <span className="text-[13px]">Limit to a date range</span>
               </label>
               <p className="field-note mt-1">
                 With this off, QMP returns every date it has for the report.
@@ -424,7 +424,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
           <aside className="panel-sunk min-w-0 p-5">
             <h3 className="label-cap">Connection</h3>
             {check ? (
-              <dl className="mt-3 grid gap-2 text-[18px]">
+              <dl className="mt-3 grid gap-2 text-[12px]">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                   <dt className="text-ink-soft">Status</dt>
                   <dd className="font-semibold text-leaf-text">Credentials accepted</dd>
@@ -457,8 +457,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
       {result ? (
         <section className="rise panel mt-5 p-6 sm:p-8">
           <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-            <h2 className="font-display text-[32px]">Result</h2>
-            <span className="text-[19px] text-ink-soft">
+            <h2 className="font-display text-[18px]">Result</h2>
+            <span className="text-[13px] text-ink-soft">
               {result.rowCount.toLocaleString()} row{result.rowCount === 1 ? '' : 's'} ·{' '}
               {result.columns.length} column{result.columns.length === 1 ? '' : 's'} ·{' '}
               {(result.durationMs / 1000).toFixed(1)}s
@@ -493,7 +493,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
           </div>
 
           {result.rowCount === 0 ? (
-            <p className="mt-6 text-[19px] text-ink-soft">
+            <p className="mt-6 text-[13px] text-ink-soft">
               {result.hidden > 0
                 ? `QMP returned ${result.reportRowCount.toLocaleString()} row${
                     result.reportRowCount === 1 ? '' : 's'
@@ -543,14 +543,14 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                     const named = line.client !== BLANK;
                     return (
                       <tr key={`${bounds.current}:${index}`} className="divider-row last:border-0">
-                        <td className="max-w-[220px] truncate px-3 py-3 text-[18px] font-semibold">
+                        <td className="max-w-[220px] truncate px-3 py-3 text-[12px] font-semibold">
                           {line.person}
                         </td>
                         {/* A dash is the answer when var3 names nobody, and it
                             is dimmed so it reads as "not known" rather than as
                             a value somebody typed. */}
                         <td
-                          className={`max-w-[220px] truncate px-3 py-3 text-[18px] ${
+                          className={`max-w-[220px] truncate px-3 py-3 text-[12px] ${
                             named ? '' : 'text-ink-dim'
                           }`}
                         >
@@ -562,7 +562,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                           return (
                             <td
                               key={column}
-                              className={`max-w-[320px] truncate px-3 py-3 text-[18px] ${
+                              className={`max-w-[320px] truncate px-3 py-3 text-[12px] ${
                                 alignsRight(kind) ? 'tnum text-right' : ''
                               } ${text === BLANK ? 'text-ink-dim' : ''}`}
                             >
@@ -601,7 +601,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
           ) : null}
 
           {showRaw ? (
-            <pre className="panel-sunk mt-5 max-h-[520px] overflow-auto p-4 text-[15px] leading-relaxed">
+            <pre className="panel-sunk mt-5 max-h-[520px] overflow-auto p-4 text-[11px] leading-relaxed">
               {JSON.stringify(result.raw, null, 2)}
             </pre>
           ) : null}
@@ -610,7 +610,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
       {result ? (
         <section className="rise panel mt-5 p-6 sm:p-8">
-          <h2 className="font-display text-[32px]">Sync to approvals</h2>
+          <h2 className="font-display text-[18px]">Sync to approvals</h2>
           <p className="plain mt-2">
             Each QMP row says how many approvals a card took that day and what they paid together.
             One row becomes that many approvals in Ledger, with the earnings split evenly between
@@ -671,7 +671,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
             <div className="mt-6">
               {sync.applied ? (
                 <p
-                  className={`text-[21px] font-semibold ${
+                  className={`text-[14px] font-semibold ${
                     sync.failures?.length ? 'text-alarm' : 'text-leaf-text'
                   }`}
                   role="status"
@@ -729,7 +729,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
 
               {sync.issues.length > 0 ? (
                 <div className="mt-6">
-                  <h3 className="font-display text-[24px]">Not synced</h3>
+                  <h3 className="font-display text-[15px]">Not synced</h3>
                   <p className="plain mt-1">
                     These are left alone rather than attributed to the wrong person or written
                     twice.
@@ -737,8 +737,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   <ul className="mt-3 grid gap-3">
                     {sync.issues.map((issue) => (
                       <li key={issue.kind + issue.detail} className="card-row p-4">
-                        <span className="block text-[19px]">{issue.detail}</span>
-                        <span className="mt-1 block text-[17px] text-ink-soft">
+                        <span className="block text-[13px]">{issue.detail}</span>
+                        <span className="mt-1 block text-[12px] text-ink-soft">
                           {issue.approvals} approval{issue.approvals === 1 ? '' : 's'} across{' '}
                           {issue.rows} row{issue.rows === 1 ? '' : 's'}
                         </span>
@@ -749,7 +749,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               ) : null}
 
               {!sync.applied && sync.toCreate === 0 && sync.leadsToMark === 0 && sync.issues.length === 0 ? (
-                <p className="mt-4 text-[19px] text-ink-soft">
+                <p className="mt-4 text-[13px] text-ink-soft">
                   Nothing to write. Everything in this report is already in Ledger, and every lead
                   behind it is already marked approved.
                 </p>
@@ -780,8 +780,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                       <tbody>
                         {sync.preview.map((row, index) => (
                           <tr key={index} className="divider-row last:border-0">
-                            <td className="tnum px-3 py-3 text-[18px]">{row.approvedOn}</td>
-                            <td className="px-3 py-3 text-[18px]">
+                            <td className="tnum px-3 py-3 text-[12px]">{row.approvedOn}</td>
+                            <td className="px-3 py-3 text-[12px]">
                               {row.person || row.usr || 'House'}
                             </td>
                             {/* What the row carried, not what it matched. The
@@ -789,30 +789,30 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                                 QMP_DEFAULT_SLUG placed anyway, and that is
                                 exactly the row worth spotting before writing. */}
                             <td
-                              className={`px-3 py-3 text-[18px] ${
+                              className={`px-3 py-3 text-[12px] ${
                                 row.trackingKey ? '' : 'text-ink-dim'
                               }`}
                             >
                               {row.trackingKey || BLANK}
                             </td>
                             <td
-                              className={`max-w-[200px] truncate px-3 py-3 text-[18px] ${
+                              className={`max-w-[200px] truncate px-3 py-3 text-[12px] ${
                                 row.client && row.client !== BLANK ? '' : 'text-ink-dim'
                               }`}
                             >
                               {row.client || BLANK}
                             </td>
                             <td
-                              className={`max-w-[200px] truncate px-3 py-3 text-[18px] ${
+                              className={`max-w-[200px] truncate px-3 py-3 text-[12px] ${
                                 row.leadRef ? '' : 'text-ink-dim'
                               }`}
                             >
                               {row.leadRef || BLANK}
                             </td>
-                            <td className="max-w-[260px] truncate px-3 py-3 text-[18px]">
+                            <td className="max-w-[260px] truncate px-3 py-3 text-[12px]">
                               {row.card}
                             </td>
-                            <td className="tnum px-3 py-3 text-right text-[18px]">
+                            <td className="tnum px-3 py-3 text-right text-[12px]">
                               {money(row.amount)}
                             </td>
                           </tr>
@@ -840,8 +840,8 @@ function Figure({ label, value, note }: { label: string; value: string; note: st
   return (
     <div className="panel-sunk p-4">
       <dt className="label-cap">{label}</dt>
-      <dd className="tnum mt-1 font-display text-[32px] leading-none">{value}</dd>
-      <dd className="mt-1 text-[17px] text-ink-soft">{note}</dd>
+      <dd className="tnum mt-1 text-[18px] leading-none">{value}</dd>
+      <dd className="mt-1 text-[12px] text-ink-soft">{note}</dd>
     </div>
   );
 }

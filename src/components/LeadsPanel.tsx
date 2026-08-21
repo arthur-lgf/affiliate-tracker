@@ -155,8 +155,8 @@ export function LeadsPanel({
   return (
     <section className="rise panel mt-5 p-6 sm:p-8">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <h2 className="font-display text-[32px]">{title}</h2>
-        <span className="text-[19px] text-ink-soft">
+        <h2 className="font-display text-[18px]">{title}</h2>
+        <span className="text-[13px] text-ink-soft">
           {summary ??
             (total > rows.length
               ? `Latest ${rows.length} of ${total.toLocaleString()}. Older leads live in your sheet`
@@ -165,7 +165,7 @@ export function LeadsPanel({
       </div>
 
       {rows.length === 0 ? (
-        <p className="py-12 text-center text-[19px] text-ink-soft">{emptyBody}</p>
+        <p className="py-12 text-center text-[13px] text-ink-soft">{emptyBody}</p>
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -213,7 +213,7 @@ export function LeadsPanel({
           ) : null}
 
           {matching.length === 0 ? (
-            <p className="py-12 text-center text-[19px] text-ink-soft">
+            <p className="py-12 text-center text-[13px] text-ink-soft">
               No {filter} leads in this list.
             </p>
           ) : (
@@ -227,10 +227,10 @@ export function LeadsPanel({
                 >
                   <div className="flex min-w-0 items-start justify-between gap-4 lg:flex-1">
                     <span className="min-w-0">
-                      <span className="block text-[21px] font-semibold">{row.fullName || 'No name given'}</span>
+                      <span className="block text-[14px] font-semibold">{row.fullName || 'No name given'}</span>
                       <a
                         href={`mailto:${row.email}`}
-                        className="link-text mt-1 block truncate text-[18px]"
+                        className="link-text mt-1 block truncate text-[12px]"
                       >
                         {row.email}
                       </a>
@@ -238,7 +238,7 @@ export function LeadsPanel({
                       {row.phone ? (
                         <a
                           href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}
-                          className="link-text mt-1 block truncate text-[18px]"
+                          className="link-text mt-1 block truncate text-[12px]"
                         >
                           {row.phone}
                         </a>
@@ -251,13 +251,13 @@ export function LeadsPanel({
                           instead, which never travelled anywhere, so showing
                           it would only invite a fruitless search. */}
                       {isLeadId(row.id) ? (
-                        <span className="mt-1.5 block text-[17px] text-ink-dim">
+                        <span className="mt-1.5 block text-[12px] text-ink-dim">
                           ref <span className="tnum font-semibold text-ink-soft">{row.id}</span>
                         </span>
                       ) : null}
                     </span>
                     <span
-                      className="flex-none text-[18px] text-ink-soft lg:hidden"
+                      className="flex-none text-[12px] text-ink-soft lg:hidden"
                       title={row.capturedAt}
                     >
                       {row.age}
@@ -274,7 +274,7 @@ export function LeadsPanel({
                       <span className="block min-w-0 truncate">{row.campaign || row.slug}</span>
                     </span>
                     {showAssignee ? (
-                      <span className="truncate text-[18px] text-ink-soft lg:w-[150px]">
+                      <span className="truncate text-[12px] text-ink-soft lg:w-[150px]">
                         {row.assignee || 'Unassigned'}
                       </span>
                     ) : null}
@@ -298,7 +298,7 @@ export function LeadsPanel({
                   </div>
 
                   <span
-                    className="hidden text-right text-[18px] text-ink-soft lg:block lg:w-[110px]"
+                    className="hidden text-right text-[12px] text-ink-soft lg:block lg:w-[110px]"
                     title={row.capturedAt}
                   >
                     {row.age}

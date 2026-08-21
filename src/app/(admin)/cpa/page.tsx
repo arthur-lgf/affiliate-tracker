@@ -43,10 +43,10 @@ export default async function CpaPage() {
   return (
     <div className="w-full">
       <div className="rise">
-        <h1 className="font-display leading-[1.05] text-[clamp(1.75rem,7vw,3rem)]">
+        <h1 className="font-display leading-[1.05] text-[26px]">
           Commission per Approvals Reports
         </h1>
-        <p className="mt-3 max-w-[720px] text-[20px] leading-relaxed text-ink-soft">
+        <p className="mt-3 max-w-[720px] text-[13px] leading-relaxed text-ink-soft">
           {isAdmin
             ? 'What each card pays for an approval, and half of it beside, which is what the affiliate keeps.'
             : 'What you earn for an approval on each card, which is half of what the merchant pays.'}{' '}
@@ -63,7 +63,7 @@ export default async function CpaPage() {
 
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-          <h2 className="font-display text-[32px]">
+          <h2 className="font-display text-[18px]">
             {rows.length === 0 ? 'Nothing uploaded yet' : `${cards.toLocaleString()} cards`}
           </h2>
           {/* When the rates were read, and when they were put here. Both,
@@ -71,7 +71,7 @@ export default async function CpaPage() {
               current the rates are, and the upload is how current this page is
               — and a stale upload of a fresh report is the failure worth
               seeing. */}
-          <span className="text-[19px] text-ink-soft">
+          <span className="text-[13px] text-ink-soft">
             {report?.updatedAt
               ? `Updated ${formatDateTime(report.updatedAt)}${
                   report.updatedBy ? ` by ${report.updatedBy}` : ''

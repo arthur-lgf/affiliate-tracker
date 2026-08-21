@@ -31,7 +31,7 @@ export function PersonFilter({
 
   return (
     <span className="flex min-w-0 items-center gap-3">
-      <label htmlFor="person-filter" className="text-[19px] font-semibold text-ink-soft">
+      <label htmlFor="person-filter" className="text-[13px] font-semibold text-ink-soft">
         Person
       </label>
       {/* Rendered beside the label rather than inside the select, which cannot
@@ -44,15 +44,7 @@ export function PersonFilter({
         disabled={pending}
         aria-busy={pending}
         onChange={(event) => choose(event.target.value)}
-        className="field max-w-[280px] truncate"
-        /* Overrides rather than a second class: this is the one .field in the
-           app that sits in a filter bar, not in a form. */
-        style={{
-          minHeight: '56px',
-          fontSize: '19px',
-          fontWeight: 600,
-          borderColor: 'var(--color-ink)',
-        }}
+        className="field w-auto max-w-[280px] truncate"
       >
         <option value="">Everyone</option>
         {people.map((person) => (

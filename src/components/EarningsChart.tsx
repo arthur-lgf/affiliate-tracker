@@ -31,13 +31,13 @@ export function EarningsChart({ series }: { series: EarningsSeries }) {
   return (
     <figure className="m-0 min-w-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-        <h2 className="font-display text-[26px]">
+        <h2 className="font-display text-[15px]">
           {series.title}{' '}
-          <span className="whitespace-nowrap text-[19px] font-normal text-ink-soft">
+          <span className="whitespace-nowrap text-[13px] font-normal text-ink-soft">
             · {series.span}
           </span>
         </h2>
-        <span className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[18px] text-ink-soft">
+        <span className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-ink-soft">
           <span className="flex items-center gap-2.5">
             <span aria-hidden className="h-4 w-4 flex-none rounded bg-leaf-bar" />
             Visits
@@ -98,7 +98,7 @@ export function EarningsChart({ series }: { series: EarningsSeries }) {
                    wherever it sits. Matching on the word "This week" only
                    worked while every chart was weeks, and bolding the last bar
                    only works while the chart ends at now. */
-                className={`min-w-0 flex-1 truncate text-center text-[17px] sm:text-[18px] ${
+                className={`min-w-0 flex-1 truncate text-center text-[12px] sm:text-[12px] ${
                   bucket.current ? 'font-bold text-ink' : 'text-ink-soft'
                 }`}
               >
@@ -151,7 +151,7 @@ function Bar({
   return (
     <span className="flex min-w-0 max-w-[44px] flex-1 flex-col items-center gap-2">
       <span
-        className={`tnum text-[17px] sm:text-[18px] ${
+        className={`tnum text-[12px] sm:text-[12px] ${
           value > 0 ? 'font-bold text-ink' : 'font-semibold text-ink-dim'
         }`}
       >

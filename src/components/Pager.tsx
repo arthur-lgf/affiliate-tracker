@@ -47,18 +47,19 @@ export function Pager({
 
   return (
     <div className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-4 ${className}`}>
-      <span className="text-[19px] text-ink-soft" role="status">
+      <span className="text-[13px] text-ink-soft" role="status">
         {count}
         {note}
       </span>
 
       {paged ? (
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2.5 text-[18px] text-ink-soft">
+          <label className="flex items-center gap-2.5 text-[12px] text-ink-soft">
             {label}
+            {/* 30px, to sit level with the Previous/Next buttons beside it
+                rather than setting the height of the whole bar. */}
             <select
-              className="field"
-              style={{ minHeight: '48px', fontSize: '18px', padding: '0 12px' }}
+              className="field w-auto min-h-[30px] px-2 text-[12px]"
               value={perPage}
               onChange={(event) => {
                 // Back to the first page here rather than in every caller: a new
@@ -83,7 +84,7 @@ export function Pager({
           >
             ← Previous
           </button>
-          <span className="tnum text-[18px] font-semibold">
+          <span className="tnum text-[12px] font-semibold">
             Page {bounds.current} of {bounds.pages}
           </span>
           <button

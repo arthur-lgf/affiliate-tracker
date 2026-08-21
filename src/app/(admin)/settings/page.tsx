@@ -42,7 +42,7 @@ export default async function SettingsPage() {
   return (
     <div className="w-full">
       <div className="rise">
-        <h1 className="font-display leading-[1.05] text-[clamp(1.75rem,7vw,3rem)]">Settings</h1>
+        <h1 className="font-display leading-[1.05] text-[26px]">Settings</h1>
         <p className="plain mt-3">
           Shared settings for everyone who uses Ledger. Only an admin can change them.
         </p>
@@ -56,8 +56,8 @@ export default async function SettingsPage() {
 
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-          <h2 className="font-display text-[32px]">Campaigns</h2>
-          <span className="text-[19px] text-ink-soft">
+          <h2 className="font-display text-[18px]">Campaigns</h2>
+          <span className="text-[13px] text-ink-soft">
             {rows.length} offer{rows.length === 1 ? '' : 's'}
           </span>
         </div>

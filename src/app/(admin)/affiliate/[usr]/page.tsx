@@ -169,16 +169,16 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
 
       <div className="rise mt-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-5">
         <div className="flex min-w-0 items-center gap-5">
-          <span aria-hidden className="disc h-20 w-20 flex-none text-[26px]">
+          <span aria-hidden className="disc h-20 w-20 flex-none text-[15px]">
             {usr ? initialsOf(name) : 'H'}
           </span>
           <div className="min-w-0">
             {/* A tracking key can be one long unbreakable word, and the avatar
                 has already taken 80px of a 320px screen. */}
-            <h1 className="font-display leading-[1.05] text-[clamp(1.625rem,6vw,2.875rem)]">
+            <h1 className="font-display leading-[1.05] text-[26px]">
               {name}
             </h1>
-            <p className="mt-1.5 text-[20px] text-ink-soft">
+            <p className="mt-1.5 text-[13px] text-ink-soft">
               {usr ? `Tracking key usr=${usr}` : 'Clicks that arrived with no usr'} ·{' '}
               {theirLinks.length} link{theirLinks.length === 1 ? '' : 's'}
             </p>
@@ -220,12 +220,12 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
             · {periodLabel.toLowerCase()}
           </h2>
           {/* See the dashboard hero: clamped so a long total cannot widen the page. */}
-          <p className="tnum mt-4 font-display leading-[0.95] text-[clamp(2rem,9vw,5.125rem)]">
+          <p className="tnum mt-4 leading-[0.95] text-[28px]">
             {formatMoney(view.totals.earnings)}
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-4">
             <span className="chip chip-gold">{view.totals.approved} approved</span>
-            <span className="text-[20px] text-ink-soft">
+            <span className="text-[13px] text-ink-soft">
               from {view.totals.visits.toLocaleString()} visit
               {view.totals.visits === 1 ? '' : 's'}
               {view.rows.length > 0
@@ -249,12 +249,12 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
           three or four numbers per row reads better stacked than columned. */}
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-          <h2 className="font-display text-[32px]">Card by card</h2>
-          <span className="text-[19px] text-ink-soft">{periodLabel}</span>
+          <h2 className="font-display text-[18px]">Card by card</h2>
+          <span className="text-[13px] text-ink-soft">{periodLabel}</span>
         </div>
 
         {view.rows.length === 0 ? (
-          <p className="py-12 text-center text-[19px] text-ink-soft">
+          <p className="py-12 text-center text-[13px] text-ink-soft">
             No visits or approvals in this window.
           </p>
         ) : (
@@ -270,10 +270,10 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                     } grid gap-x-6 gap-y-4 p-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_130px_170px_200px] lg:items-center`}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-[24px] font-semibold" title={row.card}>
+                      <p className="truncate text-[15px] font-semibold" title={row.card}>
                         {row.card}
                       </p>
-                      <p className="mt-0.5 text-[18px] text-ink-soft">
+                      <p className="mt-0.5 text-[12px] text-ink-soft">
                         {row.approved > 0
                           ? `Earning · ${formatPercent(row.approvalRate, 1)} approved`
                           : 'No approvals yet'}
@@ -293,14 +293,14 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
             </ul>
 
             <div className="mt-5 grid gap-x-6 gap-y-2 border-t-2 border-edge px-1 pt-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_130px_170px_200px] lg:items-center">
-              <p className="text-[21px] font-bold">
+              <p className="text-[14px] font-bold">
                 Total across {view.rows.length} card{view.rows.length === 1 ? '' : 's'}
               </p>
               <CardStat label="Visits" value={view.totals.visits.toLocaleString()} />
               <CardStat label="Approved" value={view.totals.approved.toLocaleString()} />
               <div className="lg:text-right">
                 <span className="label-cap block">{gross ? 'Earnings' : 'Revenue'}</span>
-                <span className="mark tnum mt-1 inline-block font-display text-[32px] font-bold">
+                <span className="mark tnum mt-1 inline-block text-[18px] font-bold">
                   {formatMoney(view.totals.earnings)}
                 </span>
               </div>
@@ -312,14 +312,14 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
       {/* Their approvals, all time — the rows behind the earnings figure */}
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-          <h2 className="font-display text-[32px]">{usr ? `${name}'s approvals` : 'House approvals'}</h2>
-          <span className="text-[19px] text-ink-soft">
+          <h2 className="font-display text-[18px]">{usr ? `${name}'s approvals` : 'House approvals'}</h2>
+          <span className="text-[13px] text-ink-soft">
             All time{gross ? '' : ' · your half of each'}
           </span>
         </div>
 
         {theirApprovals.length === 0 ? (
-          <p className="py-10 text-center text-[19px] text-ink-soft">
+          <p className="py-10 text-center text-[13px] text-ink-soft">
             None recorded for {name} yet.
           </p>
         ) : (
@@ -330,10 +330,10 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                 className="card-row-lit flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[22px] font-semibold">{row.card}</span>
+                  <span className="block truncate text-[14px] font-semibold">{row.card}</span>
                   {/* Who the approval was for. A dash means the report row
                       carried no var3, or one that matches no lead here. */}
-                  <span className="mt-0.5 block truncate text-[18px]">
+                  <span className="mt-0.5 block truncate text-[12px]">
                     <span className="text-ink-soft">Client </span>
                     <span className={row.client === '-' ? 'text-ink-dim' : 'font-semibold'}>
                       {row.client}
@@ -341,8 +341,8 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                     {row.note ? <span className="text-ink-soft"> · {row.note}</span> : null}
                   </span>
                 </span>
-                <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>
-                <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
+                <span className="text-[13px] text-ink-soft">{formatDay(row.approvedOn)}</span>
+                <span className="tnum min-w-[110px] text-right text-[16px] font-semibold">
                   {formatMoney(row.amount)}
                 </span>
                 {isAdmin ? <DeleteApproval id={row.id} label={`${name} · ${row.card}`} /> : null}
@@ -391,7 +391,7 @@ function CardStat({
       <span className="label-cap block">{label}</span>
       <span
         className={`tnum mt-1 block font-semibold ${
-          display ? 'font-display text-[32px]' : 'text-[30px]'
+          display ? 'font-display text-[18px]' : 'text-[16px]'
         } ${muted ? 'text-ink-dim' : 'text-ink'}`}
       >
         {value}

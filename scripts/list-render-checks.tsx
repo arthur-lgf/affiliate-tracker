@@ -6,9 +6,10 @@
 // Rendering the real component and reading the markup back catches all three,
 // and none of them are visible in a type check.
 //
-// UsersPanel is deliberately absent: it calls useRouter at the top, which
-// cannot be mounted outside a Next request, so what it adds is covered by the
-// Pager checks below and by pageSlice in paging-checks.
+// UsersPanel is not rendered: it calls useRouter at the top, which cannot be
+// mounted outside a Next request. Its filtering is exported as a plain
+// function instead and checked directly at the bottom of this file; the rest
+// is covered by the Pager checks below and by pageSlice in paging-checks.
 //
 // The extra tsconfig switches on the automatic JSX runtime. The app's own is
 // "preserve", because Next does that step itself.
@@ -23,6 +24,7 @@ import { sortRows } from '../src/lib/report-table';
 import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
 import { Pager } from '../src/components/Pager';
+import { matchAccounts, type AccountRow } from '../src/components/UsersPanel';
 import { affiliateRevenueOf, formatMoney, type ConversionView, type EarningsRow } from '../src/lib/analytics';
 import type { CpaRate } from '../src/lib/types';
 
@@ -67,8 +69,8 @@ const rows = Array.from({ length: 23 }, (_, i) => row(i + 1));
 
 console.log('— links —');
 const html = renderToStaticMarkup(<LinksBrowser rows={rows} capture canEdit={false} />);
-const cards = (html.match(/<li /g) || []).length;
-check('the first page holds ten cards, not all twenty-three', cards === 10);
+const linkRows = (html.match(/<tr class="divider-row/g) || []).length;
+check('the first page holds ten rows, not all twenty-three', linkRows === 10);
 check('the count is of the whole matched list', html.includes('Showing 1–10 of 23'));
 check('and the page count follows from it', html.includes('Page 1 of 3'));
 check('the size picker is offered', html.includes('>250</option>'));
@@ -76,7 +78,34 @@ check('the person filter is drawn', html.includes('id="link-person"'));
 check('with everyone as the way out of it', html.includes('>Everyone</option>'));
 check('one entry per person', PEOPLE.every((p) => html.includes(`>${p.toUpperCase()}</option>`)));
 check('house links get an entry of their own', html.includes('>House links</option>'));
-check('the status pills count within the person scope', html.includes('All 23'));
+check('the status counts count within the person scope', html.includes('All 23'));
+
+/*
+ * The redesign turned each card into a row. These pin the columns rather than
+ * the styling: a column quietly dropped in a refactor is invisible in a type
+ * check, and invisible in a screenshot of a table that still looks like a
+ * table.
+ */
+for (const heading of ['Campaign', 'Owner', 'Short link', 'Status', 'Visits', 'Leads', 'Conversion']) {
+  check(`the ${heading} column is drawn`, html.includes(`>${heading}</th>`));
+}
+check('a live link says so', html.includes('>Live</span>'));
+check('and a paused one says that', html.includes('>Paused</span>'));
+check('every row can be copied', (html.match(/>Copy</g) || []).length === 10);
+// An affiliate may copy their links but not change them.
+check('but not paused by someone who cannot edit', !html.includes('aria-label="Pause the link'));
+check('nor deleted', !html.includes('aria-label="Delete the link'));
+check('where the link forwards to is still on the row', html.includes('example.test/offer'));
+// The admin side of that is not rendered here: LinkActions calls useRouter, so
+// canEdit={true} cannot be mounted outside a Next request.
+
+// With the capture form off there are no leads, so the two columns that count
+// them go rather than standing at zero forever.
+const noCapture = renderToStaticMarkup(<LinksBrowser rows={rows} capture={false} canEdit={false} />);
+check('no capture form, no Leads column', !noCapture.includes('>Leads</th>'));
+check('and no conversion column either', !noCapture.includes('>Conversion</th>'));
+check('visits stay, because they are counted either way', noCapture.includes('>Visits</th>'));
+check('and the leads sort goes with them', !noCapture.includes('>Most leads first</option>'));
 
 // Under the smallest page size there is no page to turn and no size worth
 // choosing, so the controls go away and the count stays.
@@ -364,6 +393,54 @@ check(
   'surrounding space does not make a name blank',
   Object.keys(problemsIn([settingsRow(0, '  Best Cards  ', '  https://example.com  ')])).length === 0,
 );
+
+console.log('\n— accounts —');
+/*
+ * UsersPanel itself cannot be rendered here — it calls useRouter at the top,
+ * which needs a Next request — so the filtering is pulled out as a plain
+ * function and checked directly. That is the part with the bugs in it: the
+ * table around it is the same table as everywhere else in the app.
+ */
+function account(i: number, over: Partial<AccountRow> = {}): AccountRow {
+  return {
+    id: `u${i}`,
+    username: `user${i}`,
+    role: i === 0 ? 'admin' : 'affiliate',
+    usr: i === 0 ? '' : `key${i}`,
+    fullName: `Person ${i}`,
+    email: `person${i}@example.test`,
+    active: true,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    lastLoginAt: null,
+    createdBy: 'seed',
+    ...over,
+  };
+}
+const accountRows = [
+  account(0, { username: 'arthur', fullName: 'Arthur Reyes' }),
+  account(1, { username: 'dana', fullName: 'Dana Okafor', email: 'dana@elsewhere.test' }),
+  account(2, { username: 'ali', fullName: 'Ali Haddad', usr: 'c89buy' }),
+];
+const names = (list: AccountRow[]) => list.map((r) => r.username).join();
+
+check('no filter, everybody', matchAccounts(accountRows, '', 'all').length === 3);
+check('a role narrows it', names(matchAccounts(accountRows, '', 'admin')) === 'arthur');
+check('and so does the other one', matchAccounts(accountRows, '', 'affiliate').length === 2);
+check('search finds a username', matchAccounts(accountRows, 'dana', 'all').length === 1);
+check('and a full name', matchAccounts(accountRows, 'haddad', 'all').length === 1);
+check(
+  'and an email nobody would remember the username for',
+  matchAccounts(accountRows, 'elsewhere', 'all').length === 1,
+);
+check(
+  'and a tracking key, which is what an approval carries',
+  matchAccounts(accountRows, 'c89buy', 'all').length === 1,
+);
+check('case does not matter', matchAccounts(accountRows, 'ARTHUR', 'all').length === 1);
+check('surrounding space does not either', matchAccounts(accountRows, '  dana  ', 'all').length === 1);
+check('the two filters compose', matchAccounts(accountRows, 'reyes', 'admin').length === 1);
+check('and can leave nothing', matchAccounts(accountRows, 'dana', 'admin').length === 0);
+check('a miss is empty, not everything', matchAccounts(accountRows, 'zzz', 'all').length === 0);
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

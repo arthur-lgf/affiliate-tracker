@@ -1,10 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
-import { initialsOf } from '@/lib/analytics';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { Pager } from './Pager';
+import { TableScroller } from './TableScroller';
 import { BusyLabel } from './Spinner';
 
 export type AccountRow = {
@@ -27,10 +27,46 @@ type Fields = {
   email: string;
 };
 
+type RoleFilter = 'all' | 'admin' | 'affiliate';
+
 const EMPTY: Fields = { username: '', role: 'affiliate', fullName: '', email: '' };
 
 function softUsername(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9._-]+/g, '');
+}
+
+/**
+ * "21 Aug 2026", or the plain truth that they never have.
+ *
+ * Deliberately not a relative time. "3 months ago" is the wrong unit for the
+ * question this column answers, which is whether an account is still in use and
+ * ought to still exist.
+ */
+function signInDate(iso: string | null): string {
+  if (!iso) return 'Never';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Never';
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
+ * The accounts a search and a role filter leave behind.
+ *
+ * Pulled out as a plain function so it can be checked without mounting the
+ * panel, which calls useRouter and so cannot be rendered outside a request.
+ * Username, name and email all match: an admin looking someone up has whichever
+ * one of the three they were given.
+ */
+export function matchAccounts(rows: AccountRow[], query: string, role: RoleFilter): AccountRow[] {
+  const needle = query.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (role !== 'all' && row.role !== role) return false;
+    if (!needle) return true;
+    return [row.username, row.fullName, row.email, row.usr]
+      .join(' ')
+      .toLowerCase()
+      .includes(needle);
+  });
 }
 
 /**
@@ -62,24 +98,33 @@ export function UsersPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   /**
-   * Which of the row's four buttons is running. `busy` alone says which row,
-   * and a row has Reset password, Disable, Enable and Delete side by side —
-   * so without this the spinner would have to go on all four or none.
+   * Which of the row's three buttons is running. `busy` alone says which row,
+   * and a row has Reset password, Disable/Enable and Delete side by side — so
+   * without this the spinner would have to go on all three or none.
    */
   const [running, setRunning] = useState<null | 'reset-password' | 'enable' | 'disable' | 'delete'>(
     null,
   );
   const [issued, setIssued] = useState<Issued | null>(null);
+  /* The create form is a drawer rather than a permanent fixture at the top of
+     the page. Adding someone happens a handful of times a year; reading the
+     list happens every week, and the form was pushing it below the fold. */
+  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
+  const [role, setRole] = useState<RoleFilter>('all');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const issuedRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLInputElement | null>(null);
+
+  const matched = useMemo(() => matchAccounts(rows, query, role), [rows, query, role]);
 
   /*
    * Sliced rather than cut: an account disabled or deleted from the last page
    * shortens the list under a page number this component is still holding, and
    * pageSlice clamps that back to the last page there is.
    */
-  const visible = pageSlice(rows, page, perPage);
+  const visible = pageSlice(matched, page, perPage);
 
   // Move focus to the password the moment it appears. It is shown exactly once,
   // so a screen reader user must not have to go looking for it, and a sighted
@@ -87,6 +132,13 @@ export function UsersPanel({
   useEffect(() => {
     if (issued) issuedRef.current?.focus();
   }, [issued]);
+
+  // Opening the drawer puts the caret in the first field. A form that appears
+  // somewhere below the button you just pressed is a form you then have to go
+  // and find.
+  useEffect(() => {
+    if (adding) formRef.current?.focus();
+  }, [adding]);
 
   function set<K extends keyof Fields>(key: K, value: Fields[K]) {
     setFields((current) => ({ ...current, [key]: value }));
@@ -127,6 +179,9 @@ export function UsersPanel({
         usr: data.user.usr || undefined,
       });
       setFields(EMPTY);
+      // Closed on success only. A failed submit keeps the form open with what
+      // was typed still in it.
+      setAdding(false);
       router.refresh();
     } catch {
       setError('Could not reach the server.');
@@ -200,240 +255,349 @@ export function UsersPanel({
       ) : null}
 
       {error ? (
-        <p role="alert" className="panel mt-5 border-2 p-5 text-[19px] text-ink">
-          {error}
+        <p role="alert" className="warn-note mt-5">
+          <span aria-hidden className="warn-note-mark">
+            ⚠
+          </span>
+          <span>{error}</span>
         </p>
       ) : null}
 
-      {/* Create */}
-      <section className="rise panel mt-5 p-6 sm:p-8">
-        <h2 className="font-display text-[32px]">Add someone</h2>
-        <p className="plain mt-2">
-          The password is generated here and shown once. Nothing stores it, so if it is lost the
-          only way forward is to reset it.
-        </p>
-
-        <form onSubmit={create} className="mt-6 grid gap-5 lg:grid-cols-2">
-          <label className="block">
-            <span className="field-label">Username</span>
-            <input
-              className="field"
-              value={fields.username}
-              onChange={(e) => set('username', softUsername(e.target.value))}
-              placeholder="arthur"
-              autoComplete="off"
-              spellCheck={false}
-              required
-              aria-describedby="username-note"
-              aria-invalid={fieldErrors.username ? true : undefined}
-            />
-            <span id="username-note" className="field-note">
-              What they type to sign in. Lowercase letters, numbers, dot, dash and underscore.
-            </span>
-            {fieldErrors.username ? <span className="field-error">{fieldErrors.username}</span> : null}
-          </label>
-
-          <fieldset className="block">
-            <legend className="field-label">What they can see</legend>
-            <div className="mt-2 flex flex-wrap gap-3">
-              {(
-                [
-                  ['affiliate', 'Their own links only'],
-                  ['admin', 'Everything, and can add people'],
-                ] as const
-              ).map(([value, label]) => (
-                <label
-                  key={value}
-                  className="pill-filter min-h-11 cursor-pointer"
-                  data-active={fields.role === value}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value={value}
-                    checked={fields.role === value}
-                    onChange={() => set('role', value)}
-                    className="sr-only"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <p className="self-end text-[19px] text-ink-soft">
-            {affiliate
-              ? 'A six-character tracking key is generated when you create the account. It becomes the ?usr= on their links, and it decides which rows they can see.'
-              : 'An admin sees every person’s numbers and is the only role that can create links, record approvals and add people.'}
-          </p>
-
-          <label className="block">
-            <span className="field-label">Full name</span>
-            <input
-              className="field"
-              value={fields.fullName}
-              onChange={(e) => set('fullName', e.target.value)}
-              placeholder="Arthur Reyes"
-              autoComplete="off"
-            />
-            <span className="field-note">Optional. Only used to label them here.</span>
-          </label>
-
-          <label className="block">
-            <span className="field-label">Email</span>
-            <input
-              className="field"
-              type="email"
-              value={fields.email}
-              onChange={(e) => set('email', e.target.value)}
-              placeholder="arthur@example.com"
-              autoComplete="off"
-              aria-invalid={fieldErrors.email ? true : undefined}
-            />
-            <span className="field-note">
-              Optional, and nothing is sent to it. The password is handed over by you.
-            </span>
-            {fieldErrors.email ? <span className="field-error">{fieldErrors.email}</span> : null}
-          </label>
-
-          <div className="lg:col-span-2">
-            <button
-              type="submit"
-              className="btn-gold"
-              disabled={busy === 'create'}
-              aria-busy={busy === 'create'}
-            >
-              <BusyLabel busy={busy === 'create'} idle="Create account" busyLabel="Creating…" />
+      {/* Add someone — a drawer, opened from the toolbar below */}
+      {adding ? (
+        <section className="panel mt-5 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-edge px-5 py-3.5">
+            <h2 className="text-[13px] font-semibold uppercase tracking-[0.03em] text-ink-soft">
+              Add someone
+            </h2>
+            <button type="button" className="btn-quiet btn-sm" onClick={() => setAdding(false)}>
+              Cancel
             </button>
           </div>
-        </form>
-      </section>
+
+          <form onSubmit={create} className="grid gap-5 p-5 lg:grid-cols-2">
+            <p className="plain lg:col-span-2">
+              The password is generated here and shown once. Nothing stores it, so if it is lost the
+              only way forward is to reset it.
+            </p>
+
+            <label className="block">
+              <span className="field-label">Username</span>
+              <input
+                ref={formRef}
+                className="field mt-1.5"
+                value={fields.username}
+                onChange={(e) => set('username', softUsername(e.target.value))}
+                placeholder="arthur"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                aria-describedby="username-note"
+                aria-invalid={fieldErrors.username ? true : undefined}
+              />
+              <span id="username-note" className="field-note">
+                What they type to sign in. Lowercase letters, numbers, dot, dash and underscore.
+              </span>
+              {fieldErrors.username ? (
+                <span className="field-error">{fieldErrors.username}</span>
+              ) : null}
+            </label>
+
+            <fieldset className="block">
+              <legend className="field-label">What they can see</legend>
+              <div className="mt-1.5 flex flex-wrap gap-2.5">
+                {(
+                  [
+                    ['affiliate', 'Their own links only'],
+                    ['admin', 'Everything, and can add people'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label
+                    key={value}
+                    className="pill-filter cursor-pointer"
+                    data-active={fields.role === value}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={value}
+                      checked={fields.role === value}
+                      onChange={() => set('role', value)}
+                      className="sr-only"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <span className="field-note">
+                {affiliate
+                  ? 'A six-character tracking key is generated with the account. It becomes the ?usr= on their links, and it decides which rows they can see.'
+                  : 'An admin sees every person’s numbers and is the only role that can create links, record approvals and add people.'}
+              </span>
+            </fieldset>
+
+            <label className="block">
+              <span className="field-label">Full name</span>
+              <input
+                className="field mt-1.5"
+                value={fields.fullName}
+                onChange={(e) => set('fullName', e.target.value)}
+                placeholder="Arthur Reyes"
+                autoComplete="off"
+              />
+              <span className="field-note">Optional. Only used to label them here.</span>
+            </label>
+
+            <label className="block">
+              <span className="field-label">Email</span>
+              <input
+                className="field mt-1.5"
+                type="email"
+                value={fields.email}
+                onChange={(e) => set('email', e.target.value)}
+                placeholder="arthur@example.com"
+                autoComplete="off"
+                aria-invalid={fieldErrors.email ? true : undefined}
+              />
+              <span className="field-note">
+                Optional, and nothing is sent to it. The password is handed over by you.
+              </span>
+              {fieldErrors.email ? <span className="field-error">{fieldErrors.email}</span> : null}
+            </label>
+
+            <div className="lg:col-span-2">
+              <button
+                type="submit"
+                className="btn-gold"
+                disabled={busy === 'create'}
+                aria-busy={busy === 'create'}
+              >
+                <BusyLabel busy={busy === 'create'} idle="Create account" busyLabel="Creating…" />
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
       {/* The list */}
-      <section className="rise panel mt-5 p-6 sm:p-8">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-          <h2 className="font-display text-[32px]">Accounts</h2>
-          <span className="text-[19px] text-ink-soft">
-            {rows.length} {rows.length === 1 ? 'account' : 'accounts'}
-          </span>
+      <div className="panel mt-5 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-edge px-5 py-3.5">
+          <div className="min-w-[180px] flex-1">
+            <label className="sr-only" htmlFor="account-search">
+              Search accounts
+            </label>
+            <input
+              id="account-search"
+              type="search"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search a username, name or email…"
+              className="field"
+            />
+          </div>
+
+          <label className="sr-only" htmlFor="account-role">
+            Filter accounts by role
+          </label>
+          <select
+            id="account-role"
+            value={role}
+            onChange={(e) => {
+              setRole(e.target.value as RoleFilter);
+              setPage(1);
+            }}
+            className="field w-auto"
+          >
+            <option value="all">All roles</option>
+            <option value="admin">Admin</option>
+            <option value="affiliate">Affiliate</option>
+          </select>
+
+          {/* The primary action sits in the toolbar rather than above it: this
+              panel is the whole page, and a button floating over it would have
+              nothing to belong to. */}
+          <button
+            type="button"
+            className="btn-gold"
+            aria-expanded={adding}
+            onClick={() => setAdding((open) => !open)}
+          >
+            {adding ? 'Close form' : '+ Add account'}
+          </button>
         </div>
 
         {rows.length === 0 ? (
-          <p className="py-10 text-center text-[19px] text-ink-soft">
+          <p className="px-5 py-16 text-center text-[13px] text-ink-soft">
             Nobody yet. You are signed in as <strong>{viewerUsername}</strong>, which comes from the
             environment rather than from this list.
           </p>
+        ) : matched.length === 0 ? (
+          <p className="px-5 py-16 text-center text-[13px] text-ink-soft">
+            Nothing matches{query ? ` “${query}”` : ''} in this view.
+          </p>
         ) : (
-          <ul className="mt-6 flex flex-col gap-4">
-            {visible.map((row) => {
-              const isSelf = row.id === viewerId;
-              const working = busy === row.id;
-              return (
-                <li
-                  key={row.id}
-                  className={`${row.active ? 'card-row-lit' : 'card-row'} flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6`}
-                >
-                  <span aria-hidden className="disc h-14 w-14 flex-none text-[19px]">
-                    {initialsOf(row.fullName || row.username)}
-                  </span>
+          <TableScroller label="Accounts" controlsClassName="px-5 pt-3">
+            <table className="w-full min-w-[1040px] border-collapse text-left">
+              <thead>
+                <tr className="bg-paper-card">
+                  <Th>Username</Th>
+                  <Th>Name</Th>
+                  <Th>Role</Th>
+                  <Th>Tracking key</Th>
+                  <Th>Last sign-in</Th>
+                  <Th align="right">Actions</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((row) => {
+                  const isSelf = row.id === viewerId;
+                  const working = busy === row.id;
+                  return (
+                    <tr key={row.id} className="divider-row last:border-0">
+                      <td className="px-5 py-3.5">
+                        <span className="flex items-center gap-2">
+                          <span className="tnum text-[13px] font-medium">{row.username}</span>
+                          {isSelf ? <span className="chip chip-quiet">You</span> : null}
+                        </span>
+                      </td>
 
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                      <span className="truncate text-[23px] font-semibold">{row.username}</span>
-                      <span className={row.role === 'admin' ? 'chip chip-gold' : 'chip chip-quiet'}>
-                        {row.role === 'admin' ? 'Admin' : `usr=${row.usr}`}
-                      </span>
-                      {row.active ? null : <span className="chip">Disabled</span>}
-                      {isSelf ? <span className="chip chip-quiet">You</span> : null}
-                    </span>
-                    <span className="mt-1 block truncate text-[18px] text-ink-soft">
-                      {row.fullName || 'No name given'}
-                      {row.email ? ` · ${row.email}` : ''}
-                      {row.lastLoginAt
-                        ? ` · last in ${new Date(row.lastLoginAt).toLocaleDateString()}`
-                        : ' · never signed in'}
-                    </span>
-                  </span>
+                      <td className="max-w-[220px] px-5 py-3.5">
+                        <span className="block truncate text-[14px]">
+                          {row.fullName || <span className="text-ink-dim">No name given</span>}
+                        </span>
+                        {row.email ? (
+                          <span className="mt-0.5 block truncate text-[11px] text-ink-dim">
+                            {row.email}
+                          </span>
+                        ) : null}
+                      </td>
 
-                  <span className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      className="btn-outline btn-sm"
-                      disabled={working}
-                      aria-busy={working && running === 'reset-password'}
-                      onClick={() => act(row, 'reset-password')}
-                    >
-                      <BusyLabel
-                        busy={working && running === 'reset-password'}
-                        idle="Reset password"
-                        busyLabel="Resetting…"
-                      />
-                    </button>
-                    {row.active ? (
-                      <button
-                        type="button"
-                        className="btn-quiet btn-sm"
-                        disabled={working || isSelf}
-                        aria-busy={working && running === 'disable'}
-                        title={isSelf ? 'You cannot disable your own account' : undefined}
-                        onClick={() => act(row, 'disable')}
-                      >
-                        <BusyLabel
-                          busy={working && running === 'disable'}
-                          idle="Disable"
-                          busyLabel="Disabling…"
-                        />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn-quiet btn-sm"
-                        disabled={working}
-                        aria-busy={working && running === 'enable'}
-                        onClick={() => act(row, 'enable')}
-                      >
-                        <BusyLabel
-                          busy={working && running === 'enable'}
-                          idle="Enable"
-                          busyLabel="Enabling…"
-                        />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn-danger btn-sm"
-                      disabled={working || isSelf}
-                      aria-busy={working && running === 'delete'}
-                      title={isSelf ? 'You cannot delete your own account' : undefined}
-                      onClick={() => remove(row)}
-                    >
-                      <BusyLabel
-                        busy={working && running === 'delete'}
-                        idle="Delete"
-                        busyLabel="Deleting…"
-                      />
-                    </button>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+                      <td className="px-5 py-3.5">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`chip chip-quiet ${row.role === 'admin' ? 'text-ink' : ''}`}
+                          >
+                            {row.role === 'admin' ? 'Admin' : 'Affiliate'}
+                          </span>
+                          {/* Disabled is the state worth interrupting for: the
+                              account is still listed and still cannot sign in. */}
+                          {row.active ? null : (
+                            <span className="chip border-alarm-edge bg-alarm-wash text-alarm">
+                              Disabled
+                            </span>
+                          )}
+                        </span>
+                      </td>
+
+                      <td className="tnum px-5 py-3.5 text-[12px] text-ink-dim">
+                        {row.usr ? `usr=${row.usr}` : '—'}
+                      </td>
+
+                      <td className="tnum px-5 py-3.5 text-[13px] text-ink-dim">
+                        {signInDate(row.lastLoginAt)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-5 py-2.5 text-right">
+                        <span className="inline-flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            className="btn-quiet btn-sm"
+                            disabled={working}
+                            aria-busy={working && running === 'reset-password'}
+                            onClick={() => act(row, 'reset-password')}
+                          >
+                            <BusyLabel
+                              busy={working && running === 'reset-password'}
+                              idle="Reset password"
+                              busyLabel="Resetting…"
+                            />
+                          </button>
+                          {row.active ? (
+                            <button
+                              type="button"
+                              className="btn-quiet btn-sm"
+                              disabled={working || isSelf}
+                              aria-busy={working && running === 'disable'}
+                              title={isSelf ? 'You cannot disable your own account' : undefined}
+                              onClick={() => act(row, 'disable')}
+                            >
+                              <BusyLabel
+                                busy={working && running === 'disable'}
+                                idle="Disable"
+                                busyLabel="Disabling…"
+                              />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn-quiet btn-sm"
+                              disabled={working}
+                              aria-busy={working && running === 'enable'}
+                              onClick={() => act(row, 'enable')}
+                            >
+                              <BusyLabel
+                                busy={working && running === 'enable'}
+                                idle="Enable"
+                                busyLabel="Enabling…"
+                              />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn-danger btn-sm"
+                            disabled={working || isSelf}
+                            aria-busy={working && running === 'delete'}
+                            title={isSelf ? 'You cannot delete your own account' : undefined}
+                            onClick={() => remove(row)}
+                          >
+                            <BusyLabel
+                              busy={working && running === 'delete'}
+                              idle="Delete"
+                              busyLabel="Deleting…"
+                            />
+                          </button>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableScroller>
         )}
 
         {/* Nothing to page through when there is nobody: the line above
             already says so, and better than a count of zero would. */}
         {rows.length > 0 ? (
           <Pager
-            total={rows.length}
+            total={matched.length}
             page={page}
             perPage={perPage}
             onPage={setPage}
             onPerPage={setPerPage}
             label="Accounts"
+            note={matched.length === rows.length ? '' : ` · ${rows.length} in total`}
+            className="border-t border-edge px-5 py-3"
           />
         ) : null}
-      </section>
+      </div>
     </div>
+  );
+}
+
+function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+  return (
+    <th
+      scope="col"
+      className={`label-cap border-b border-edge px-5 py-2.5 text-[10px] ${
+        align === 'right' ? 'text-right' : 'text-left'
+      }`}
+    >
+      {children}
+    </th>
   );
 }
 
@@ -479,10 +643,12 @@ const PasswordReveal = function PasswordReveal({
       ref={ref}
       tabIndex={-1}
       role="alert"
-      className="rise panel mt-5 border-2 p-6 sm:p-8"
-      style={{ borderColor: 'var(--color-gold-edge)' }}
+      /* The one panel in the app with a gold edge. Gold is the highlighter
+         everywhere else here, and this is the one thing on the page that has
+         to be read before it is scrolled past. */
+      className="panel mt-5 border-gold-edge p-5"
     >
-      <h2 className="font-display text-[30px]">
+      <h2 className="text-[16px]">
         {issued.reason === 'created' ? 'Account created' : 'New password'} for {issued.username}
       </h2>
       <p className="plain mt-2">
@@ -491,17 +657,17 @@ const PasswordReveal = function PasswordReveal({
       </p>
 
       {issued.usr ? (
-        <p className="plain mt-3">
+        <p className="plain mt-2">
           Their tracking key is{' '}
           <code className="tnum font-semibold text-ink">{issued.usr}</code> — it is already picked
-          for them on the create-a-link page, and it stays visible in the list below.
+          for them on the create-a-link page, and it stays in the list below.
         </p>
       ) : null}
 
-      <div className="mt-5 flex flex-wrap items-center gap-4">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         {/* Selectable text, not an input: there is nothing to edit, and select-all
             is the fallback when the clipboard is unavailable. */}
-        <code className="url-box tnum select-all text-[24px] font-semibold tracking-[0.08em]">
+        <code className="url-box tnum select-all text-[14px] font-semibold tracking-[0.08em]">
           {issued.password}
         </code>
         <button type="button" className="btn-primary" onClick={copy} aria-live="polite">

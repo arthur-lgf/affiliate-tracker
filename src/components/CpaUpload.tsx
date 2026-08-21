@@ -81,7 +81,7 @@ export function CpaUpload() {
         <label htmlFor="cpa-file" className={`btn-gold ${busy ? 'pointer-events-none' : ''}`}>
           <BusyLabel busy={busy} idle="Upload a new report" busyLabel="Reading the file…" />
         </label>
-        <p className="text-[18px] text-ink-soft">
+        <p className="text-[12px] text-ink-soft">
           The CPA report from QMP, saved as CSV. In Excel: File → Save As → CSV.
         </p>
       </div>
@@ -94,7 +94,7 @@ export function CpaUpload() {
       ) : null}
 
       {result ? (
-        <p role="status" className="mt-4 text-[19px] text-leaf-text">
+        <p role="status" className="mt-4 text-[13px] text-leaf-text">
           {result.rows.toLocaleString()} rate{result.rows === 1 ? '' : 's'} loaded
           {result.scaffold > 0
             ? `, and ${result.scaffold} grouping row${result.scaffold === 1 ? '' : 's'} skipped`

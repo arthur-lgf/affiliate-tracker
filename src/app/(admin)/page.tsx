@@ -148,7 +148,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       {/* Filters. Links rather than client state: the filter lives in the URL, so
           a view can be bookmarked and the table stays server-rendered. */}
       <section className="rise flex flex-wrap items-center gap-x-3 gap-y-3">
-        <span className="text-[19px] font-semibold text-ink-soft">Show me</span>
+        <span className="text-[13px] font-semibold text-ink-soft">Show me</span>
         {PERIODS.map((option) => {
           const params = new URLSearchParams();
           if (option.key !== 'month') params.set('period', option.key);
@@ -193,14 +193,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           {/* Clamped, not stepped: a money figure is one unbreakable token, so
               the type has to scale with the box or a seven-figure total pushes
               the whole page sideways on a phone. */}
-          <p className="tnum mt-4 font-display leading-[0.95] text-[clamp(2rem,9vw,5.125rem)]">
+          <p className="tnum mt-4 leading-[0.95] text-[28px]">
             {formatMoney(view.totals.earnings)}
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-4">
             <span className="chip chip-gold">
               {view.totals.approved} approved
             </span>
-            <span className="text-[20px] text-ink-soft">
+            <span className="text-[13px] text-ink-soft">
               from {view.totals.visits.toLocaleString()} visit
               {view.totals.visits === 1 ? '' : 's'}
             </span>
@@ -223,15 +223,21 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <EarningsChart series={view.series} />
       </section>
 
-      {/* Supporting figures. Each one says in words what it counts. */}
-      <section className="mt-5 grid gap-5 lg:grid-cols-3">
-        <StatCard
+      {/*
+        Supporting figures, as one strip rather than three cards.
+        They are read across, not one at a time — "64 visits, 2 approved, $240
+        each" is a single sentence — and three panels with gaps between them ask
+        the eye to start again at every gap. Each still says in words what it
+        counts.
+      */}
+      <section className="rise panel mt-5 grid grid-cols-1 sm:grid-cols-3">
+        <Kpi
           label="Visits"
           value={view.totals.visits.toLocaleString()}
           unit={`in ${periodLabel.toLowerCase()}`}
           plain="People who opened one of your links."
         />
-        <StatCard
+        <Kpi
           label="Approved"
           value={view.totals.approved.toLocaleString()}
           unit={
@@ -242,8 +248,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           plain="Visits the merchant agreed to pay for."
           delay={40}
         />
-        <StatCard
+        <Kpi
           label="Per approval"
+          last
           value={
             view.totals.approved > 0
               ? formatMoney(view.totals.earnings / view.totals.approved)
@@ -262,8 +269,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       {/* The table */}
       <section id="who-is-earning" className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-          <h2 className="font-display text-[32px]">Who is earning</h2>
-          <span className="text-[19px] text-ink-soft">
+          <h2 className="font-display text-[18px]">Who is earning</h2>
+          <span className="text-[13px] text-ink-soft">
             {view.rows.length} {view.rows.length === 1 ? 'person' : 'people'} ·{' '}
             {periodLabel.toLowerCase()}
           </span>
@@ -273,7 +280,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         </p>
 
         {view.rows.length === 0 ? (
-          <p className="py-12 text-center text-[19px] text-ink-soft">
+          <p className="py-12 text-center text-[13px] text-ink-soft">
             Nothing in this window. Try a longer period{usr ? ' or everyone' : ''}.
           </p>
         ) : (
@@ -285,7 +292,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
           <div>
-            <h2 className="font-display text-[32px]">Approvals</h2>
+            <h2 className="font-display text-[18px]">Approvals</h2>
             <p className="plain mt-1">
               {conversions.length > recentApprovals.length
                 ? `Latest ${recentApprovals.length} of ${conversions.length.toLocaleString()}.`
@@ -317,27 +324,40 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   );
 }
 
-function StatCard({
+/**
+ * One cell of the figures strip.
+ *
+ * The rule between cells is on the cell rather than the container so it can
+ * change direction: stacked on a phone the divider has to run underneath, and a
+ * container-level rule cannot know that. `last` drops it, because a trailing
+ * divider on the last cell doubles the panel's own border.
+ */
+function Kpi({
   label,
   value,
   unit,
   plain,
+  last = false,
   delay = 0,
 }: {
   label: string;
   value: string;
   unit: string;
   plain: string;
+  last?: boolean;
   delay?: number;
 }) {
   return (
-    <div className="rise panel p-6 sm:p-7" style={{ animationDelay: `${delay}ms` }}>
-      <h3 className="label-cap">{label}</h3>
-      <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className="tnum font-display text-[52px] leading-none sm:text-[58px]">{value}</span>
-        {unit ? <span className="text-[19px] text-ink-soft">{unit}</span> : null}
+    <div
+      className={`px-5 py-4 ${last ? '' : 'border-b border-edge-soft sm:border-b-0 sm:border-r'}`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <h3 className="label-cap text-[10px]">{label}</h3>
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="tnum text-[28px] font-medium leading-none tracking-[-0.02em]">{value}</span>
+        {unit ? <span className="text-[12px] text-ink-dim">{unit}</span> : null}
       </div>
-      <p className="plain mt-3">{plain}</p>
+      <p className="mt-1 text-[12px] text-ink-dim">{plain}</p>
     </div>
   );
 }

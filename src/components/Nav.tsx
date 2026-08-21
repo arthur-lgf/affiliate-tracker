@@ -42,12 +42,18 @@ function isActive(href: string, pathname: string): boolean {
   return pathname.startsWith('/links/new');
 }
 
-/** The header tabs. Hidden on phones, where the bar at the bottom takes over. */
+/**
+ * The header tabs. Hidden on phones, where the bar at the bottom takes over.
+ *
+ * No gap between them: these are underline tabs, and the underline has to run
+ * the width of the label it belongs to with nothing between it and the next
+ * one, or the row reads as a set of separate buttons again.
+ */
 export function Nav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Sections" className="hidden items-center gap-3 md:flex">
+    <nav aria-label="Sections" className="hidden items-stretch md:flex">
       {visibleItems(isAdmin).map((item) => (
         <Link
           key={item.href}
@@ -73,7 +79,7 @@ export function MobileTabs({ isAdmin }: { isAdmin: boolean }) {
   return (
     <nav
       aria-label="Sections"
-      className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-edge bg-panel pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-edge bg-panel pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <div className="flex items-stretch px-2">
         {visibleItems(isAdmin).map((item) => {
@@ -87,10 +93,10 @@ export function MobileTabs({ isAdmin }: { isAdmin: boolean }) {
             >
               <span
                 aria-hidden
-                className={`h-1.5 w-11 rounded-full ${active ? 'bg-leaf' : 'bg-edge-faint'}`}
+                className={`h-[2px] w-10 ${active ? 'bg-navy' : 'bg-edge-faint'}`}
               />
               <span
-                className={`text-[17px] ${active ? 'font-bold text-leaf' : 'text-ink-soft'}`}
+                className={`text-[12px] ${active ? 'font-semibold text-ink' : 'text-ink-dim'}`}
               >
                 {item.label}
               </span>

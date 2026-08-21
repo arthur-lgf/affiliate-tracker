@@ -91,7 +91,7 @@ export function LoginForm({ next }: { next: string }) {
           ref={errorRef}
           tabIndex={-1}
           role="alert"
-          className="mt-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[19px] font-semibold text-alarm outline-none"
+          className="mt-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[13px] font-semibold text-alarm outline-none"
         >
           {error}
         </p>
@@ -101,7 +101,7 @@ export function LoginForm({ next }: { next: string }) {
         type="submit"
         disabled={busy}
         aria-busy={busy}
-        className="btn-primary mt-8 w-full text-[21px]"
+        className="btn-primary mt-8 w-full text-[14px]"
       >
         <BusyLabel busy={busy} idle="Sign in" busyLabel="Signing in…" />
       </button>

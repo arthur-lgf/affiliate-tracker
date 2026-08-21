@@ -65,8 +65,8 @@ export default async function UsersPage() {
   return (
     <div className="w-full">
       <div className="rise">
-        <h1 className="font-display leading-[1.05] text-[clamp(1.75rem,7vw,3rem)]">People</h1>
-        <p className="mt-3 max-w-[680px] text-[20px] leading-relaxed text-ink-soft">
+        <h1 className="font-display leading-[1.05] text-[26px]">People</h1>
+        <p className="mt-3 max-w-[680px] text-[13px] leading-relaxed text-ink-soft">
           Everyone who can sign in. An affiliate account is tied to one tracking key and sees only
           the links, leads and earnings recorded against it. An admin sees all of it.
         </p>

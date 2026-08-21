@@ -228,7 +228,7 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
       </div>
 
       {matched.length === 0 ? (
-        <p className="mt-8 rounded-[20px] border-2 border-dashed border-edge-strong bg-panel px-6 py-16 text-center text-[20px] text-ink-soft">
+        <p className="mt-8 rounded-[20px] border-2 border-dashed border-edge-strong bg-panel px-6 py-16 text-center text-[13px] text-ink-soft">
           {groups.length === 0
             ? 'No rates uploaded yet.'
             : `Nothing matches${query ? ` “${query}”` : ''}.`}
@@ -241,7 +241,7 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
             }`}
           >
             <thead>
-              <tr className="border-b-2 border-edge">
+              <tr className="bg-paper-card">
                 {columns.map((column) => (
                   <SortHeader
                     key={column.key}
@@ -281,13 +281,13 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                         group.tiered ? 'border-t-2 border-edge-faint' : 'divider-row'
                       } ${band}`}
                     >
-                      <td className="max-w-[200px] truncate px-3 py-3 text-[18px] text-ink-soft">
+                      <td className="max-w-[200px] truncate px-3 py-3 text-[12px] text-ink-soft">
                         {group.issuer || BLANK}
                       </td>
-                      <td className="max-w-[380px] px-3 py-3 text-[19px] font-semibold">
+                      <td className="max-w-[380px] px-3 py-3 text-[13px] font-semibold">
                         {group.card}
                       </td>
-                      <td className="px-3 py-3 text-[18px]">
+                      <td className="px-3 py-3 text-[12px]">
                         {group.tiered ? (
                           <button
                             type="button"
@@ -327,7 +327,7 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
                                 ungrouped one. */}
                             <td />
                             <td />
-                            <td className="whitespace-nowrap px-3 py-3 text-[18px]">
+                            <td className="whitespace-nowrap px-3 py-3 text-[12px]">
                               <span aria-hidden className="mr-2 text-ink-dim">
                                 ↳
                               </span>
@@ -379,8 +379,8 @@ function Money({ value, lead = false }: { value: number | null; lead?: boolean }
     <td
       className={
         lead
-          ? 'tnum px-3 py-3 text-right font-display text-[26px] font-semibold'
-          : 'tnum px-3 py-3 text-right text-[18px] text-ink-soft'
+          ? 'tnum px-3 py-3 text-right font-display text-[15px] font-semibold'
+          : 'tnum px-3 py-3 text-right text-[12px] text-ink-soft'
       }
     >
       {value === null ? <span className="text-ink-dim">{BLANK}</span> : formatMoney(value)}
@@ -390,7 +390,7 @@ function Money({ value, lead = false }: { value: number | null; lead?: boolean }
 
 function Change({ value }: { value: number | null }) {
   return (
-    <td className="tnum px-3 py-3 text-right text-[18px]">
+    <td className="tnum px-3 py-3 text-right text-[12px]">
       {value === null ? (
         <span className="text-ink-dim">{BLANK}</span>
       ) : (
@@ -405,7 +405,7 @@ function Change({ value }: { value: number | null }) {
 
 function Changed({ value }: { value: string }) {
   return (
-    <td className="whitespace-nowrap px-3 py-3 text-right text-[18px] text-ink-soft">
+    <td className="whitespace-nowrap px-3 py-3 text-right text-[12px] text-ink-soft">
       {value ? formatDay(value) : BLANK}
     </td>
   );

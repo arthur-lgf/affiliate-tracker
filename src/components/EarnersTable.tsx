@@ -57,7 +57,7 @@ export function EarnersTable({
       <TableScroller className="mt-5" label="Who is earning">
         <table className={`w-full border-collapse text-left ${gross ? 'min-w-[980px]' : 'min-w-[820px]'}`}>
           <thead>
-            <tr className="border-b-2 border-edge">
+            <tr className="bg-paper-card">
               <Th>Person</Th>
               <Th align="right">Visits</Th>
               <Th align="right">Approved</Th>
@@ -66,46 +66,46 @@ export function EarnersTable({
               {/* Deliberately empty: every button in the column carries its
                   own "Open <person>" label, so a header here would only
                   repeat itself once per row. */}
-              <th className="pb-3" />
+              <th className="border-b border-edge bg-paper-card px-5 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {visible.map((row) => (
               <tr key={row.key} className="divider-row last:border-0">
-                <td className="py-5 pr-4">
-                  <div className="flex items-center gap-4.5">
-                    <span aria-hidden className="disc h-14 w-14 text-[19px]">
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <span aria-hidden className="disc h-8 w-8 text-[11px]">
                       {row.usr ? initialsOf(row.person) : 'H'}
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[23px] font-semibold">{row.person}</span>
-                      <span className="mt-1 block truncate text-[18px] text-ink-soft">
+                      <span className="block truncate text-[14px] font-medium">{row.person}</span>
+                      <span className="mt-0.5 block truncate text-[12px] text-ink-dim">
                         {row.cardCount} card{row.cardCount === 1 ? '' : 's'}
                         {row.usr ? ` · usr=${row.usr}` : ' · no usr'}
                       </span>
                     </span>
                   </div>
                 </td>
-                <td className="tnum py-5 pr-4 text-right text-[28px] font-semibold">
+                <td className="tnum px-5 py-3.5 text-right text-[16px] font-semibold">
                   {row.visits.toLocaleString()}
                 </td>
-                <td className="py-5 pr-4 text-right">
-                  <span className="tnum block text-[28px] font-semibold">{row.approved}</span>
+                <td className="px-5 py-3.5 text-right">
+                  <span className="tnum block text-[16px] font-semibold">{row.approved}</span>
                   {row.visits > 0 && row.approved > 0 ? (
-                    <span className="mt-0.5 block text-[17px] text-ink-soft">
+                    <span className="mt-0.5 block text-[12px] text-ink-soft">
                       {formatPercent(row.approvalRate, 1)} of visits
                     </span>
                   ) : null}
                 </td>
                 {gross ? (
-                  <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
+                  <td className="tnum px-5 py-3.5 text-right text-[16px] font-semibold">
                     {formatMoney(row.earnings)}
                   </td>
                 ) : null}
-                <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
+                <td className="tnum px-5 py-3.5 text-right text-[16px] font-semibold">
                   {formatMoney(revenueFrom(row.earnings, gross))}
                 </td>
-                <td className="py-5 text-right">
+                <td className="px-5 py-3.5 text-right">
                   {/* One link per row rather than a whole-row target: the
                       thing you can click is then something you can see. */}
                   <Link
@@ -120,36 +120,36 @@ export function EarnersTable({
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-edge-strong">
-              <td className="py-5 text-[21px] font-bold">
+            <tr className="border-t border-edge bg-paper-card">
+              <td className="px-5 py-3.5 text-[13px] font-semibold uppercase tracking-[0.03em]">
                 Total
                 {/* The footer has always been the whole window, and now that the
                     rows above it are one page of it, that has to be said out
                     loud or it reads as a broken sum. */}
                 {rows.length > visible.length ? (
-                  <span className="mt-1 block text-[17px] font-normal text-ink-soft">
+                  <span className="mt-1 block text-[12px] font-normal text-ink-soft">
                     everyone, not just this page
                   </span>
                 ) : null}
               </td>
-              <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
+              <td className="tnum px-5 py-3.5 text-right text-[15px] font-semibold">
                 {totals.visits.toLocaleString()}
               </td>
-              <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
+              <td className="tnum px-5 py-3.5 text-right text-[15px] font-semibold">
                 {totals.approved.toLocaleString()}
               </td>
               {gross ? (
-                <td className="py-5 pr-4 text-right">
-                  <span className="mark tnum font-display text-[30px] font-bold">
+                <td className="px-5 py-3.5 text-right">
+                  <span className="mark tnum text-[16px] font-bold">
                     {formatMoney(totals.earnings)}
                   </span>
                 </td>
               ) : null}
               {/* The highlighter follows the figure that matters, which on an
                   affiliate's own page is this one. */}
-              <td className="py-5 pr-4 text-right">
+              <td className="px-5 py-3.5 text-right">
                 <span
-                  className={`tnum font-display text-[30px] font-bold ${gross ? '' : 'mark'}`}
+                  className={`tnum text-[16px] font-bold ${gross ? '' : 'mark'}`}
                 >
                   {formatMoney(affiliateRevenue)}
                 </span>
@@ -176,7 +176,9 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
   return (
     <th
       scope="col"
-      className={`label-cap pb-3 pr-4 ${align === 'right' ? 'text-right' : 'text-left'}`}
+      className={`label-cap border-b border-edge px-5 py-2.5 text-[10px] ${
+        align === 'right' ? 'text-right' : 'text-left'
+      }`}
     >
       {children}
     </th>

@@ -122,12 +122,12 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
         <div className="mx-auto mb-7 h-1.5 w-28 overflow-hidden rounded-full bg-edge-soft">
           <div className="draw-loop h-full w-full bg-leaf" />
         </div>
-        <p className="font-display text-[36px] leading-tight">
+        <p className="font-display text-[22px] leading-tight">
           Thanks, {fullName.trim().split(' ')[0]}.
         </p>
-        <p className="mt-3 text-[20px] text-ink-soft">Taking you there now…</p>
+        <p className="mt-3 text-[13px] text-ink-soft">Taking you there now…</p>
         {redirectUrl ? (
-          <a href={redirectUrl} className="link-text mt-7 inline-block text-[19px]">
+          <a href={redirectUrl} className="link-text mt-7 inline-block text-[13px]">
             Continue manually ↗
           </a>
         ) : null}
@@ -140,7 +140,7 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
       {formError ? (
         <p
           role="alert"
-          className="mb-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[19px] font-semibold text-alarm"
+          className="mb-6 rounded-2xl border-2 border-alarm bg-alarm-wash px-5 py-4 text-[13px] font-semibold text-alarm"
         >
           {formError}
         </p>
@@ -237,14 +237,14 @@ export function LeadForm({ slug, usr, requirePhone, ctaLabel }: Props) {
           has to cover the request itself. */}
       <button
         type="submit"
-        className="btn-gold mt-8 w-full text-[21px]"
+        className="btn-gold mt-8 w-full text-[14px]"
         disabled={status === 'saving'}
         aria-busy={status === 'saving'}
       >
         <BusyLabel busy={status === 'saving'} idle={ctaLabel} busyLabel="Saving…" />
       </button>
 
-      <p className="mt-4 text-center text-[18px] leading-relaxed text-ink-soft">
+      <p className="mt-4 text-center text-[12px] leading-relaxed text-ink-soft">
         We only use your details to follow up about this offer.
       </p>
     </form>
@@ -270,7 +270,7 @@ function LeadField({
         <label className="field-label" htmlFor={htmlFor}>
           {label}
         </label>
-        {hint ? <span className="text-[18px] text-ink-soft">{hint}</span> : null}
+        {hint ? <span className="text-[12px] text-ink-soft">{hint}</span> : null}
       </div>
       <div className="mt-2.5">{children}</div>
       {error ? (

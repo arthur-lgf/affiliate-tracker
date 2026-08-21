@@ -22,8 +22,21 @@ function firstValue(value: string | string[] | undefined): string {
   return value ?? '';
 }
 
-/** What the tool is, said once, for the panel beside the form. */
-const COVERS = ['Links', 'Visits', 'Approvals', 'Earnings'];
+/**
+ * What the tool holds, as four figures along the foot of the panel.
+ *
+ * Counts rather than a list of words: this page is the front door of a
+ * reporting tool, and four numbers say what kind of tool it is faster than four
+ * nouns do. They are deliberately not live — nothing signed out should be able
+ * to read how much anybody earned — so they are the shape of the thing, not a
+ * report.
+ */
+const COVERS: { label: string; value: string }[] = [
+  { label: 'Links', value: 'Assigned' },
+  { label: 'Visits', value: 'Counted' },
+  { label: 'Approvals', value: 'Logged' },
+  { label: 'Earnings', value: 'Split' },
+];
 
 export default async function LoginPage({ searchParams }: PageProps) {
   const query = await searchParams;
@@ -39,33 +52,29 @@ export default async function LoginPage({ searchParams }: PageProps) {
     <main className="min-h-screen bg-paper lg:grid lg:min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       {/* The panel. On a phone it collapses to a band above the form rather
           than eating the first screenful. */}
-      <div className="flex flex-col justify-between gap-10 bg-leaf px-6 py-10 text-white sm:px-10 lg:px-14 lg:py-14">
-        <div className="flex items-center gap-3.5">
-          <span aria-hidden className="h-9 w-9 flex-none rounded-full border-2 border-ink bg-gold" />
-          <span className="font-display text-[30px] leading-none">Ledger</span>
+      <div className="flex flex-col justify-between gap-10 bg-navy px-6 py-10 text-white sm:px-10 lg:px-11 lg:py-11">
+        <div className="flex items-center gap-2.5">
+          <span aria-hidden className="h-[18px] w-[18px] flex-none bg-gold" />
+          <span className="text-[15px] font-semibold tracking-[0.02em]">Ledger</span>
         </div>
 
         <div className="hidden lg:block">
-          <h2 className="font-display text-[clamp(2.25rem,4vw,3.25rem)] leading-[1.05]">
-            Every click,
-            <br />
-            every approval,
-            <br />
-            <span className="text-gold">every payout.</span>
+          <h2 className="max-w-[460px] text-[40px] font-semibold leading-[1.12] tracking-[-0.02em]">
+            Every click, every approval, every payout.
           </h2>
-          <p className="mt-6 max-w-[420px] text-[21px] leading-relaxed text-leaf-edge">
+          <p className="mt-4 max-w-[420px] text-[15px] leading-relaxed text-navy-soft">
             Affiliate links assigned to the people who own the traffic, with the earnings that came
             back from them.
           </p>
         </div>
 
-        <ul className="flex flex-wrap gap-3">
+        <ul className="grid grid-cols-2 gap-x-8 gap-y-5 border-t border-navy-rule pt-5 sm:grid-cols-4">
           {COVERS.map((item) => (
-            <li
-              key={item}
-              className="rounded-full border-2 border-leaf-edge/40 px-5 py-2.5 text-[18px] font-semibold text-leaf-edge"
-            >
-              {item}
+            <li key={item.label}>
+              <span className="tnum block text-[18px] font-medium">{item.value}</span>
+              <span className="mt-1 block text-[11px] uppercase tracking-[0.08em] text-navy-dim">
+                {item.label}
+              </span>
             </li>
           ))}
         </ul>
@@ -73,15 +82,13 @@ export default async function LoginPage({ searchParams }: PageProps) {
 
       {/* The form */}
       <div className="flex items-center justify-center px-6 py-12 sm:px-10 lg:py-14">
-        <div className="w-full max-w-[480px]">
+        <div className="panel w-full max-w-[380px] p-7">
           <p className="label-cap">Admin access</p>
-          <h1 className="mt-4 font-display text-[clamp(2rem,5vw,2.875rem)] leading-[1.05]">
-            Sign in to Ledger
-          </h1>
+          <h1 className="mt-2 text-[22px] font-semibold leading-[1.15]">Sign in to Ledger</h1>
 
           {configured ? (
             <>
-              <p className="mt-4 text-[21px] leading-relaxed text-ink-soft">
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-dim">
                 The dashboard holds what each person earned, so it asks who you are first.
               </p>
 
@@ -90,7 +97,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
           ) : (
             /* No password configured. Saying so beats a form that can only fail. */
             <>
-              <p className="mt-4 text-[21px] leading-relaxed text-ink-soft">
+              <p className="mt-4 text-[14px] leading-relaxed text-ink-soft">
                 No password is set on this deployment, so the dashboard is open and there is
                 nothing to sign in to.
               </p>

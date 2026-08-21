@@ -208,7 +208,7 @@ export function CampaignSettings({
       </ul>
 
       {rows.length === 0 ? (
-        <p className="py-10 text-center text-[19px] text-ink-soft">
+        <p className="py-10 text-center text-[13px] text-ink-soft">
           No campaigns. Add one and the link form will offer it.
         </p>
       ) : null}
@@ -228,13 +228,13 @@ export function CampaignSettings({
         </button>
 
         {problemCount > 0 ? (
-          <span className="text-[19px] font-semibold text-alarm">
+          <span className="text-[13px] font-semibold text-alarm">
             {problemCount} row{problemCount === 1 ? '' : 's'} to fix first
           </span>
         ) : dirty ? (
-          <span className="text-[19px] text-ink-soft">Unsaved changes</span>
+          <span className="text-[13px] text-ink-soft">Unsaved changes</span>
         ) : saved ? (
-          <span role="status" className="text-[19px] font-semibold text-leaf-text">
+          <span role="status" className="text-[13px] font-semibold text-leaf-text">
             {saved}
           </span>
         ) : null}

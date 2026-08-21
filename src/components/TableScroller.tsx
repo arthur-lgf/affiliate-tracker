@@ -22,11 +22,18 @@ export function TableScroller({
   children,
   label,
   className = '',
+  controlsClassName = '',
 }: {
   children: ReactNode;
   /** Names the region for a screen reader, e.g. "Report rows". */
   label: string;
   className?: string;
+  /**
+   * Padding for the row of scroll buttons. Empty when the table stands on the
+   * page; a panel that draws its own edges has no padding of its own, so a
+   * table inside one passes the inset it wants the buttons to keep.
+   */
+  controlsClassName?: string;
 }) {
   const window_ = useRef<HTMLDivElement>(null);
   const [ends, setEnds] = useState({ left: false, right: false });
@@ -83,7 +90,7 @@ export function TableScroller({
   return (
     <div className={className}>
       {overflows ? (
-        <div className="flex flex-wrap items-center gap-3">
+        <div className={`flex flex-wrap items-center gap-3 ${controlsClassName}`}>
           <span className="label-cap">Scroll</span>
           <button
             type="button"

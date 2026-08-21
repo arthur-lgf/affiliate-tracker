@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { LinksBrowser, type LinkRow } from '@/components/LinksBrowser';
+import { SharingRule } from '@/components/SharingRule';
 import { countsByLink, linkKey } from '@/lib/analytics';
 import { captureFormEnabled, configuredBaseUrl } from '@/lib/config';
 import { loadAll } from '@/lib/load';
@@ -39,10 +40,10 @@ export default async function LinksPage() {
     <div className="w-full">
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         <div>
-          <h1 className="font-display text-[38px] leading-[1.05] sm:text-[46px]">
+          <h1 className="font-display text-[26px] leading-[1.15]">
             {isAdmin ? 'Affiliate links' : 'Your links'}
           </h1>
-          <p className="mt-2.5 text-[20px] text-ink-soft">
+          <p className="mt-2.5 text-[13px] text-ink-soft">
             {links.length === 0
               ? 'Nothing here yet.'
               : `${links.length} link${links.length === 1 ? '' : 's'} · ${live} live, ${
@@ -61,14 +62,9 @@ export default async function LinksPage() {
         Where the rule is read is where the link is copied, which is this page.
         Shown whether or not there are any links yet, and to admins as well as
         affiliates: it is a standing rule about how these are shared, not a
-        warning about a particular one, and the person most in need of reading
-        it is the one who has not shared anything yet.
+        warning about a particular one.
       */}
-      <p className="plain-note mt-6">
-        <strong>Do not post these links publicly.</strong> Not on YouTube, Instagram, Facebook,
-        TikTok, X, Reddit, or anywhere else open to the public. Send them directly to the person you
-        are working with.
-      </p>
+      <SharingRule />
 
       {links.length === 0 ? (
         <div className="mt-8">

@@ -38,8 +38,8 @@ export function ApprovalsList({
             className="card-row-lit flex flex-wrap items-center gap-x-6 gap-y-4 p-5 sm:px-6"
           >
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[22px] font-semibold">{row.person}</span>
-              <span className="mt-0.5 block truncate text-[18px] text-ink-soft">
+              <span className="block truncate text-[14px] font-semibold">{row.person}</span>
+              <span className="mt-0.5 block truncate text-[12px] text-ink-soft">
                 {row.card} ·{' '}
                 <span className={row.client === '-' ? 'text-ink-dim' : undefined}>
                   {row.client}
@@ -47,8 +47,8 @@ export function ApprovalsList({
                 {row.note ? ` · ${row.note}` : ''}
               </span>
             </span>
-            <span className="text-[19px] text-ink-soft">{formatDay(row.approvedOn)}</span>
-            <span className="tnum min-w-[110px] text-right font-display text-[30px] font-semibold">
+            <span className="text-[13px] text-ink-soft">{formatDay(row.approvedOn)}</span>
+            <span className="tnum min-w-[110px] text-right text-[16px] font-semibold">
               {formatMoney(row.amount)}
             </span>
             {canEdit ? <DeleteApproval id={row.id} label={`${row.person} · ${row.card}`} /> : null}
