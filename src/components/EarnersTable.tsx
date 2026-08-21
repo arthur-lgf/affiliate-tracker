@@ -62,7 +62,7 @@ export function EarnersTable({
               <Th align="right">Visits</Th>
               <Th align="right">Approved</Th>
               {gross ? <Th align="right">Amount</Th> : null}
-              <Th align="right">Potential revenue</Th>
+              <Th align="right">Affiliate revenue</Th>
               {/* Deliberately empty: every button in the column carries its
                   own "Open <person>" label, so a header here would only
                   repeat itself once per row. */}

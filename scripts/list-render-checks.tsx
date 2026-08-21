@@ -160,7 +160,7 @@ const table = renderToStaticMarkup(
 );
 check('ten people to a page', (table.match(/<tr class="divider-row/g) || []).length === 10);
 check('the money column is called Amount now', table.includes('>Amount</th>'));
-check('and it is joined by what the affiliate stands to make', table.includes('>Potential revenue</th>'));
+check('and it is joined by the affiliate share', table.includes('>Affiliate revenue</th>'));
 check('earnings is not a column heading any more', !table.includes('>Total earnings</th>'));
 check('a row shows half of its own amount', table.includes(formatMoney(affiliateRevenueOf(12.35))));
 // The footer is the whole window, not the page, and it says so.
@@ -183,7 +183,7 @@ const ownTable = renderToStaticMarkup(
   />,
 );
 check('an affiliate is shown no Amount column', !ownTable.includes('>Amount</th>'));
-check('but still the potential revenue', ownTable.includes('>Potential revenue</th>'));
+check('but still the affiliate revenue', ownTable.includes('>Affiliate revenue</th>'));
 check('their row is their half, not a quarter of it', ownTable.includes(formatMoney(affiliateRevenueOf(12.35))));
 check(
   'and the merchant gross is nowhere in the page',
