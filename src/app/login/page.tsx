@@ -86,11 +86,6 @@ export default async function LoginPage({ searchParams }: PageProps) {
               </p>
 
               <LoginForm next={next} />
-
-              <p className="plain mt-8">
-                Your username and password are set by whoever deployed this — there is no sign-up
-                and no password reset here.
-              </p>
             </>
           ) : (
             /* No password configured. Saying so beats a form that can only fail. */

@@ -2,24 +2,26 @@ import Link from 'next/link';
 import { MobileTabs, Nav } from '@/components/Nav';
 import { SignOutButton } from '@/components/SignOutButton';
 import { authConfigured } from '@/lib/auth';
-import { storageStatus } from '@/lib/store';
+import { storageStatus, type StorageStatus } from '@/lib/store';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
 
-/* The storage badge. Each carries its own words as well as its own colour —
-   three dots that differ only in hue is not a status anyone can read. */
-const STORAGE = {
-  supabase: {
-    text: 'Database connected',
-    dot: 'var(--color-leaf-live)',
-    className: 'chip chip-live',
-  },
-  sheets: {
-    text: 'Sheets connected',
-    dot: 'var(--color-leaf-live)',
-    className: 'chip chip-live',
-  },
+/*
+ * The storage badge, which now says nothing when there is nothing to say.
+ *
+ * It used to sit there reading "Database connected" on every page of every
+ * working day — a permanent green light confirming that the normal thing was
+ * happening, which is a sentence nobody needs twice, let alone a thousand
+ * times. The two states left are the ones worth interrupting for: rows going to
+ * a file on somebody's laptop, and no store configured at all.
+ *
+ * Each carries its own words as well as its own colour — two dots that differ
+ * only in hue is not a status anyone can read.
+ */
+type Badge = { text: string; dot: string; className: string };
+
+const STORAGE: Partial<Record<StorageStatus, Badge>> = {
   local: {
     text: 'Local storage',
     dot: 'var(--color-ink-dim)',
@@ -30,11 +32,11 @@ const STORAGE = {
     dot: 'var(--color-gold-edge)',
     className: 'chip',
   },
-} as const;
+};
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const status = storageStatus();
-  const badge = STORAGE[status];
+  // Undefined on a healthy deployment, which is the point.
+  const badge = STORAGE[storageStatus()];
   // Resolved here as well as in each page. The layout renders the navigation,
   // and a nav built from an unverified guess at who is looking is a nav that
   // offers an affiliate the admin tabs.
@@ -61,14 +63,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
           <div className="flex min-w-0 items-center gap-4">
             <Nav isAdmin={isAdmin} />
-            <span className={`${badge.className} hidden lg:inline-flex`}>
-              <span
-                aria-hidden
-                className="h-3 w-3 flex-none rounded-full"
-                style={{ background: badge.dot }}
-              />
-              {badge.text}
-            </span>
+            {badge ? (
+              <span className={`${badge.className} hidden lg:inline-flex`}>
+                <span
+                  aria-hidden
+                  className="h-3 w-3 flex-none rounded-full"
+                  style={{ background: badge.dot }}
+                />
+                {badge.text}
+              </span>
+            ) : null}
             {/* Who you are signed in as. An affiliate sees a filtered version of
                 every figure on every page, so the one thing that must never be
                 ambiguous is whose numbers these are. */}

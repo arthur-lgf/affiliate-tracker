@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isSendableUrl } from './campaigns';
 import { RESERVED_SLUGS } from './config';
 import { LEAD_STATUSES } from './status';
 
@@ -207,6 +208,34 @@ export type NewUserInput = z.infer<typeof newUserSchema>;
 /** The three things an admin may do to an existing account. */
 export const userPatchSchema = z.object({
   action: z.enum(['reset-password', 'enable', 'disable']),
+});
+
+/**
+ * The campaign list, as the settings page posts it.
+ *
+ * A blank destination is allowed and means "a category with no URL yet", which
+ * is what every campaign was before this list had URLs at all. Anything else
+ * has to be a real http(s) address, because the only thing done with it is to
+ * send a person there.
+ */
+export const campaignsInputSchema = z.object({
+  campaigns: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .trim()
+          .min(1, 'Give the campaign a name')
+          .max(80, 'Name must be 80 characters or fewer'),
+        destination: z
+          .string()
+          .trim()
+          .max(2000, 'That URL is too long')
+          .refine((value) => value === '' || isSendableUrl(value), 'Enter a full URL including https://')
+          .default(''),
+      }),
+    )
+    .max(200, 'That is more campaigns than this list is meant to hold'),
 });
 
 /** Flatten a ZodError into `{ field: message }` for form rendering. */

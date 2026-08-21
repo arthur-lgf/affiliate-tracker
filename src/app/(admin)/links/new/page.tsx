@@ -3,10 +3,11 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { LinkForm, type KnownPerson } from '@/components/LinkForm';
 import { linkKey } from '@/lib/analytics';
+import { defaultCampaigns, type CampaignOption } from '@/lib/campaigns';
 import { captureFormEnabled, configuredBaseUrl } from '@/lib/config';
 import { loadAll } from '@/lib/load';
 import { originFromHeaders } from '@/lib/request';
-import { storageStatus } from '@/lib/store';
+import { getStore, storageStatus } from '@/lib/store';
 import { findUserById, listUsers, usersEnabled } from '@/lib/users';
 import { requireViewer } from '@/lib/viewer';
 
@@ -81,6 +82,25 @@ export default async function NewLinkPage() {
     people.push(...seen.values());
   }
 
+  /*
+   * The offers this link can point at, and where each one sends people.
+   *
+   * Read here rather than fetched by the form: it is a short list the page
+   * already has a server round trip for, and a picker that populates a moment
+   * after the form appears invites a submit in between.
+   *
+   * A store that will not answer falls back to the built-in category names, so
+   * the worst case is the form this page had before campaigns had URLs — not a
+   * form with no campaigns at all.
+   */
+  let campaigns: CampaignOption[] = [];
+  try {
+    campaigns = await getStore().listCampaigns();
+  } catch {
+    // Fall through to the defaults below.
+  }
+  if (campaigns.length === 0) campaigns = defaultCampaigns();
+
   // The affiliate's own name and email, to prefill the fields that carry them.
   // Best effort: none of it decides ownership, which comes from the session.
   let lockedTo: KnownPerson | null = null;
@@ -105,6 +125,7 @@ export default async function NewLinkPage() {
     <div className="w-full">
       <LinkForm
         origin={origin}
+        campaigns={campaigns}
         people={people}
         lockedTo={lockedTo}
         takenSlugKeys={links.map(linkKey)}

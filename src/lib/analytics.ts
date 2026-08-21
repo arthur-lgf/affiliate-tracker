@@ -888,6 +888,22 @@ export function affiliateRevenueOf(amount: number): number {
   return Math.round(amount * AFFILIATE_SHARE * 100) / 100;
 }
 
+/**
+ * The affiliate's half of a figure that may already be it.
+ *
+ * Every payout reaches a screen as one of two things: the merchant's gross, or
+ * the affiliate's share of it. Which one depends on who is reading — see
+ * `loadAll`, where an affiliate's rows are halved before they ever leave the
+ * server — and every place that prints the share has to know which it was
+ * handed, or it halves a half.
+ *
+ * One function so that question is answered the same way everywhere. `gross`
+ * is the answer to "is this the merchant's number?", not "may I see it".
+ */
+export function revenueFrom(earnings: number, gross: boolean): number {
+  return gross ? affiliateRevenueOf(earnings) : earnings;
+}
+
 /** Whole-unit currency for dense table cells: 1250 → "$1,250". */
 export function formatMoney(value: number): string {
   const rounded = Math.round(value * 100) / 100;

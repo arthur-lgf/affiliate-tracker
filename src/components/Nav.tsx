@@ -15,9 +15,10 @@ const ITEMS: Item[] = [
   // Everyone: an affiliate quoting a card needs to know what it pays as much
   // as an admin does, and none of it is anybody's personal data. Only the
   // upload on that page is admin-only, and the route enforces that itself.
-  { href: '/cpa', label: 'CPA', },
+  { href: '/cpa', label: 'Cards' },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
+  { href: '/settings', label: 'Settings', adminOnly: true },
 ];
 
 /**
@@ -37,6 +38,7 @@ function isActive(href: string, pathname: string): boolean {
   if (href === '/cpa') return pathname.startsWith('/cpa');
   if (href === '/reports') return pathname.startsWith('/reports');
   if (href === '/users') return pathname.startsWith('/users');
+  if (href === '/settings') return pathname.startsWith('/settings');
   return pathname.startsWith('/links/new');
 }
 

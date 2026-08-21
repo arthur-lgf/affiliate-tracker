@@ -9,6 +9,7 @@
 //   npx tsx scripts/cpa-checks.ts
 import {
   parseAmount,
+  ratesForViewer,
   parseCpaExport,
   parseDay,
   parseDelimited,
@@ -145,6 +146,50 @@ check('a shuffled card is put back in tier order',
   shuffled.map((r) => r.issuer + r.tier).join('|') === 'ATier 1|ATier 3|BTier 1|BTier 2');
 check('and its rows end up next to each other',
   shuffled[0]!.card === shuffled[1]!.card && shuffled[2]!.card === shuffled[3]!.card);
+
+console.log('\n— the rate card, cut to who is reading it —');
+/*
+ * An affiliate is shown their half and nothing else. The merchant's rate, what
+ * it used to be and how it moved are dropped here rather than hidden in the
+ * table, so they are not sitting in the page source of a browser that was never
+ * meant to have them.
+ */
+const rate = {
+  placement: '714025 - LGF',
+  issuer: 'AmEx',
+  card: 'Platinum',
+  tier: 'Tier 2',
+  current: 540,
+  previous: 360,
+  change: 0.5,
+  changedOn: '2026-07-01',
+};
+
+const asAdmin = ratesForViewer([rate], true)[0]!;
+check('an admin keeps what the merchant pays', asAdmin.current === 540);
+check('and what it paid before', asAdmin.previous === 360);
+check('and how it moved', asAdmin.change === 0.5);
+check('and is told the half as well', asAdmin.revenue === 270);
+
+const asAffiliate = ratesForViewer([rate], false)[0]!;
+check('an affiliate is told their half', asAffiliate.revenue === 270);
+check('and never what the merchant pays', asAffiliate.current === null);
+check('nor what it paid before', asAffiliate.previous === null);
+check('nor how it moved', asAffiliate.change === null);
+check('the card is still named', asAffiliate.issuer === 'AmEx' && asAffiliate.card === 'Platinum');
+check('and so is the tier, which decides the payout', asAffiliate.tier === 'Tier 2');
+check('the day it changed is not a payout', asAffiliate.changedOn === '2026-07-01');
+
+// The placement is one string repeated down every row of the export. It has
+// never been shown and it does not start now.
+check('the placement is dropped for everybody', !('placement' in asAdmin) && !('placement' in asAffiliate));
+
+// A card switched off pays nothing, which is not the same as a card with no
+// figure at all — the distinction has to survive the cut.
+const switchedOff = ratesForViewer([{ ...rate, current: 0 }], false)[0]!;
+check('a card at zero pays the affiliate zero, not nothing', switchedOff.revenue === 0);
+const blank = ratesForViewer([{ ...rate, current: null }], false)[0]!;
+check('a card with no rate has no half either', blank.revenue === null);
 
 console.log(`\ncpa: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

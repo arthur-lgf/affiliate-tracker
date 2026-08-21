@@ -3,13 +3,14 @@ import { CpaBrowser } from '@/components/CpaBrowser';
 import { CpaUpload } from '@/components/CpaUpload';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
-import { formatDateTime, formatDay } from '@/lib/analytics';
+import { formatDateTime } from '@/lib/analytics';
+import { ratesForViewer } from '@/lib/cpa';
 import { getStore } from '@/lib/store';
 import { requireViewer } from '@/lib/viewer';
 import type { CpaReport } from '@/lib/types';
 
 /**
- * The CPA rate card.
+ * The rate card: what each card pays for an approval.
  *
  * Readable by everyone signed in, on purpose: an affiliate quoting a card needs
  * to know what it pays as much as an admin does, and none of it is anybody's
@@ -19,7 +20,7 @@ import type { CpaReport } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: 'CPA report' };
+export const metadata: Metadata = { title: 'Commission per Approvals Reports' };
 
 export default async function CpaPage() {
   const viewer = await requireViewer();
@@ -35,20 +36,22 @@ export default async function CpaPage() {
 
   const rates = report?.rows ?? [];
   const cards = new Set(rates.map((rate) => `${rate.issuer}|${rate.card}`)).size;
-  // One placement today, but the export has a column for it, so read it rather
-  // than assume it. Shown once here instead of repeated down every row.
-  const placements = [...new Set(rates.map((rate) => rate.placement).filter(Boolean))];
-  // Only what the table draws crosses to the browser.
-  const rows = rates.map(({ placement: _placement, ...rate }) => rate);
+  // Only what the table draws crosses to the browser, and for an affiliate that
+  // is their half alone — the merchant's rates never reach the page at all.
+  const rows = ratesForViewer(rates, isAdmin);
 
   return (
     <div className="w-full">
       <div className="rise">
-        <h1 className="font-display leading-[1.05] text-[clamp(1.75rem,7vw,3rem)]">CPA report</h1>
+        <h1 className="font-display leading-[1.05] text-[clamp(1.75rem,7vw,3rem)]">
+          Commission per Approvals Reports
+        </h1>
         <p className="mt-3 max-w-[720px] text-[20px] leading-relaxed text-ink-soft">
-          What each card pays for an approval, and half of it beside, which is what the affiliate
-          keeps. Where a card is tiered, every tier is listed separately, because the tier is what
-          decides the payout.
+          {isAdmin
+            ? 'What each card pays for an approval, and half of it beside, which is what the affiliate keeps.'
+            : 'What you earn for an approval on each card, which is half of what the merchant pays.'}{' '}
+          Where a card is tiered, every tier is listed separately, because the tier is what decides
+          the payout.
         </p>
       </div>
 
@@ -77,15 +80,6 @@ export default async function CpaPage() {
           </span>
         </div>
 
-        {report?.reportDate || report?.source ? (
-          <p className="plain-note mt-2">
-            {report.reportDate ? `Rates as QMP read them on ${formatDay(report.reportDate)}` : ''}
-            {report.reportDate && report.source ? ' · ' : ''}
-            {report.source ? `from ${report.source}` : ''}
-            {placements.length > 0 ? ` · ${placements.join(', ')}` : ''}
-          </p>
-        ) : null}
-
         {isAdmin ? <CpaUpload /> : null}
 
         {rows.length === 0 && !error ? (
@@ -103,7 +97,7 @@ export default async function CpaPage() {
             )}
           </div>
         ) : (
-          <CpaBrowser rows={rows} />
+          <CpaBrowser rows={rows} gross={isAdmin} />
         )}
       </section>
     </div>

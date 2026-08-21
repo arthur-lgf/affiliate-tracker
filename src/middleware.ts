@@ -159,6 +159,12 @@ export const config = {
     '/users/:path*',
     '/api/users',
     '/api/users/:path*',
+    // Settings. A campaign decides where a link sends people, so the page and
+    // the route behind it are gated like account administration is.
+    '/settings',
+    '/settings/:path*',
+    '/api/campaigns',
+    '/api/campaigns/:path*',
     '/api/links',
     '/api/links/:path*',
     '/api/leads',

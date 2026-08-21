@@ -6,10 +6,10 @@ import { Pager } from '@/components/Pager';
 import { TableScroller } from '@/components/TableScroller';
 import {
   affiliateHref,
-  affiliateRevenueOf,
   formatMoney,
   formatPercent,
   initialsOf,
+  revenueFrom,
   type EarningsRow,
   type EarningsView,
   type Period,
@@ -22,15 +22,23 @@ import { PAGE_SIZES, pageSlice } from '@/lib/paging';
  * A client component only so it can page itself. Every figure in it is worked
  * out on the server and handed over whole, so there is no arithmetic here that
  * the totals below could disagree with.
+ *
+ * `gross` says which number arrived. An admin gets the merchant's payout and
+ * both columns; an affiliate gets their own half already worked out, so the
+ * Amount column is dropped rather than blanked — a column of dashes is a
+ * standing reminder of a figure somebody is not being shown, and the merchant's
+ * gross is not theirs to wonder about.
  */
 export function EarnersTable({
   rows,
   totals,
   period,
+  gross,
 }: {
   rows: EarningsRow[];
   totals: EarningsView['totals'];
   period: Period;
+  gross: boolean;
 }) {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
@@ -42,18 +50,18 @@ export function EarnersTable({
    * check: it is the sum of the column printed above it.
    */
   const affiliateRevenue =
-    Math.round(rows.reduce((sum, row) => sum + affiliateRevenueOf(row.earnings), 0) * 100) / 100;
+    Math.round(rows.reduce((sum, row) => sum + revenueFrom(row.earnings, gross), 0) * 100) / 100;
 
   return (
     <>
       <TableScroller className="mt-5" label="Who is earning">
-        <table className="w-full min-w-[980px] border-collapse text-left">
+        <table className={`w-full border-collapse text-left ${gross ? 'min-w-[980px]' : 'min-w-[820px]'}`}>
           <thead>
             <tr className="border-b-2 border-edge">
               <Th>Person</Th>
               <Th align="right">Visits</Th>
               <Th align="right">Approved</Th>
-              <Th align="right">Amount</Th>
+              {gross ? <Th align="right">Amount</Th> : null}
               <Th align="right">Affiliate revenue</Th>
               {/* Deliberately empty: every button in the column carries its
                   own "Open <person>" label, so a header here would only
@@ -89,11 +97,13 @@ export function EarnersTable({
                     </span>
                   ) : null}
                 </td>
+                {gross ? (
+                  <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
+                    {formatMoney(row.earnings)}
+                  </td>
+                ) : null}
                 <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
-                  {formatMoney(row.earnings)}
-                </td>
-                <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-semibold">
-                  {formatMoney(affiliateRevenueOf(row.earnings))}
+                  {formatMoney(revenueFrom(row.earnings, gross))}
                 </td>
                 <td className="py-5 text-right">
                   {/* One link per row rather than a whole-row target: the
@@ -128,13 +138,21 @@ export function EarnersTable({
               <td className="tnum py-5 pr-4 text-right text-[26px] font-semibold">
                 {totals.approved.toLocaleString()}
               </td>
+              {gross ? (
+                <td className="py-5 pr-4 text-right">
+                  <span className="mark tnum font-display text-[30px] font-bold">
+                    {formatMoney(totals.earnings)}
+                  </span>
+                </td>
+              ) : null}
+              {/* The highlighter follows the figure that matters, which on an
+                  affiliate's own page is this one. */}
               <td className="py-5 pr-4 text-right">
-                <span className="mark tnum font-display text-[30px] font-bold">
-                  {formatMoney(totals.earnings)}
+                <span
+                  className={`tnum font-display text-[30px] font-bold ${gross ? '' : 'mark'}`}
+                >
+                  {formatMoney(affiliateRevenue)}
                 </span>
-              </td>
-              <td className="tnum py-5 pr-4 text-right font-display text-[30px] font-bold">
-                {formatMoney(affiliateRevenue)}
               </td>
               <td />
             </tr>

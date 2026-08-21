@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import type {
   AffiliateLink,
+  Campaign,
   Conversion,
   CpaRate,
   CpaReport,
@@ -427,6 +428,65 @@ export function createSupabaseStore(): Store {
      * whatever is there covers the case where that cleanup failed: the reader
      * still sees one complete rate card rather than two spliced together.
      */
+    /**
+     * The newest save, in the order it was written.
+     *
+     * Ordered by position within the batch rather than by whatever Postgres
+     * hands back: every row of a save shares its saved_at, so the tiebreaker
+     * in readAll decides, and that tiebreaker is a random uuid. The order of
+     * this list is the only arrangement it has, so it has to be put back.
+     */
+    async listCampaigns() {
+      const rows = await readAll<Record<string, unknown>>('campaigns', {
+        column: 'saved_at',
+        ascending: false,
+      });
+      if (rows.length === 0) return [];
+
+      const newest = text(rows[0]!.batch_id);
+      return rows
+        .filter((row) => text(row.batch_id) === newest)
+        .sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0))
+        .map((row) => ({ name: text(row.name), destination: text(row.destination) }));
+    },
+
+    /**
+     * Insert the new list, then drop everything that is not it.
+     *
+     * In that order for the same reason the rate card is: deleting first would
+     * leave the link form with an empty campaign picker for as long as the
+     * insert took, and PostgREST has no transaction to hide that in.
+     *
+     * Saving an empty list is a real thing to want — it clears the table and
+     * the form falls back to the built-in category names — so the delete runs
+     * whether or not anything was inserted.
+     */
+    async writeCampaigns(campaigns: Campaign[]) {
+      const supabase = getSupabaseClient();
+      const batchId = randomUUID();
+      const savedAt = new Date().toISOString();
+
+      const rows = campaigns.map((campaign, index) => ({
+        batch_id: batchId,
+        saved_at: savedAt,
+        position: index,
+        name: campaign.name,
+        destination: campaign.destination,
+      }));
+
+      for (let from = 0; from < rows.length; from += INSERT_CHUNK) {
+        const { error } = await supabase
+          .from('campaigns')
+          .insert(rows.slice(from, from + INSERT_CHUNK));
+        if (error) fail('saving the campaigns', error);
+      }
+
+      // A failed cleanup leaves an older batch behind, which listCampaigns
+      // steps over anyway — it only ever reads the newest.
+      const { error } = await supabase.from('campaigns').delete().neq('batch_id', batchId);
+      if (error) fail('clearing the previous campaigns', error);
+    },
+
     async readCpaReport() {
       const rows = await readAll<Record<string, unknown>>('cpa_rates', {
         column: 'uploaded_at',

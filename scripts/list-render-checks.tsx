@@ -17,6 +17,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ApprovalsList } from '../src/components/ApprovalsList';
 import { CpaBrowser, groupRates, tierCount, tiersOf } from '../src/components/CpaBrowser';
+import { problemsIn } from '../src/components/CampaignSettings';
+import { ratesForViewer } from '../src/lib/cpa';
 import { sortRows } from '../src/lib/report-table';
 import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
@@ -118,12 +120,14 @@ const earners: EarningsRow[] = Array.from({ length: 23 }, (_, i) => ({
   earnings: 12.35 + i,
   approvalRate: 0.1,
 }));
+const earnerTotals = {
+  visits: 1,
+  approved: 1,
+  earnings: earners.reduce((s, r) => s + r.earnings, 0),
+  approvalRate: 0.1,
+};
 const table = renderToStaticMarkup(
-  <EarnersTable
-    rows={earners}
-    totals={{ visits: 1, approved: 1, earnings: earners.reduce((s, r) => s + r.earnings, 0), approvalRate: 0.1 }}
-    period="month"
-  />,
+  <EarnersTable rows={earners} totals={earnerTotals} period="month" gross />,
 );
 check('ten people to a page', (table.match(/<tr class="divider-row/g) || []).length === 10);
 check('the money column is called Amount now', table.includes('>Amount</th>'));
@@ -135,6 +139,29 @@ const total = Math.round(earners.reduce((s, r) => s + affiliateRevenueOf(r.earni
 check('the total is the sum of the rows', table.includes(formatMoney(total)));
 check('the footer admits it counts more than the page', table.includes('everyone, not just this page'));
 check('and the people page through', table.includes('Showing 1–10 of 23'));
+
+/*
+ * The same table read by the affiliate it belongs to. Their rows arrive already
+ * halved, so the Amount column is dropped rather than blanked — and the halving
+ * must not happen a second time here, which would quietly pay them a quarter.
+ */
+const ownTable = renderToStaticMarkup(
+  <EarnersTable
+    rows={earners.map((row) => ({ ...row, earnings: affiliateRevenueOf(row.earnings) }))}
+    totals={{ ...earnerTotals, earnings: affiliateRevenueOf(earnerTotals.earnings) }}
+    period="month"
+    gross={false}
+  />,
+);
+check('an affiliate is shown no Amount column', !ownTable.includes('>Amount</th>'));
+check('but still the affiliate revenue', ownTable.includes('>Affiliate revenue</th>'));
+check('their row is their half, not a quarter of it', ownTable.includes(formatMoney(affiliateRevenueOf(12.35))));
+check(
+  'and the merchant gross is nowhere in the page',
+  !ownTable.includes(formatMoney(12.35)) && !ownTable.includes(formatMoney(earnerTotals.earnings)),
+);
+check('the total is still the sum of the column above it', ownTable.includes(formatMoney(total)));
+check('they still page through', ownTable.includes('Showing 1–10 of 23'));
 
 console.log('\n— approvals —');
 const approvals: ConversionView[] = Array.from({ length: 23 }, (_, i) => ({
@@ -188,7 +215,7 @@ const tiered: CpaRate[] = ['Platinum', 'Gold', 'Venture'].flatMap((name, card) =
 // checks can see them. The store sorts by issuer and card, which puts the
 // AmEx tiers near the top of the real card too.
 const rates = [...tiered, ...flat];
-const card = renderToStaticMarkup(<CpaBrowser rows={rates} />);
+const card = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(rates, true)} gross />);
 
 // Fifteen cards out of twenty-one rates: the page counts cards.
 check('a page is ten cards, not ten rates', (card.match(/aria-expanded|Flat Card/g) || []).length >= 10);
@@ -210,12 +237,12 @@ check('with an indent marker', card.includes('↳'));
 check('a screen reader still hears which card a tier belongs to', card.includes('Platinum Card, '));
 check('there is a way to fold them all', card.includes('Fold every card'));
 // A flat card has no tiers to fold, so it gets a dash rather than a control.
-const flatOnly = renderToStaticMarkup(<CpaBrowser rows={flat} />);
+const flatOnly = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(flat, true)} gross />);
 check('a card with one rate has nothing to fold', !flatOnly.includes('aria-expanded'));
 check('and no fold-everything button', !flatOnly.includes('Fold every card'));
 check('twelve flat cards is twelve cards', flatOnly.includes('Showing 1–10 of 12'));
 
-const noRates = renderToStaticMarkup(<CpaBrowser rows={[]} />);
+const noRates = renderToStaticMarkup(<CpaBrowser rows={[]} gross />);
 check('an empty card says nothing is uploaded', noRates.includes('No rates uploaded yet'));
 check('and offers no page controls', !noRates.includes('Previous'));
 
@@ -225,7 +252,7 @@ console.log('\n— sorting by tier —');
  * the number the badge shows. A card with no tiers has nothing to be ordered
  * by, so it reads blank and sinks, the same as every other blank here.
  */
-const cardGroups = groupRates(rates);
+const cardGroups = groupRates(ratesForViewer(rates, true));
 check('a three-tier card counts three', tierCount(cardGroups[0]!) === 3);
 check('a flat card counts nothing at all', tierCount(cardGroups[3]!) === null);
 
@@ -278,7 +305,65 @@ check(
   banded.slice(12).join(',') === 'true,false,true,false,true,false,true',
 );
 check('a table with no tiers still stripes', flatOnly.includes('bg-paper-sunk'));
+
+console.log('\n— the rate card, as an affiliate reads it —');
+/*
+ * Half, and only half. The merchant's rate, what it paid before and how it
+ * moved are dropped from the rows themselves, so this checks the page source
+ * rather than the columns: a hidden column that still ships the number is not
+ * hidden from anybody who can open dev tools.
+ */
+const ownCard = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(rates, false)} gross={false} />);
+check('there is no Pays now column', !ownCard.includes('Pays now'));
+check('no Paid before column', !ownCard.includes('Paid before'));
+// The quote at the end is load-bearing: 'Sort by Change' is a prefix of
+// 'Sort by Changed', and the Changed column is one this reader keeps.
+check('no Change column', !ownCard.includes('title="Sort by Change"'));
+check('the affiliate revenue stays', ownCard.includes('Affiliate revenue'));
+check('and so does the day the rate changed', ownCard.includes('title="Sort by Changed"'));
+// 700 is the top tier of the Platinum fixture, so 350 is the half.
+check('the half is printed', ownCard.includes(formatMoney(350)));
+check('the merchant rate is not printed', !ownCard.includes(formatMoney(700)));
+// 90 is a flat card's previous rate and is nobody's half, so finding it
+// would mean the merchant's own figure had reached the page.
+check('nor the rate it paid before', !ownCard.includes(formatMoney(90)) && card.includes(formatMoney(90)));
+check('the cards are still grouped and foldable', ownCard.includes('aria-expanded="true"'));
+check('the tiers are still listed', ownCard.includes('Tier 1') && ownCard.includes('Tier 3'));
+check('the banding survives the narrower table', ownCard.includes('bg-paper-sunk'));
+check('and it is still sortable by tier', ownCard.includes('Sort by Tier'));
 check('the Tier heading is a control now', card.includes('Sort by Tier'));
+
+console.log('\n— the campaign settings table —');
+/*
+ * What the Save button is allowed to send. A duplicate name is the one that
+ * matters: the link form looks a destination up by name, so two rows called
+ * "Cash Back" would make which URL a link gets depend on the order they happen
+ * to be in.
+ */
+const settingsRow = (key: number, name: string, destination: string) => ({ key, name, destination });
+
+const cleanRows = problemsIn([
+  settingsRow(0, 'Best Cards', 'https://example.com?src=1'),
+  settingsRow(1, 'Cash Back', ''),
+]);
+check('a good row and a URL-less row both pass', Object.keys(cleanRows).length === 0);
+
+const dupeRows = problemsIn([settingsRow(0, 'Cash Back', ''), settingsRow(1, 'cash back', '')]);
+check('a duplicate name is caught whatever its case', Boolean(dupeRows[1]));
+check('and only the second one is blamed', !dupeRows[0]);
+
+check('a URL with no name is caught', Boolean(problemsIn([settingsRow(0, '', 'https://example.com')])[0]));
+// Clearing both fields is how a row is deleted, so it must not be an error.
+check('a wholly blank row is not an error', Object.keys(problemsIn([settingsRow(0, '', '')])).length === 0);
+check('half a URL is caught', Boolean(problemsIn([settingsRow(0, 'Best Cards', 'example.com')])[0]));
+check(
+  'and so is a javascript: url',
+  Boolean(problemsIn([settingsRow(0, 'Best Cards', 'javascript:alert(1)')])[0]),
+);
+check(
+  'surrounding space does not make a name blank',
+  Object.keys(problemsIn([settingsRow(0, '  Best Cards  ', '  https://example.com  ')])).length === 0,
+);
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

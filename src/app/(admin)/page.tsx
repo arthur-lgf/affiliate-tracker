@@ -60,7 +60,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // Already cut to this viewer's tracking key. Everything below counts, sums
   // and charts whatever came back, so scoping once here is what makes every
   // figure on the page theirs.
-  const { links, submissions, visits, conversions, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, gross, error } = await loadAll(viewer);
 
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
@@ -184,8 +184,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       {/* Hero — earnings for the selected window */}
       <section className="rise panel mt-5 grid gap-10 p-6 sm:p-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
         <div className="min-w-0">
+          {/* An affiliate is never shown the merchant's gross, so the word
+              "earnings" would be naming a figure that is not on the page. */}
           <h2 className="label-cap">
-            {person ? `${person.name}'s earnings` : 'Total earnings'} · {periodLabel.toLowerCase()}
+            {gross ? (person ? `${person.name}'s earnings` : 'Total earnings') : 'Your affiliate revenue'}{' '}
+            · {periodLabel.toLowerCase()}
           </h2>
           {/* Clamped, not stepped: a money figure is one unbreakable token, so
               the type has to scale with the box or a seven-figure total pushes
@@ -206,6 +209,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           <p className="plain-note mt-6">
             A <strong>visit</strong> is counted the moment someone opens one of your links. An{' '}
             <strong>approval</strong> is a visit the merchant agreed to pay you for.
+            {gross ? '' : ' Every figure here is your half of that payout.'}
           </p>
 
           <Link
@@ -246,7 +250,11 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               : 'None yet'
           }
           unit=""
-          plain="Average payout each time one is approved."
+          plain={
+            gross
+              ? 'Average payout each time one is approved.'
+              : 'Your average revenue each time one is approved.'
+          }
           delay={80}
         />
       </section>
@@ -269,7 +277,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             Nothing in this window. Try a longer period{usr ? ' or everyone' : ''}.
           </p>
         ) : (
-          <EarnersTable rows={view.rows} totals={view.totals} period={period} />
+          <EarnersTable rows={view.rows} totals={view.totals} period={period} gross={gross} />
         )}
       </section>
 
@@ -284,7 +292,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 : `${conversions.length} recorded · all time.`}{' '}
               {isAdmin
                 ? 'Nothing adds these on its own.'
-                : 'Recorded by your admin as the merchant confirms them.'}
+                : 'Recorded by your admin as the merchant confirms them. Each figure is your half.'}
             </p>
           </div>
           {isAdmin ? <ConversionForm targets={targets} /> : null}

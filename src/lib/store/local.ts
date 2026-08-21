@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
+import { campaignToCells, campaignsFromCells } from './campaign-row';
 import { conversionFromCells, conversionToCells } from './conversion-row';
 import { cpaReportFromCells, cpaRowToCells } from './cpa-row';
 import { makeRowId, parseRowId, rowFingerprint } from './row-id';
@@ -13,6 +14,7 @@ import { makeRowId, parseRowId, rowFingerprint } from './row-id';
 type StoredConversion = Omit<Conversion, 'id'>;
 import type {
   AffiliateLink,
+  Campaign,
   Conversion,
   NewAffiliateLink,
   NewConversion,
@@ -43,6 +45,7 @@ const FILES = {
   // Rows of cells rather than objects, so the file is the CPA tab of the
   // spreadsheet written out — same as every other file here.
   cpa: path.join(DATA_DIR, 'cpa.json'),
+  campaigns: path.join(DATA_DIR, 'campaigns.json'),
 } as const;
 
 /**
@@ -244,6 +247,18 @@ export function createLocalStore(): Store {
     async readCpaReport() {
       const rows = await readFile<string[]>(FILES.cpa);
       return cpaReportFromCells(rows);
+    },
+
+    async listCampaigns() {
+      return campaignsFromCells(await readFile<string[]>(FILES.campaigns));
+    },
+
+    async writeCampaigns(campaigns: Campaign[]) {
+      // Whole-file replace under the same lock as everything else, so a reader
+      // never catches the list half written.
+      return withLock(async () => {
+        await writeFile(FILES.campaigns, campaigns.map(campaignToCells));
+      });
     },
 
     async writeCpaReport(report: CpaReport) {

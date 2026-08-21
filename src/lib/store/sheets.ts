@@ -3,11 +3,13 @@ import { google, type sheets_v4 } from 'googleapis';
 import { SHEET_HEADERS, SHEET_TABS } from '../config';
 import { resolveGoogleCredentials } from '../google-credentials';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
+import { campaignToCells, campaignsFromCells } from './campaign-row';
 import { conversionFromCells, conversionToCells } from './conversion-row';
 import { cpaReportFromCells, cpaRowToCells } from './cpa-row';
 import { makeRowId, parseRowId, rowFingerprint } from './row-id';
 import type {
   AffiliateLink,
+  Campaign,
   CpaReport,
   NewAffiliateLink,
   NewConversion,
@@ -672,6 +674,14 @@ export function createSheetsStore(): Store {
 
     async readCpaReport() {
       return cpaReportFromCells(await readRows('cpa'));
+    },
+
+    async listCampaigns() {
+      return campaignsFromCells(await readRows('campaigns'));
+    },
+
+    async writeCampaigns(campaigns: Campaign[]) {
+      await replaceRows('campaigns', campaigns.map(campaignToCells));
     },
 
     async writeCpaReport(report: CpaReport) {

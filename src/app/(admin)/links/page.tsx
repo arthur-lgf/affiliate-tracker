@@ -57,6 +57,19 @@ export default async function LinksPage() {
         </Link>
       </div>
 
+      {/*
+        Where the rule is read is where the link is copied, which is this page.
+        Shown whether or not there are any links yet, and to admins as well as
+        affiliates: it is a standing rule about how these are shared, not a
+        warning about a particular one, and the person most in need of reading
+        it is the one who has not shared anything yet.
+      */}
+      <p className="plain-note mt-6">
+        <strong>Do not post these links publicly.</strong> Not on YouTube, Instagram, Facebook,
+        TikTok, X, Reddit, or anywhere else open to the public. Send them directly to the person you
+        are working with.
+      </p>
+
       {links.length === 0 ? (
         <div className="mt-8">
           {isAdmin ? (

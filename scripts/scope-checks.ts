@@ -6,6 +6,7 @@
 // below is a way that could happen.
 //
 //   npx tsx scripts/scope-checks.ts
+import { asAffiliateShare } from '../src/lib/load';
 import { ownerForNewLink, ownsKey, scopeData, seesEverything } from '../src/lib/scope';
 import type { Viewer } from '../src/lib/viewer-core';
 import type { AffiliateLink, Conversion, Submission, Visit } from '../src/lib/types';
@@ -239,6 +240,35 @@ function main() {
     'an affiliate with no key is refused',
     !ownerForNewLink(viewer({ usr: '' }), asked, SELF).ok,
   );
+
+  console.log('\n— what the money says once it is scoped —');
+  /*
+   * Scoping decides which rows an affiliate sees. This decides which number is
+   * on them: their own half, never the merchant's. Everything on their pages is
+   * a sum of these rows, so if this is wrong they are shown somebody else's
+   * money as though it were theirs.
+   */
+  const paid = (amount: number): Conversion => ({
+    id: 'c1',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    approvedOn: '2026-08-01',
+    slug: 'best-cards',
+    usr: 'arthur',
+    amount,
+    notes: 'Chase · lead:abc',
+  });
+
+  const halved = asAffiliateShare([paid(210), paid(270), paid(0)]);
+  check('a payout is halved', halved[0]!.amount === 105);
+  check('and so is the next one', halved[1]!.amount === 135);
+  check('nothing paid is nothing owed', halved[2]!.amount === 0);
+  check('everything else on the row survives', halved[0]!.notes === 'Chase · lead:abc' && halved[0]!.slug === 'best-cards');
+
+  // The store adapters cache rows, so halving in place would change what the
+  // next reader sees — including an admin, who would then be shown half.
+  const original = [paid(210)];
+  asAffiliateShare(original);
+  check('the rows it was given are not touched', original[0]!.amount === 210);
 
   console.log(`\nscope: ${pass} passed, ${fail} failed`);
   process.exitCode = fail === 0 ? 0 : 1;

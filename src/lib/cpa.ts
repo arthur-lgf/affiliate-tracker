@@ -21,6 +21,7 @@
  * scripts/cpa-checks.ts holds it to the three rules above.
  */
 
+import { affiliateRevenueOf } from './analytics';
 import type { CpaRate, CpaReport } from './types';
 
 /** What the parser could not make sense of, for showing to whoever uploaded. */
@@ -318,6 +319,52 @@ export function sortRates(rows: CpaRate[]): CpaRate[] {
 export function tierNumber(tier: string): number {
   const match = /(\d+)/.exec(tier);
   return match ? Number(match[1]) : 0;
+}
+
+/**
+ * A rate as the table draws it.
+ *
+ * The placement is gone — it is the same string on every row of the export and
+ * the table never shows it — and the affiliate's half is worked out here rather
+ * than in the browser, because for most readers it is the only money figure
+ * that crosses at all.
+ */
+export type CpaRateView = {
+  issuer: string;
+  card: string;
+  tier: string;
+  /** Half of what the card pays. The one money figure everybody is shown. */
+  revenue: number | null;
+  /** What the merchant pays. Null for a viewer who is not shown it. */
+  current: number | null;
+  previous: number | null;
+  change: number | null;
+  changedOn: string;
+};
+
+/**
+ * The rate card cut to what this viewer may see.
+ *
+ * An affiliate is shown their own half and nothing else — not the merchant's
+ * rate, not what it used to be, not how it moved. Those are dropped here rather
+ * than hidden in the table, so they are not sitting in the page source of a
+ * browser that was never meant to have them.
+ *
+ * The half is kept even where the gross is dropped, and that is the point: the
+ * figure an affiliate quotes from is theirs, and it does not depend on being
+ * told the number it came from.
+ */
+export function ratesForViewer(rates: CpaRate[], gross: boolean): CpaRateView[] {
+  return rates.map((rate) => ({
+    issuer: rate.issuer,
+    card: rate.card,
+    tier: rate.tier,
+    revenue: rate.current === null ? null : affiliateRevenueOf(rate.current),
+    current: gross ? rate.current : null,
+    previous: gross ? rate.previous : null,
+    change: gross ? rate.change : null,
+    changedOn: rate.changedOn,
+  }));
 }
 
 /** An empty report, so a page with nothing uploaded yet has something to render. */

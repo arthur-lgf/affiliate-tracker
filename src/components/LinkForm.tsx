@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { initialsOf } from '@/lib/analytics';
-import { CAMPAIGNS } from '@/lib/campaigns';
+import { withTrackingKey, type CampaignOption } from '@/lib/campaigns';
 import { BusyLabel } from './Spinner';
 
 /**
@@ -89,6 +89,7 @@ function hardKey(raw: string): string {
 
 export function LinkForm({
   origin,
+  campaigns,
   people,
   lockedTo = null,
   takenSlugKeys,
@@ -96,6 +97,11 @@ export function LinkForm({
   capture,
 }: {
   origin: string;
+  /**
+   * The offers this link can point at, from Settings. Each carries the URL it
+   * sends people to, which is what fills the destination in below.
+   */
+  campaigns: CampaignOption[];
   people: KnownPerson[];
   /**
    * The one person this link may belong to, or null to choose.
@@ -116,6 +122,19 @@ export function LinkForm({
   const router = useRouter();
   const [values, setValues] = useState<Fields>(() => initialFields(lockedTo));
   const [touchedSlug, setTouchedSlug] = useState(false);
+  /**
+   * Whether the destination is still the one the campaign wrote.
+   *
+   * True until somebody types in the box, and true again the moment they pick a
+   * campaign — picking one is an explicit "send them here", so it overwrites
+   * whatever was there. While it holds, the URL follows the tracking key as
+   * well as the campaign, which matters because on an admin's form the person
+   * is chosen after the offer.
+   *
+   * The alternative, overwriting whenever either changes, would throw away a
+   * hand-edited URL the moment the admin picked who the link was for.
+   */
+  const [destinationAuto, setDestinationAuto] = useState(true);
   /**
    * Which person the link belongs to, as explicit state.
    *
@@ -140,14 +159,21 @@ export function LinkForm({
     setErrors((prev) => (prev[key] ? { ...prev, [key]: '' } : prev));
   }
 
+  const destinationFor = useMemo(
+    () => new Map(campaigns.map((campaign) => [campaign.name, campaign.destination])),
+    [campaigns],
+  );
+
   // Slug follows the campaign name, and usr follows the assignee's first name,
-  // until either one is edited by hand.
+  // until either one is edited by hand. The destination follows the campaign
+  // too — see the effect below, which also keeps it in step with the person.
   function onCampaignChange(value: string) {
     setValues((prev) => ({
       ...prev,
       campaign: value,
       slug: touchedSlug ? prev.slug : hardKey(value).slice(0, 48),
     }));
+    setDestinationAuto(true);
     setErrors((prev) => ({ ...prev, campaign: '', slug: '' }));
   }
 
@@ -179,6 +205,27 @@ export function LinkForm({
     () => Boolean(slug) && takenSlugKeys.includes(`${slug}::${usr}`),
     [slug, usr, takenSlugKeys],
   );
+
+  /*
+   * The destination the chosen campaign and the chosen person make together.
+   *
+   * Written into the field rather than computed at redirect time, so what gets
+   * saved is what is on screen: the URL in the box is the URL the visitor is
+   * sent to, and there is no second rule elsewhere that could quietly disagree
+   * with it. It stays a plain text box — this fills it in, it does not own it.
+   */
+  useEffect(() => {
+    if (!destinationAuto) return;
+    const filled = withTrackingKey(destinationFor.get(values.campaign) ?? '', usr);
+    setValues((prev) => (prev.destination === filled ? prev : { ...prev, destination: filled }));
+    setErrors((prev) => (prev.destination ? { ...prev, destination: '' } : prev));
+  }, [destinationAuto, values.campaign, usr, destinationFor]);
+
+  /** A campaign picked, no URL behind it, and nothing typed in its place. */
+  const campaignHasNoUrl =
+    Boolean(values.campaign) &&
+    !(destinationFor.get(values.campaign) ?? '').trim() &&
+    !values.destination.trim();
 
   const destinationOk = useMemo(() => {
     if (!values.destination.trim()) return null;
@@ -284,21 +331,23 @@ export function LinkForm({
             <Field
               label="Campaign"
               error={errors.campaign}
-              note="Pick the category this offer belongs to."
+              note="Pick the offer. Where it sends people fills in beside it."
               required
             >
-              {/* A fixed list, not free text: "Cash back" typed once and "Cash
-                  Back" typed the next week are the same offer, and every figure
-                  grouped by campaign would quietly split in two. */}
+              {/* A list, not free text: "Cash back" typed once and "Cash Back"
+                  typed the next week are the same offer, and every figure
+                  grouped by campaign would quietly split in two. The list is
+                  maintained in Settings, which is also where each one's URL
+                  lives. */}
               <select
                 className="field"
                 value={values.campaign}
                 onChange={(e) => onCampaignChange(e.target.value)}
               >
                 <option value="">Choose a campaign…</option>
-                {CAMPAIGNS.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
+                {campaigns.map((campaign) => (
+                  <option key={campaign.name} value={campaign.name}>
+                    {campaign.name}
                   </option>
                 ))}
               </select>
@@ -316,7 +365,12 @@ export function LinkForm({
               <input
                 className="field"
                 value={values.destination}
-                onChange={(e) => set('destination', e.target.value)}
+                onChange={(e) => {
+                  // From here on it is theirs, not the campaign's — until they
+                  // pick a campaign again.
+                  setDestinationAuto(false);
+                  set('destination', e.target.value);
+                }}
                 placeholder="https://www.cardratings.com/bestcards/cash-back.php?src=714025"
                 inputMode="url"
                 maxLength={2000}
@@ -325,6 +379,12 @@ export function LinkForm({
               />
               {destinationOk === false ? (
                 <span className="field-error">Enter a full URL including https://</span>
+              ) : campaignHasNoUrl ? (
+                <span className="field-note">
+                  {values.campaign} has no URL saved yet, so there was nothing to fill in. Paste one
+                  here
+                  {lockedTo ? '' : ', or add it under Settings so it fills in next time'}.
+                </span>
               ) : var2Ok === false ? (
                 <span className="field-note">
                   This URL does not carry <code>var2={usr}</code>. Approvals come back matched on

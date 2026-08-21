@@ -1,4 +1,5 @@
-import { scopeData } from './scope';
+import { affiliateRevenueOf } from './analytics';
+import { scopeData, seesEverything } from './scope';
 import { getStore } from './store';
 import type { AffiliateLink, Conversion, Submission, Visit } from './types';
 import type { Viewer } from './viewer';
@@ -8,10 +9,34 @@ export type LoadResult = {
   submissions: Submission[];
   visits: Visit[];
   conversions: Conversion[];
+  /**
+   * Whether the amounts on those conversions are the merchant's gross payouts.
+   * False means they are already this viewer's half, which is what an affiliate
+   * gets. Every figure downstream — the hero, the per-card totals, the
+   * approvals list — is a sum of these, so this one flag is the difference
+   * between a page of gross payouts and a page of somebody's own revenue.
+   */
+  gross: boolean;
   error: string | null;
 };
 
 const EMPTY = { links: [], submissions: [], visits: [], conversions: [] };
+
+/**
+ * Every payout replaced by the affiliate's half of it.
+ *
+ * Done here rather than at each figure because there are a dozen figures and
+ * one boundary. A page that forgets to halve a number shows an affiliate the
+ * merchant's money as though it were theirs; a page that reads through this
+ * cannot, and neither can the next page somebody writes.
+ *
+ * Halving row by row rather than the totals afterwards, because the rows are
+ * what gets grouped, charted and listed — and because the sum of what they are
+ * actually paid per approval is the figure they can check against a payment.
+ */
+export function asAffiliateShare(conversions: Conversion[]): Conversion[] {
+  return conversions.map((row) => ({ ...row, amount: affiliateRevenueOf(row.amount) }));
+}
 
 /**
  * Reads everything the admin pages need, cut down to what this viewer may see.
@@ -41,6 +66,14 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
 
     const scoped = scopeData({ links, submissions, visits, conversions }, viewer);
 
+    /*
+     * The same predicate that decided which rows they see now decides which
+     * number is on them. One gate, asked twice, rather than two gates that can
+     * disagree about who is an admin.
+     */
+    const gross = seesEverything(viewer);
+    const money = gross ? scoped.conversions : asAffiliateShare(scoped.conversions);
+
     // Newest first for display. Sorted into new arrays: a store adapter may be
     // handing back rows it also caches, and sorting those in place would change
     // which link the public landing page resolves to.
@@ -48,12 +81,14 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
       links: [...scoped.links].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       submissions: [...scoped.submissions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       visits: scoped.visits,
-      conversions: [...scoped.conversions].sort((a, b) => b.approvedOn.localeCompare(a.approvedOn)),
+      conversions: [...money].sort((a, b) => b.approvedOn.localeCompare(a.approvedOn)),
+      gross,
       error: null,
     };
   } catch (error) {
     return {
       ...EMPTY,
+      gross: seesEverything(viewer),
       error: error instanceof Error ? error.message : 'Unknown storage error',
     };
   }

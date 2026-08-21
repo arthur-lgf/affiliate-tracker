@@ -4,20 +4,10 @@ import { Fragment, useMemo, useState } from 'react';
 import { Pager } from '@/components/Pager';
 import { SortHeader, nextSort, type SortState } from '@/components/SortHeader';
 import { TableScroller } from '@/components/TableScroller';
-import { affiliateRevenueOf, formatDay, formatMoney, formatPercent } from '@/lib/analytics';
+import { formatDay, formatMoney, formatPercent } from '@/lib/analytics';
+import type { CpaRateView } from '@/lib/cpa';
 import { BLANK, sortRows, type ColumnKind } from '@/lib/report-table';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
-import type { CpaRate } from '@/lib/types';
-
-/**
- * A rate as this table needs it.
- *
- * Without the placement: it is the same string on every row of the export, the
- * table never shows it, and sending it anyway would be seventy bytes of the
- * same sentence repeated two hundred times in the page. The page prints it
- * once, above.
- */
-export type CpaRateRow = Omit<CpaRate, 'placement'>;
 
 /**
  * The rate card, grouped the way the report itself is written: one row per
@@ -39,7 +29,7 @@ export type Group = {
   key: string;
   issuer: string;
   card: string;
-  rates: CpaRateRow[];
+  rates: CpaRateView[];
   /** True when the export gave this card's rows tier labels. */
   tiered: boolean;
 };
@@ -57,6 +47,20 @@ type Column = {
   kind: ColumnKind;
 };
 
+/**
+ * The columns this viewer may read.
+ *
+ * The merchant's own figures — what it pays, what it paid before, how it moved
+ * — are an admin's. They are not blanked out for everybody else: the rows
+ * arrive without them (see `ratesForViewer`), so a column of dashes would be a
+ * standing reminder of a number nobody is going to be shown.
+ */
+const GROSS_ONLY = new Set(['current', 'previous', 'change']);
+
+export function columnsFor(gross: boolean): Column[] {
+  return gross ? COLUMNS : COLUMNS.filter((column) => !GROSS_ONLY.has(column.key));
+}
+
 /** What the Tier column puts a card in order by: the number in its badge. */
 export function tierCount(group: Group): number | null {
   return group.tiered ? group.rates.length : null;
@@ -70,17 +74,24 @@ export function tierCount(group: Group): number | null {
  * descending sort flips them, because that is the one click that means "start
  * from the highest".
  */
-export function tiersOf(group: Group, sort: SortState): CpaRateRow[] {
+export function tiersOf(group: Group, sort: SortState): CpaRateView[] {
   const flip = sort?.key === 'tier' && sort.direction === 'desc';
   return flip ? [...group.rates].reverse() : group.rates;
 }
 
-/** The best-paying of a card's tiers, ignoring any with no rate at all. */
-function best(group: Group): CpaRateRow | null {
-  let found: CpaRateRow | null = null;
+/**
+ * The best-paying of a card's tiers, ignoring any with no rate at all.
+ *
+ * Picked on the affiliate's half rather than the merchant's rate, because that
+ * is the figure every reader has: one is a fixed fraction of the other, so the
+ * order is the same either way, and choosing the one that is always there means
+ * the table sorts identically for an admin and for everybody else.
+ */
+function best(group: Group): CpaRateView | null {
+  let found: CpaRateView | null = null;
   for (const rate of group.rates) {
-    if (rate.current === null) continue;
-    if (found === null || rate.current > (found.current ?? 0)) found = rate;
+    if (rate.revenue === null) continue;
+    if (found === null || rate.revenue > (found.revenue ?? 0)) found = rate;
   }
   return found;
 }
@@ -106,25 +117,14 @@ const COLUMNS: Column[] = [
    * AFFILIATE_SHARE, so the rate card and the earnings table can never quote
    * two different splits for the same dollar.
    */
-  {
-    key: 'affiliate',
-    label: 'Affiliate revenue',
-    right: true,
-    read: (g) => {
-      const current = best(g)?.current;
-      return current === undefined || current === null ? null : affiliateRevenueOf(current);
-    },
-    kind: 'currency',
-  },
+  { key: 'affiliate', label: 'Affiliate revenue', right: true, read: (g) => best(g)?.revenue ?? null, kind: 'currency' },
   { key: 'previous', label: 'Paid before', right: true, read: (g) => best(g)?.previous ?? null, kind: 'currency' },
   { key: 'change', label: 'Change', right: true, read: (g) => best(g)?.change ?? null, kind: 'percent' },
   { key: 'changedOn', label: 'Changed', right: true, read: (g) => best(g)?.changedOn ?? '', kind: 'text' },
 ];
 
-const byKey = new Map(COLUMNS.map((column) => [column.key, column]));
-
 /** Rates into cards, keeping the order they arrived in. */
-export function groupRates(rows: CpaRateRow[]): Group[] {
+export function groupRates(rows: CpaRateView[]): Group[] {
   const groups = new Map<string, Group>();
   for (const rate of rows) {
     const key = `${rate.issuer}|${rate.card}`;
@@ -140,7 +140,7 @@ export function groupRates(rows: CpaRateRow[]): Group[] {
   return [...groups.values()];
 }
 
-export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
+export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolean }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(1);
@@ -153,6 +153,9 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
 
   const groups = useMemo(() => groupRates(rows), [rows]);
+  const columns = useMemo(() => columnsFor(gross), [gross]);
+  // Rebuilt with the columns, so a sort can only ever name one this viewer has.
+  const byKey = useMemo(() => new Map(columns.map((column) => [column.key, column])), [columns]);
 
   const matched = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -170,7 +173,7 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
     const column = byKey.get(sort.key);
     if (!column) return filtered;
     return sortRows(filtered, column.read, column.kind, sort.direction);
-  }, [groups, query, sort]);
+  }, [groups, query, sort, byKey]);
 
   const visible = pageSlice(matched, page, perPage);
   const anyTiered = groups.some((group) => group.tiered);
@@ -231,11 +234,15 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
             : `Nothing matches${query ? ` “${query}”` : ''}.`}
         </p>
       ) : (
-        <TableScroller className="mt-5" label="CPA rates">
-          <table className="w-full min-w-[1040px] border-collapse text-left">
+        <TableScroller className="mt-5" label="Card rates">
+          <table
+            className={`w-full border-collapse text-left ${
+              gross ? 'min-w-[1040px]' : 'min-w-[720px]'
+            }`}
+          >
             <thead>
               <tr className="border-b-2 border-edge">
-                {COLUMNS.map((column) => (
+                {columns.map((column) => (
                   <SortHeader
                     key={column.key}
                     label={column.label}
@@ -301,15 +308,10 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
                           <span className="text-ink-dim">{BLANK}</span>
                         )}
                       </td>
-                      <Money value={single ? single.current : null} lead />
-                      <Money
-                        value={
-                          single && single.current !== null ? affiliateRevenueOf(single.current) : null
-                        }
-                        lead
-                      />
-                      <Money value={single ? single.previous : null} />
-                      <Change value={single ? single.change : null} />
+                      {gross ? <Money value={single ? single.current : null} lead /> : null}
+                      <Money value={single ? single.revenue : null} lead />
+                      {gross ? <Money value={single ? single.previous : null} /> : null}
+                      {gross ? <Change value={single ? single.change : null} /> : null}
                       <Changed value={single ? single.changedOn : ''} />
                     </tr>
 
@@ -335,13 +337,10 @@ export function CpaBrowser({ rows }: { rows: CpaRateRow[] }) {
                               <span className="sr-only">{group.card}, </span>
                               {rate.tier || BLANK}
                             </td>
-                            <Money value={rate.current} lead />
-                            <Money
-                              value={rate.current === null ? null : affiliateRevenueOf(rate.current)}
-                              lead
-                            />
-                            <Money value={rate.previous} />
-                            <Change value={rate.change} />
+                            {gross ? <Money value={rate.current} lead /> : null}
+                            <Money value={rate.revenue} lead />
+                            {gross ? <Money value={rate.previous} /> : null}
+                            {gross ? <Change value={rate.change} /> : null}
                             <Changed value={rate.changedOn} />
                           </tr>
                         ))

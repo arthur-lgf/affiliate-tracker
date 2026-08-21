@@ -162,6 +162,19 @@ export type CpaReport = {
   rows: CpaRate[];
 };
 
+/**
+ * An offer a link can point at, and the URL it sends people to.
+ *
+ * No id. The list is stored and replaced whole (see the campaigns migration),
+ * so an id would not survive a save — which is why a link records the campaign
+ * *name*, and why the name is the key a destination is looked up by.
+ */
+export type Campaign = {
+  name: string;
+  /** Before the tracking key is written in. May be '' for a category with no URL yet. */
+  destination: string;
+};
+
 export interface Store {
   /** Which backend is actually serving requests — surfaced in the UI. */
   readonly kind: 'sheets' | 'local' | 'supabase';
@@ -193,4 +206,9 @@ export interface Store {
    */
   readCpaReport(): Promise<CpaReport | null>;
   writeCpaReport(report: CpaReport): Promise<void>;
+
+  /** In the order they were saved in, whichever adapter answers. */
+  listCampaigns(): Promise<Campaign[]>;
+  /** Replaces the list whole. The later of two concurrent saves wins entire. */
+  writeCampaigns(campaigns: Campaign[]): Promise<void>;
 }

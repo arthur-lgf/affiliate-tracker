@@ -81,7 +81,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // fact about who else works here and what their key is.
   if (!ownsKey(viewer, usr)) notFound();
 
-  const { links, submissions, visits, conversions, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, gross, error } = await loadAll(viewer);
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
   }
@@ -210,9 +210,14 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
 
       <section className="rise panel mt-5 grid gap-10 p-6 sm:p-8 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
         <div className="min-w-0">
+          {/* Named for what the figure under it actually is: the merchant's
+              payout for an admin reading somebody's page, that person's own
+              half when they are reading it themselves. */}
           <h2 className="label-cap">
-            {usr ? `${name.split(' ')[0]}'s earnings` : 'House earnings'} ·{' '}
-            {periodLabel.toLowerCase()}
+            {usr
+              ? `${name.split(' ')[0]}'s ${gross ? 'earnings' : 'affiliate revenue'}`
+              : `House ${gross ? 'earnings' : 'affiliate revenue'}`}{' '}
+            · {periodLabel.toLowerCase()}
           </h2>
           {/* See the dashboard hero: clamped so a long total cannot widen the page. */}
           <p className="tnum mt-4 font-display leading-[0.95] text-[clamp(2rem,9vw,5.125rem)]">
@@ -231,7 +236,9 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
           <p className="plain-note mt-6">
             {view.rows.length === 0
               ? 'Nothing landed in this window. Try a longer period. The numbers below follow the same dates.'
-              : `Everything here is ${usr ? `${name}'s` : 'house'} traffic only. Visits count when the click happens, approvals on the day they were approved.`}
+              : `Everything here is ${usr ? `${name}'s` : 'house'} traffic only. Visits count when the click happens, approvals on the day they were approved.${
+                  gross ? '' : ' Every payout below is your half of it.'
+                }`}
           </p>
         </div>
 
@@ -275,7 +282,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
                     <CardStat label="Visits" value={row.visits.toLocaleString()} />
                     <CardStat label="Approved" value={row.approved.toLocaleString()} muted={row.approved === 0} />
                     <CardStat
-                      label="Earnings"
+                      label={gross ? 'Earnings' : 'Revenue'}
                       value={formatMoney(row.earnings)}
                       muted={!earned}
                       display
@@ -292,7 +299,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
               <CardStat label="Visits" value={view.totals.visits.toLocaleString()} />
               <CardStat label="Approved" value={view.totals.approved.toLocaleString()} />
               <div className="lg:text-right">
-                <span className="label-cap block">Earnings</span>
+                <span className="label-cap block">{gross ? 'Earnings' : 'Revenue'}</span>
                 <span className="mark tnum mt-1 inline-block font-display text-[32px] font-bold">
                   {formatMoney(view.totals.earnings)}
                 </span>
@@ -306,7 +313,9 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
       <section className="rise panel mt-5 p-6 sm:p-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
           <h2 className="font-display text-[32px]">{usr ? `${name}'s approvals` : 'House approvals'}</h2>
-          <span className="text-[19px] text-ink-soft">All time</span>
+          <span className="text-[19px] text-ink-soft">
+            All time{gross ? '' : ' · your half of each'}
+          </span>
         </div>
 
         {theirApprovals.length === 0 ? (

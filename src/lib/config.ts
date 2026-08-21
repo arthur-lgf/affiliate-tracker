@@ -36,6 +36,7 @@ export const SHEET_TABS = {
   visits: 'Visits',
   conversions: 'Conversions',
   cpa: 'CPA',
+  campaigns: 'Campaigns',
 } as const;
 
 /** Column order for each tab. Changing this changes the sheet layout. */
@@ -46,6 +47,9 @@ export const SHEET_HEADERS = {
    * else to put them, and repeating them keeps a row self-describing if
    * somebody copies one out.
    */
+  /* Two columns and no stamps: unlike the rate card this is a short list a
+     person maintains by hand, and the order of the rows is its only state. */
+  campaigns: ['name', 'destination'],
   cpa: [
     'report_date',
     'updated_at',

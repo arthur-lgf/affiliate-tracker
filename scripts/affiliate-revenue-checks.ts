@@ -8,7 +8,7 @@
 // the reader can check against the column above it.
 //
 //   npx tsx scripts/affiliate-revenue-checks.ts
-import { AFFILIATE_SHARE, affiliateRevenueOf, formatMoney } from '../src/lib/analytics';
+import { AFFILIATE_SHARE, affiliateRevenueOf, formatMoney, revenueFrom } from '../src/lib/analytics';
 
 let pass = 0;
 let fail = 0;
@@ -42,6 +42,19 @@ const sumOfHalves = Math.round(rows.reduce((sum, a) => sum + affiliateRevenueOf(
 check('the column adds up to the total under it', sumOfHalves === 6.18 + 0.02 + 50 + 16.67);
 check('which is not the same as halving the total', sumOfHalves !== affiliateRevenueOf(rows.reduce((s, a) => s + a, 0)));
 check('and is the larger of the two here', sumOfHalves === 72.87);
+
+console.log('\n— halving a figure that may already be halved —');
+/*
+ * An affiliate's rows are halved before they leave the server, so by the time a
+ * table prints the share, the figure it holds may already be it. Getting this
+ * backwards pays somebody a quarter, which is why it is one function and not a
+ * ternary written out in four components.
+ */
+check('a gross figure is halved', revenueFrom(210, true) === 105);
+check('a figure that is already the share is left alone', revenueFrom(105, false) === 105);
+check('halving twice is what this exists to prevent', revenueFrom(revenueFrom(210, true), false) === 105);
+check('zero is zero either way', revenueFrom(0, true) === 0 && revenueFrom(0, false) === 0);
+check('and the cents rule still applies', revenueFrom(12.35, true) === 6.18);
 
 console.log(`\naffiliate-revenue: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;
