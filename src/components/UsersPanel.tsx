@@ -1,7 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { STEPS, type OnboardingState } from '@/lib/onboarding';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { Pager } from './Pager';
 import { TableScroller } from './TableScroller';
@@ -18,6 +20,8 @@ export type AccountRow = {
   createdAt: string;
   lastLoginAt: string | null;
   createdBy: string;
+  /** How far through onboarding they are. Null for an admin, who does not. */
+  setup: OnboardingState | null;
 };
 
 type Fields = {
@@ -440,13 +444,14 @@ export function UsersPanel({
           </p>
         ) : (
           <TableScroller label="Accounts" controlsClassName="px-5 pt-3">
-            <table className="w-full min-w-[1040px] border-collapse text-left">
+            <table className="w-full min-w-[1160px] border-collapse text-left">
               <thead>
                 <tr className="bg-paper-card">
                   <Th>Username</Th>
                   <Th>Name</Th>
                   <Th>Role</Th>
                   <Th>Tracking key</Th>
+                  <Th>Setup</Th>
                   <Th>Last sign-in</Th>
                   <Th align="right">Actions</Th>
                 </tr>
@@ -494,6 +499,10 @@ export function UsersPanel({
 
                       <td className="tnum px-5 py-3.5 text-[12px] text-ink-dim">
                         {row.usr ? `usr=${row.usr}` : '—'}
+                      </td>
+
+                      <td className="px-5 py-3.5">
+                        <SetupCell id={row.id} state={row.setup} />
                       </td>
 
                       <td className="tnum px-5 py-3.5 text-[13px] text-ink-dim">
@@ -585,6 +594,43 @@ export function UsersPanel({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Four ticks and a link, rather than "3/4".
+ *
+ * Which step is outstanding is the useful fact — a missing W-9 stops a payment
+ * and a missing bank account stops a different one — and a fraction hides
+ * exactly that. Hovering names each one; the link opens the record.
+ */
+function SetupCell({ id, state }: { id: string; state: OnboardingState | null }) {
+  if (!state) return <span className="text-[12px] text-ink-dim">—</span>;
+  const done = STEPS.filter((step) => state[step.key]).length;
+  return (
+    <Link
+      href={`/users/${encodeURIComponent(id)}`}
+      className="inline-flex items-center gap-2 hover:underline"
+      title={STEPS.map((step) => `${step.label}: ${state[step.key] ? 'done' : 'outstanding'}`).join(' · ')}
+    >
+      <span aria-hidden className="flex gap-[3px]">
+        {STEPS.map((step) => (
+          <span
+            key={step.key}
+            className={`h-[10px] w-[10px] rounded-[2px] ${
+              state[step.key]
+                ? 'bg-leaf-live'
+                : step.required
+                  ? 'bg-alarm-edge'
+                  : 'bg-edge-strong'
+            }`}
+          />
+        ))}
+      </span>
+      <span className="tnum text-[12px] text-ink-soft">
+        {done}/{STEPS.length}
+      </span>
+    </Link>
   );
 }
 

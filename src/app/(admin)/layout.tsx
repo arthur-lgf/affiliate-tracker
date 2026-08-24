@@ -4,7 +4,7 @@ import { SignOutButton } from '@/components/SignOutButton';
 import { authConfigured } from '@/lib/auth';
 import { initialsOf } from '@/lib/analytics';
 import { storageStatus, type StorageStatus } from '@/lib/store';
-import { requireViewer } from '@/lib/viewer';
+import { requireOnboarded } from '@/lib/onboarding-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,8 +30,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // Resolved here as well as in each page. The layout renders the navigation,
   // and a nav built from an unverified guess at who is looking is a nav that
   // offers an affiliate the admin tabs.
-  const viewer = await requireViewer();
+  //
+  // This is also the one door every page in the group is behind, which makes it
+  // the right place for the onboarding gate: an affiliate who still owes a
+  // signed agreement or W-9 is sent to the step they owe rather than reaching
+  // any page inside.
+  const { viewer, state, applies } = await requireOnboarded();
   const isAdmin = viewer.role === 'admin';
+  // The one step that nags instead of barring. §2 of the agreement makes a
+  // payment impossible without it, so it is worth a standing line — but there
+  // is a month of Net-30 slack to produce it in, so it is not worth a wall.
+  const bankMissing = applies && !state.bank;
 
   return (
     <div className="min-h-screen bg-paper">
@@ -94,6 +103,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Nav isAdmin={isAdmin} />
         </div>
       </header>
+
+      {bankMissing ? (
+        <div className="border-b border-gold-wash bg-gold-faint px-5 py-2.5 sm:px-7">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-soft">
+            <span aria-hidden>⚑</span>
+            <strong className="font-semibold text-ink">
+              We still need your bank details.
+            </strong>
+            <span>Nothing can be paid out until they are on file.</span>
+            <Link href="/welcome/bank" className="link-text font-medium">
+              Add them
+            </Link>
+          </p>
+        </div>
+      ) : null}
 
       {/* The tables here are the point of the tool, and a rate card or a QMP
           report has more columns than a reading column can hold — so the page

@@ -159,6 +159,14 @@ export const config = {
     '/users/:path*',
     '/api/users',
     '/api/users/:path*',
+    // Onboarding. Everything behind these is somebody's name, address,
+    // taxpayer number and bank account, so signed-out requests must not reach
+    // them even to be told no. /welcome is gated for the opposite reason as
+    // well: it is a form that writes to an account, so it needs to know which.
+    '/welcome',
+    '/welcome/:path*',
+    '/api/onboarding',
+    '/api/onboarding/:path*',
     // Settings. A campaign decides where a link sends people, so the page and
     // the route behind it are gated like account administration is.
     '/settings',

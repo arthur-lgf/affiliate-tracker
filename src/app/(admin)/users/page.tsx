@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { UsersPanel, type AccountRow } from '@/components/UsersPanel';
 import { authConfigured } from '@/lib/auth';
+import { NOTHING_DONE } from '@/lib/onboarding';
+import { listOnboarding } from '@/lib/onboarding-store';
 import { listUsers, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
@@ -39,6 +41,22 @@ export default async function UsersPage() {
     );
   }
 
+  /*
+   * Who has finished what. Read once for everybody rather than per row: the
+   * table wants one column out of it, and twenty round trips to draw twenty
+   * ticks would be twenty round trips.
+   *
+   * A failure here is not a failure of the page — the accounts are still worth
+   * listing without their onboarding state — so it degrades to "nothing known"
+   * rather than to an error panel.
+   */
+  const setup = new Map<string, AccountRow['setup']>();
+  try {
+    for (const row of await listOnboarding()) setup.set(row.userId, row.state);
+  } catch {
+    // Leave the map empty; the column renders as unknown.
+  }
+
   let rows: AccountRow[];
   try {
     rows = (await listUsers()).map((user) => ({
@@ -52,12 +70,16 @@ export default async function UsersPage() {
       createdAt: user.createdAt,
       lastLoginAt: user.lastLoginAt,
       createdBy: user.createdBy,
+      setup: user.role === 'affiliate' ? (setup.get(user.id) ?? { ...NOTHING_DONE }) : null,
     }));
   } catch (error) {
     return (
       <ErrorPanel
         title="Could not read the accounts"
         message={error instanceof Error ? error.message : 'Unknown error'}
+        // Accounts live in Supabase, never in the sheet, so the default hint
+        // would point at the wrong system entirely.
+        hint="Accounts are stored in Supabase. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, and that every migration in supabase/migrations has been applied."
       />
     );
   }

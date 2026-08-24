@@ -31,6 +31,9 @@ export type UserAccount = {
   usr: string;
   fullName: string;
   email: string;
+  /** Collected during onboarding; empty on an account that has not been through it. */
+  position: string;
+  mobile: string;
   active: boolean;
   passwordChangedAt: string;
   lastLoginAt: string | null;
@@ -46,6 +49,8 @@ type UserRow = {
   usr: string;
   full_name: string;
   email: string;
+  position: string;
+  mobile: string;
   active: boolean;
   password_changed_at: string;
   last_login_at: string | null;
@@ -54,7 +59,7 @@ type UserRow = {
 
 /** Every column except the hash. Spelled out so a future column cannot leak by default. */
 const PUBLIC_COLUMNS =
-  'id, created_at, username, role, usr, full_name, email, active, password_changed_at, last_login_at, created_by';
+  'id, created_at, username, role, usr, full_name, email, position, mobile, active, password_changed_at, last_login_at, created_by';
 
 export function usersEnabled(): boolean {
   return isSupabaseConfigured();
@@ -80,6 +85,8 @@ function toAccount(row: Omit<UserRow, 'password_hash'>): UserAccount {
     usr: row.usr ?? '',
     fullName: row.full_name ?? '',
     email: row.email ?? '',
+    position: row.position ?? '',
+    mobile: row.mobile ?? '',
     active: row.active !== false,
     passwordChangedAt: row.password_changed_at,
     lastLoginAt: row.last_login_at,
@@ -121,6 +128,14 @@ function fail(context: string, error: PostgrestErrorish): never {
   if (code === '42P01') {
     throw new StoreConfigError(
       'The users table is missing from this Supabase project. Run: npx supabase db push',
+    );
+  }
+  // A column the code knows about and the database does not: the migrations
+  // are behind the deploy. Worth its own message, because the generic one
+  // reads like a bug in the query rather than a step nobody has run.
+  if (code === '42703') {
+    throw new StoreConfigError(
+      'The users table is missing columns this version needs. Run: npx supabase db push',
     );
   }
   if (code === '42501') {

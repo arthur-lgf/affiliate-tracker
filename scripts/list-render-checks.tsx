@@ -25,6 +25,9 @@ import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
 import { Pager } from '../src/components/Pager';
 import { matchAccounts, type AccountRow } from '../src/components/UsersPanel';
+import { W9Form } from '../src/components/onboarding/W9Form';
+import { OnboardingRail } from '../src/components/OnboardingRail';
+import { NOTHING_DONE, STEPS } from '../src/lib/onboarding';
 import { affiliateRevenueOf, formatMoney, type ConversionView, type EarningsRow } from '../src/lib/analytics';
 import type { CpaRate } from '../src/lib/types';
 
@@ -454,6 +457,7 @@ function account(i: number, over: Partial<AccountRow> = {}): AccountRow {
     createdAt: '2026-08-01T00:00:00.000Z',
     lastLoginAt: null,
     createdBy: 'seed',
+    setup: null,
     ...over,
   };
 }
@@ -482,6 +486,79 @@ check('surrounding space does not either', matchAccounts(accountRows, '  dana  '
 check('the two filters compose', matchAccounts(accountRows, 'reyes', 'admin').length === 1);
 check('and can leave nothing', matchAccounts(accountRows, 'dana', 'admin').length === 0);
 check('a miss is empty, not everything', matchAccounts(accountRows, 'zzz', 'all').length === 0);
+
+console.log('\n— the W-9, as rendered —');
+/*
+ * The IRS accepts a substitute Form W-9 only where the Part II certification
+ * language is unaltered. Nothing about that is enforced by a type, and it is
+ * exactly the sort of text somebody tidies up for line length one day — so the
+ * four numbered certifications are pinned here word for word.
+ */
+const w9Html = renderToStaticMarkup(
+  <W9Form initialName="Arthur Reyes" initialAddress="1 Example Street" today="2026-08-24" />,
+);
+
+check('it says which revision it is', w9Html.includes('(Rev. March 2024)'));
+check('and where the real one lives', w9Html.includes('www.irs.gov/FormW9'));
+check('Part I is drawn', w9Html.includes('Taxpayer Identification Number'));
+check('Part II is drawn', w9Html.includes('>Certification</span>'));
+check(
+  'the perjury preamble is verbatim',
+  w9Html.includes('Under penalties of perjury, I certify that:'),
+);
+check(
+  'certification 1 is verbatim',
+  w9Html.includes(
+    'The number shown on this form is my correct taxpayer identification number (or I am',
+  ),
+);
+check(
+  'certification 2 is verbatim',
+  w9Html.includes('I am not subject to backup withholding because (a) I am exempt from backup'),
+);
+check(
+  'certification 3 is verbatim',
+  w9Html.includes('I am a U.S. citizen or other U.S. person (defined below); and'),
+);
+check(
+  'certification 4 is verbatim',
+  w9Html.includes('The FATCA code(s) entered on this form (if any) indicating that I am exempt'),
+);
+check(
+  'and so are the certification instructions',
+  w9Html.includes('You must cross out item 2 above if you have'),
+);
+
+// Every line the paper form has, by the number it prints.
+for (const line of ['1', '2', '3a', '4', '5', '6', '7']) {
+  check(`line ${line} is on the form`, w9Html.includes(`>${line}</span>`));
+}
+for (const option of ['Individual/sole proprietor', 'C corporation', 'S corporation', 'Partnership', 'Trust/estate', 'LLC']) {
+  check(`the ${option} box is offered`, w9Html.includes(option));
+}
+check('the prefilled name arrives', w9Html.includes('value="Arthur Reyes"'));
+check('so does the prefilled address', w9Html.includes('value="1 Example Street"'));
+check('and the date it will be signed', w9Html.includes('2026-08-24'));
+// 3b only applies to a partnership, a trust/estate, or an LLC taxed as one, and
+// nothing is chosen on a fresh form.
+check('3b is not asked before a box is checked', !w9Html.includes('foreign partners, owners, or beneficiaries'));
+check('the requester is named for them', w9Html.includes('LaunchStone LLC'));
+check('and the number is promised back masked', w9Html.includes('last four digits'));
+
+console.log('\n— the step rail —');
+const railFresh = renderToStaticMarkup(
+  <OnboardingRail current="profile" state={{ ...NOTHING_DONE }} />,
+);
+check('every step is listed', STEPS.every((step) => railFresh.includes(step.label)));
+check('it counts them', railFresh.includes('>0 of 4</span>'));
+check('the optional one says so', railFresh.includes('Can wait'));
+check('and it says what the first three are for', railFresh.includes('before you can use the dashboard'));
+
+const railDone = renderToStaticMarkup(
+  <OnboardingRail current="bank" state={{ profile: true, agreement: true, w9: true, bank: false }} />,
+);
+check('a finished step is ticked', railDone.includes('✓'));
+check('and the count follows', railDone.includes('>3 of 4</span>'));
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

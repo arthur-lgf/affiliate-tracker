@@ -1,0 +1,238 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { ErrorPanel } from '@/components/ErrorPanel';
+import { RevealSecret } from '@/components/onboarding/RevealSecret';
+import { formatDateTime } from '@/lib/analytics';
+import { maskAccount, maskTin } from '@/lib/mask';
+import { W9_CLASSIFICATIONS } from '@/lib/onboarding';
+import { readAgreement, readBank, readOnboarding, readW9 } from '@/lib/onboarding-store';
+import { findUserById, usersEnabled } from '@/lib/users';
+import { requireAdmin } from '@/lib/viewer';
+
+export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = { title: 'Onboarding record' };
+
+/**
+ * Everything one affiliate has handed over.
+ *
+ * Admin only. Four blocks in the order they were collected, each either the
+ * record or a plain statement that it is not there yet — an empty section says
+ * more than a missing one, because "no W-9" is the fact somebody came here for.
+ *
+ * The two sealed numbers are masked. Pressing Reveal is a separate request that
+ * unseals exactly one of them, which is what keeps this page from being a list
+ * of Social Security numbers that happens to be behind a login.
+ */
+export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
+  const { id } = await params;
+
+  if (!usersEnabled()) {
+    return (
+      <ErrorPanel
+        title="Accounts need a database"
+        message="Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then reload this page."
+        hint=""
+      />
+    );
+  }
+
+  const account = await findUserById(id);
+  if (!account) notFound();
+
+  const [state, agreement, w9, bank] = await Promise.all([
+    readOnboarding(id).catch(() => null),
+    readAgreement(id).catch(() => null),
+    readW9(id).catch(() => null),
+    readBank(id).catch(() => null),
+  ]);
+
+  const classification = W9_CLASSIFICATIONS.find((c) => c.key === w9?.classification);
+
+  return (
+    <div className="w-full max-w-[1000px]">
+      <div className="rise">
+        <p className="label-cap">
+          <Link href="/users" className="link-text">
+            People
+          </Link>
+        </p>
+        <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">
+          {account.fullName || account.username}
+        </h1>
+        <p className="plain mt-2">
+          <span className="tnum">{account.username}</span>
+          {account.usr ? (
+            <>
+              {' · '}
+              <span className="tnum">usr={account.usr}</span>
+            </>
+          ) : null}
+          {account.email ? ` · ${account.email}` : ''}
+        </p>
+      </div>
+
+      {/* Step 1 */}
+      <section className="panel mt-5 p-6 sm:p-7">
+        <h2 className="text-[15px] font-semibold">Their details</h2>
+        {state?.profile ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact label="Name" value={account.fullName} />
+            <Fact label="Email" value={account.email} />
+            <Fact label="Position" value={account.position} />
+            <Fact label="Mobile" value={account.mobile} mono />
+          </div>
+        ) : (
+          <p className="plain mt-2">
+            Not filled in yet. They have not signed in and set a password of their own.
+          </p>
+        )}
+      </section>
+
+      {/* Step 2 */}
+      <section className="panel mt-5 p-6 sm:p-7">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+          <h2 className="text-[15px] font-semibold">Affiliate agreement</h2>
+          {agreement ? (
+            <a
+              href={`/api/onboarding/${encodeURIComponent(id)}/agreement.pdf`}
+              className="btn-outline btn-sm"
+            >
+              Download PDF
+            </a>
+          ) : null}
+        </div>
+
+        {agreement ? (
+          <>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Fact label="Signed" value={formatDateTime(agreement.signedAt)} />
+              <Fact label="Effective date" value={agreement.effectiveDate} mono />
+              <Fact label="Name signed" value={agreement.affiliateName} />
+              <Fact label="Version" value={agreement.agreementVersion} mono />
+              <Fact label="Email on the agreement" value={agreement.affiliateEmail} />
+              <Fact label="Address" value={agreement.affiliateAddress} />
+            </div>
+            <Signature png={agreement.signaturePng} />
+            <Audit ip={agreement.signedIp} agent={agreement.signedUserAgent} />
+          </>
+        ) : (
+          <p className="plain mt-2">Not signed yet.</p>
+        )}
+      </section>
+
+      {/* Step 3 */}
+      <section className="panel mt-5 p-6 sm:p-7">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+          <h2 className="text-[15px] font-semibold">Form W-9</h2>
+          {w9 ? (
+            <a href={`/api/onboarding/${encodeURIComponent(id)}/w9.pdf`} className="btn-outline btn-sm">
+              Download PDF
+            </a>
+          ) : null}
+        </div>
+
+        {w9 ? (
+          <>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Fact label="Filed" value={formatDateTime(w9.signedAt)} />
+              <Fact label="Revision" value={w9.formRevision} />
+              <Fact label="Line 1 — name" value={w9.line1Name} />
+              <Fact label="Line 2 — business" value={w9.line2Business || '—'} />
+              <Fact
+                label="Classification"
+                value={
+                  classification
+                    ? classification.label +
+                      (w9.llcCode ? ` (${w9.llcCode})` : '') +
+                      (w9.otherText ? `: ${w9.otherText}` : '')
+                    : w9.classification
+                }
+              />
+              <Fact label="Address" value={w9.address} />
+              <Fact label="City, state, ZIP" value={w9.cityStateZip} />
+              <Fact label="Exempt / FATCA" value={[w9.exemptPayeeCode, w9.fatcaCode].filter(Boolean).join(' / ') || '—'} mono />
+              <div className="sm:col-span-2">
+                {/* The one number on this page that is not on this page. */}
+                <RevealSecret
+                  userId={id}
+                  what="tin"
+                  masked={maskTin(w9.tinLast4, w9.tinType)}
+                  label={w9.tinType === 'ssn' ? 'Social security number' : 'Employer identification number'}
+                />
+              </div>
+              {w9.foreignPartners ? (
+                <Fact label="Line 3b" value="Has foreign partners, owners or beneficiaries" />
+              ) : null}
+            </div>
+            <Signature png={w9.signaturePng} />
+            <Audit ip={w9.signedIp} agent={w9.signedUserAgent} />
+          </>
+        ) : (
+          <p className="plain mt-2">Not filed yet. Nothing can be paid until it is.</p>
+        )}
+      </section>
+
+      {/* Step 4 */}
+      <section className="panel mt-5 p-6 sm:p-7">
+        <h2 className="text-[15px] font-semibold">Bank details</h2>
+        {bank ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact label="Saved" value={formatDateTime(bank.savedAt)} />
+            <Fact label="Name on the account" value={bank.accountName} />
+            <Fact label="Bank" value={bank.bankName} />
+            <RevealSecret
+              userId={id}
+              what="account"
+              masked={maskAccount(bank.accountLast4)}
+              label="Account number"
+            />
+          </div>
+        ) : (
+          <p className="plain mt-2">Not on file. ACH cannot be sent without it.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <span className="field-label">{label}</span>
+      <p className={`mt-1 break-words text-[13px] text-ink-soft ${mono ? 'tnum' : ''}`}>
+        {value || '—'}
+      </p>
+    </div>
+  );
+}
+
+/* eslint-disable @next/next/no-img-element */
+function Signature({ png }: { png: string }) {
+  if (!png.startsWith('data:image/png;base64,')) return null;
+  return (
+    <div className="mt-5">
+      <span className="field-label">Signature</span>
+      {/* A data URL, so next/image would have nothing to optimise and would
+          need the origin allow-listed for no gain. */}
+      <img
+        src={png}
+        alt="The signature as drawn"
+        className="mt-1.5 max-h-[90px] w-auto max-w-full rounded-[3px] border border-edge bg-panel p-2"
+      />
+    </div>
+  );
+}
+
+/** Where the signature came from. Printed because it is the evidence. */
+function Audit({ ip, agent }: { ip: string; agent: string }) {
+  if (!ip && !agent) return null;
+  return (
+    <p className="mt-4 border-t border-edge-faint pt-3 text-[11px] text-ink-dim">
+      Signed from <span className="tnum">{ip || 'an unrecorded address'}</span>
+      {agent ? ` · ${agent}` : ''}
+    </p>
+  );
+}

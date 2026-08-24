@@ -54,6 +54,13 @@ const nextConfig = {
   reactStrictMode: true,
   // googleapis is a heavy node-only dep; keep it out of the bundler's way.
   serverExternalPackages: ['googleapis'],
+  // The blank W-9 is read from disk at request time and stamped with the
+  // answers. It is not imported by anything, so nothing traces it into the
+  // serverless bundle unless it is named here — and the first sign of that
+  // being missed is a download that 500s in production and works locally.
+  outputFileTracingIncludes: {
+    '/api/onboarding/**': ['./assets/w9-page1.jpg'],
+  },
   // Not set as a default: every response should carry these, including the
   // public landing pages and the API routes.
   async headers() {
