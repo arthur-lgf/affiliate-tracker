@@ -52,6 +52,23 @@ const SECURITY_HEADERS = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  /*
+   * The other half of the read cache, on the client.
+   *
+   * Every page here is force-dynamic, which by default means the router keeps
+   * nothing: pressing Back re-renders the page on the server and waits for it.
+   * These four pages read the same four tables, so that wait buys nothing at
+   * all — the answer is the one you were just looking at.
+   *
+   * 30 seconds, the same number as TTL_MS in lib/store/cache.ts, so there is
+   * one staleness story rather than two. It is safe to keep this in step with
+   * the server cache because every mutation in the app calls router.refresh(),
+   * which drops this cache and re-reads: your own changes are never stale, and
+   * somebody else's are bounded by the same half minute either way.
+   */
+  experimental: {
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   // googleapis is a heavy node-only dep; keep it out of the bundler's way.
   serverExternalPackages: ['googleapis'],
   // The blank W-9 is read from disk at request time and stamped with the

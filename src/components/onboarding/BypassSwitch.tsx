@@ -94,7 +94,8 @@ export function BypassSwitch({
         <span className="field-note">
           {on
             ? 'Recorded when the waiver was granted. It stays on the account afterwards.'
-            : 'Optional, and worth a line. A year from now this is the only record of why.'}
+            : 'Optional, and worth a line. A year from now this is the only record of why.'}{' '}
+          Only admins see this; the affiliate is told they were let in, not why.
         </span>
       </label>
 

@@ -2,6 +2,7 @@ import { isSheetsConfigured } from '../config';
 import type { AffiliateLink, Store } from '../types';
 import { StoreConfigError } from './errors';
 import { createLocalStore } from './local';
+import { withCache } from './cache';
 import { createSheetsStore } from './sheets';
 import { createSupabaseStore, isSupabaseConfigured } from './supabase';
 
@@ -75,16 +76,24 @@ let cached: Store | null = null;
  */
 export function getStore(): Store {
   if (!cached) {
+    let store: Store;
     if (isSupabaseConfigured()) {
-      cached = createSupabaseStore();
+      store = createSupabaseStore();
     } else if (isSheetsConfigured()) {
-      cached = createSheetsStore();
+      store = createSheetsStore();
     } else if (isEphemeralFilesystem()) {
       // Fail loudly rather than silently degrading to a store that cannot write.
-      cached = createUnavailableStore(NOT_CONFIGURED_MESSAGE);
+      store = createUnavailableStore(NOT_CONFIGURED_MESSAGE);
     } else {
-      cached = createLocalStore();
+      store = createLocalStore();
     }
+    /*
+     * Wrapped once, here, so every adapter gets the same read cache and every
+     * write clears it. Doing it at this seam rather than in the pages is what
+     * keeps the cache holding whole unscoped tables: nothing above this line
+     * knows who is asking. See store/cache.ts.
+     */
+    cached = withCache(store);
   }
   return cached;
 }

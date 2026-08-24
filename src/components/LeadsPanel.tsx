@@ -1,11 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Pager } from './Pager';
-import { Spinner } from './Spinner';
 import { TableScroller } from './TableScroller';
 import { isLeadId } from '@/lib/lead-id';
+import { dropSettled, isCurrent, takeTicket } from '@/lib/optimistic';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { displayStatus, statusLabel } from '@/lib/status';
 import type { LeadStatus } from '@/lib/types';
@@ -89,7 +89,6 @@ export function LeadsPanel({
   const [filter, setFilter] = useState<Filter>('all');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
 
@@ -100,6 +99,26 @@ export function LeadsPanel({
    * whole round trip to the spreadsheet, which is not fast.
    */
   const [changed, setChanged] = useState<Record<string, LeadStatus>>({});
+
+  /*
+   * Clicks outrun replies, especially on the Sheets adapter. One ticket per
+   * row, so a slow response for a lead that has since been toggled again is
+   * discarded rather than allowed to roll the pill back to a value nobody
+   * asked for.
+   */
+  const tickets = useRef<Record<string, number>>({});
+
+  /*
+   * Drop an override once the server is saying the same thing.
+   *
+   * Without this the map only ever grows, and every entry in it is a value this
+   * browser will keep drawing over the truth. Somebody else marks the same lead
+   * back to pending, the refresh brings that down, and this tab carries on
+   * showing "Registered" because that is what it clicked twenty minutes ago.
+   */
+  useEffect(() => {
+    setChanged((prev) => dropSettled(prev, rows, (row) => row.status));
+  }, [rows]);
 
   const withStatus = useMemo(
     () =>
@@ -149,33 +168,46 @@ export function LeadsPanel({
     setPage(1);
   }
 
-  async function setStatus(row: LeadRow, next: LeadStatus) {
-    setBusyId(row.id);
+  /**
+   * Flip the pill, then tell the server.
+   *
+   * Not awaited by anything the user can see. Marking a lead registered is a
+   * one-word write that succeeds essentially always, and the honest response to
+   * a click on it is the new word, immediately. The request goes out behind
+   * that; if it fails, the pill goes back and the panel says why.
+   */
+  function setStatus(row: LeadRow, next: LeadStatus) {
+    const ticket = takeTicket(tickets.current, row.id);
+
     setError(null);
     setChanged((prev) => ({ ...prev, [row.id]: next }));
-    try {
-      const res = await fetch(`/api/leads/${row.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: next }),
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
-        throw new Error(payload.error ?? `Request failed (${res.status})`);
+    setAnnouncement(`${row.fullName || row.email} marked ${statusLabel(next).toLowerCase()}.`);
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/leads/${row.id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: next }),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error ?? `Request failed (${res.status})`);
+        }
+        if (!isCurrent(tickets.current, row.id, ticket)) return;
+        startTransition(() => router.refresh());
+      } catch (err) {
+        if (!isCurrent(tickets.current, row.id, ticket)) return;
+        // Put the pill back where it was: the row did not change.
+        setChanged((prev) => {
+          const rest = { ...prev };
+          delete rest[row.id];
+          return rest;
+        });
+        setAnnouncement('');
+        setError(err instanceof Error ? err.message : 'Could not update that lead');
       }
-      setAnnouncement(`${row.fullName || row.email} marked ${statusLabel(next).toLowerCase()}.`);
-      startTransition(() => router.refresh());
-    } catch (err) {
-      // Put the pill back where it was — the sheet did not change.
-      setChanged((prev) => {
-        const rest = { ...prev };
-        delete rest[row.id];
-        return rest;
-      });
-      setError(err instanceof Error ? err.message : 'Could not update that lead');
-    } finally {
-      setBusyId(null);
-    }
+    })();
   }
 
   return (
@@ -338,7 +370,6 @@ export function LeadsPanel({
                         {canEdit && !row.hasApproval ? (
                           <StatusToggle
                             row={row}
-                            busy={busyId === row.id}
                             onToggle={() =>
                               setStatus(row, row.status === 'registered' ? 'pending' : 'registered')
                             }
@@ -423,15 +454,15 @@ function StatusPill({ row }: { row: LeadRow }) {
   );
 }
 
-function StatusToggle({
-  row,
-  busy,
-  onToggle,
-}: {
-  row: LeadRow;
-  busy: boolean;
-  onToggle: () => void;
-}) {
+/**
+ * No spinner and no disabled state.
+ *
+ * The pill already shows the new word by the time the pointer lifts, so there
+ * is nothing left to wait for and nothing a spinner could truthfully report. It
+ * stays pressable too: pressing again is somebody changing their mind, which is
+ * a thing they are allowed to do faster than a spreadsheet can answer.
+ */
+function StatusToggle({ row, onToggle }: { row: LeadRow; onToggle: () => void }) {
   const registered = row.status === 'registered';
   const who = row.fullName || row.email || 'this lead';
   return (
@@ -439,8 +470,6 @@ function StatusToggle({
       type="button"
       className="pill-status"
       data-status={row.status}
-      disabled={busy}
-      aria-busy={busy}
       onClick={onToggle}
       /* The visible word starts the accessible name so "click Pending" still
          works for voice control, and the rest says what clicking will do. */
@@ -448,20 +477,13 @@ function StatusToggle({
         registered ? 'pending' : 'registered',
       ).toLowerCase()}`}
     >
-      {/* The status dot becomes the spinner while the change is in flight.
-          Same spot, same size, so the pill does not resize under the cursor
-          and the thing that is changing is the thing that shows it. */}
-      {busy ? (
-        <Spinner className="h-2.5 w-2.5 border-[2px]" />
-      ) : (
-        <span
-          aria-hidden
-          className="h-2.5 w-2.5 flex-none rounded-full"
-          style={{
-            background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)',
-          }}
-        />
-      )}
+      <span
+        aria-hidden
+        className="h-2.5 w-2.5 flex-none rounded-full"
+        style={{
+          background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)',
+        }}
+      />
       {statusLabel(row.status)}
     </button>
   );
