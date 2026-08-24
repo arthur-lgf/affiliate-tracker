@@ -4,6 +4,8 @@ import { SignOutButton } from '@/components/SignOutButton';
 import { authConfigured } from '@/lib/auth';
 import { initialsOf } from '@/lib/analytics';
 import { storageStatus, type StorageStatus } from '@/lib/store';
+import { isBypassed } from '@/lib/approval';
+import { STEPS } from '@/lib/onboarding';
 import { requireOnboarded } from '@/lib/onboarding-guard';
 
 export const dynamic = 'force-dynamic';
@@ -35,12 +37,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // the right place for the onboarding gate: an affiliate who still owes a
   // signed agreement or W-9 is sent to the step they owe rather than reaching
   // any page inside.
-  const { viewer, state, applies } = await requireOnboarded();
+  const { viewer, state, applies, bypass } = await requireOnboarded();
   const isAdmin = viewer.role === 'admin';
   // The one step that nags instead of barring. §2 of the agreement makes a
   // payment impossible without it, so it is worth a standing line — but there
   // is a month of Net-30 slack to produce it in, so it is not worth a wall.
   const bankMissing = applies && !state.bank;
+  /*
+   * A waived account can be missing far more than a bank account, and the
+   * banner that only ever mentions one of them would be quietly wrong about
+   * the other three. So for those it names the count and points at the list.
+   */
+  const waived = applies && isBypassed(bypass);
+  const owed = waived ? STEPS.filter((step) => !state[step.key]).length : 0;
 
   return (
     <div className="min-h-screen bg-paper">
@@ -104,7 +113,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
-      {bankMissing ? (
+      {waived && owed > 0 ? (
+        <div className="border-b border-gold-wash bg-gold-faint px-5 py-2.5 sm:px-7">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-soft">
+            <span aria-hidden>⚑</span>
+            <strong className="font-semibold text-ink">
+              {owed === 1 ? 'One thing is still outstanding.' : `${owed} things are still outstanding.`}
+            </strong>
+            <span>Nothing is blocked, but a payment needs the W-9 and your bank details.</span>
+            <Link href="/profile" className="link-text font-medium">
+              See what is left
+            </Link>
+          </p>
+        </div>
+      ) : bankMissing ? (
         <div className="border-b border-gold-wash bg-gold-faint px-5 py-2.5 sm:px-7">
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-soft">
             <span aria-hidden>⚑</span>

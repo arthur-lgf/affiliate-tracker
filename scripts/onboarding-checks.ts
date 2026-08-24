@@ -16,12 +16,16 @@ import {
   gateFor,
   isBlocked,
   isComplete,
+  keepsAccountNumber,
+  keepsPassword,
+  keepsTin,
   looksLikeEmail,
   looksLikePhone,
   looksSigned,
   needsForeignPartnersQuestion,
   nextStep,
   NOTHING_DONE,
+  previousStep,
   profileProblems,
   progressOf,
   STEPS,
@@ -29,7 +33,16 @@ import {
   type OnboardingState,
   type W9Input,
 } from '../src/lib/onboarding';
-import { digitsOf, formatTin, last4, maskAccount, maskTin, validTin } from '../src/lib/mask';
+import {
+  digitsOf,
+  formatTin,
+  formatTinAsTyped,
+  last4,
+  maskAccount,
+  maskTin,
+  tinMaxLength,
+  validTin,
+} from '../src/lib/mask';
 import { open, seal, sealedMatches, SecretBoxError, secretsConfigured } from '../src/lib/secret-box';
 
 let pass = 0;
@@ -110,11 +123,16 @@ check('nor the W-9', gateFor('/welcome/w9', state({ profile: true, agreement: tr
 check('nor the bank step', gateFor('/welcome/bank', DOCS_DONE) === null);
 
 check('a step reached too early moves them back', gateFor('/welcome/w9', NOTHING_DONE) === '/welcome');
-check('and a step already done moves them on', gateFor('/welcome', state({ profile: true })) === '/welcome/agreement');
-check(
-  'the last step, done, ends the flow',
-  gateFor('/welcome/bank', ALL_DONE) === '/',
-);
+
+/*
+ * Going back is the point of the Back button, so these two say the opposite of
+ * what they used to. A completed step is a page, not a closed door: the flow is
+ * still ordered forwards — nothing above lets anybody skip ahead — but a step
+ * already done can be opened and read.
+ */
+check('a step already done can be opened again', gateFor('/welcome', state({ profile: true })) === null);
+check('including the last one, with everything finished', gateFor('/welcome/bank', ALL_DONE) === null);
+check('and a signed agreement', gateFor('/welcome/agreement', ALL_DONE) === null);
 check('an unknown welcome path lands on the next real one', gateFor('/welcome/nope', DOCS_DONE) === '/welcome/bank');
 
 /*
@@ -313,6 +331,152 @@ try {
   refusedMissing = error instanceof SecretBoxError;
 }
 check('and sealing refuses rather than storing in the clear', refusedMissing);
+
+console.log('\n— going back —');
+check('the first step has nothing behind it', previousStep('profile') === null);
+check('the agreement goes back to the details', previousStep('agreement')?.path === '/welcome');
+check('the W-9 goes back to the agreement', previousStep('w9')?.path === '/welcome/agreement');
+check('and the bank step goes back to the W-9', previousStep('bank')?.path === '/welcome/w9');
+// Back and next are inverses everywhere the pair exists, which is what stops a
+// Back button from landing somewhere the flow would immediately bounce off.
+check(
+  'back then forward is where you started',
+  STEPS.slice(1).every((step, index) => previousStep(step.key)?.key === STEPS[index]?.key),
+);
+
+console.log('\n— what a revisit is allowed to leave alone —');
+// A password already chosen: both boxes empty means keep it, and only then.
+const revisitProfile = { ...goodProfile, password: '', confirmPassword: '' };
+check(
+  'a first visit still demands a password',
+  Boolean(profileProblems(revisitProfile).password),
+);
+check(
+  'a revisit with both boxes empty does not',
+  Object.keys(profileProblems(revisitProfile, { passwordSet: true })).length === 0,
+);
+check('and that counts as keeping it', keepsPassword(revisitProfile, { passwordSet: true }));
+check(
+  'a revisit that types one still has to type it twice',
+  Boolean(
+    profileProblems(
+      { ...goodProfile, password: 'a-long-enough-one', confirmPassword: '' },
+      { passwordSet: true },
+    ).confirmPassword,
+  ),
+);
+check(
+  'and a half-filled password is not mistaken for keeping it',
+  !keepsPassword({ ...goodProfile, password: 'x', confirmPassword: '' }, { passwordSet: true }),
+);
+
+// A sealed taxpayer number: same idea, with the extra rule that the kind of
+// number has to match, or nine digits end up filed as the wrong sort.
+const blankTin: W9Input = { ...goodW9, tin: '' };
+check('an empty taxpayer field is normally a problem', Boolean(w9Problems(blankTin).tin));
+check(
+  'but not when the same kind of number is already sealed away',
+  Object.keys(w9Problems(blankTin, { tinOnFile: 'ssn' })).length === 0,
+);
+check('and that counts as keeping it', keepsTin(blankTin, { tinOnFile: 'ssn' }));
+check(
+  'switching SSN to EIN with an empty field is refused',
+  Boolean(w9Problems({ ...blankTin, tinType: 'ein' }, { tinOnFile: 'ssn' }).tin),
+);
+check(
+  'and is not mistaken for keeping it',
+  !keepsTin({ ...blankTin, tinType: 'ein' }, { tinOnFile: 'ssn' }),
+);
+check(
+  'a number typed in replaces rather than keeps',
+  !keepsTin({ ...goodW9, tin: '987-65-4321' }, { tinOnFile: 'ssn' }),
+);
+check(
+  'and is still checked for length',
+  Boolean(w9Problems({ ...goodW9, tin: '12345' }, { tinOnFile: 'ssn' }).tin),
+);
+
+// The account number, which has no kind to match.
+const blankAccount = { accountName: 'Arthur Reyes', bankName: 'Example Bank', accountNumber: '' };
+check('an empty account number is normally a problem', Boolean(bankProblems(blankAccount).accountNumber));
+check(
+  'but not when one is already on file',
+  Object.keys(bankProblems(blankAccount, { accountOnFile: true })).length === 0,
+);
+check('and that counts as keeping it', keepsAccountNumber(blankAccount, { accountOnFile: true }));
+check(
+  'the name is still required either way',
+  Boolean(bankProblems({ ...blankAccount, accountName: '' }, { accountOnFile: true }).accountName),
+);
+check(
+  'and a number typed in is still checked',
+  Boolean(
+    bankProblems({ ...blankAccount, accountNumber: '12' }, { accountOnFile: true }).accountNumber,
+  ),
+);
+
+console.log('\n— the dashes, as they are typed —');
+check('nothing yet', formatTinAsTyped('', 'ssn') === '');
+check('three digits stand alone', formatTinAsTyped('123', 'ssn') === '123');
+check('the fourth brings a dash with it', formatTinAsTyped('1234', 'ssn') === '123-4');
+check('and the sixth brings the second', formatTinAsTyped('123456', 'ssn') === '123-45-6');
+check('a whole one is the whole shape', formatTinAsTyped('123456789', 'ssn') === '123-45-6789');
+check('an EIN splits after two', formatTinAsTyped('123', 'ein') === '12-3');
+check('and only there', formatTinAsTyped('123456789', 'ein') === '12-3456789');
+/*
+ * The one that keeps backspace working. If three digits formatted as `123-`
+ * then deleting the fourth digit would put the dash straight back, the caret
+ * could never get past it and the field would be stuck.
+ */
+check('a separator is never left dangling', !formatTinAsTyped('123', 'ssn').endsWith('-'));
+check('nor on an EIN', !formatTinAsTyped('12', 'ein').endsWith('-'));
+check('dashes already typed are not doubled', formatTinAsTyped('123-45-6789', 'ssn') === '123-45-6789');
+check('anything not a digit is dropped', formatTinAsTyped('abc123def45', 'ssn') === '123-45');
+check('a tenth digit has nowhere to go', formatTinAsTyped('1234567890123', 'ssn') === '123-45-6789');
+check('and the field stops where the shape does', tinMaxLength('ssn') === '123-45-6789'.length);
+check('for an EIN too', tinMaxLength('ein') === '12-3456789'.length);
+// Typed all the way through, the live formatter and the on-file formatter agree.
+check(
+  'live and final formatting agree on a whole number',
+  formatTinAsTyped('123456789', 'ssn') === formatTin('123456789', 'ssn'),
+);
+check(
+  'and on an EIN',
+  formatTinAsTyped('123456789', 'ein') === formatTin('123456789', 'ein'),
+);
+
+console.log('\n— what a waiver opens —');
+const OPEN = { bypassed: true };
+check('the first step, as always', canOpen(NOTHING_DONE, 'profile', OPEN));
+check('the bank step, with nothing else done', canOpen(NOTHING_DONE, 'bank', OPEN));
+/*
+ * The one ordering a waiver does not lift. Both of these end in a signature,
+ * and a signature made on an account whose password an admin issued and read
+ * out is worth less than the thirty seconds it takes to change it.
+ */
+check('but not the agreement, before a password of their own', !canOpen(NOTHING_DONE, 'agreement', OPEN));
+check('nor the W-9', !canOpen(NOTHING_DONE, 'w9', OPEN));
+check('both open once the password is theirs', canOpen(state({ profile: true }), 'agreement', OPEN));
+check('and in either order', canOpen(state({ profile: true }), 'w9', OPEN));
+// Without a waiver the corridor is unchanged.
+check('the queue still holds for everybody else', !canOpen(state({ profile: true }), 'w9'));
+check('and the default is no waiver', canOpen(state({ profile: true }), 'agreement'));
+
+console.log('\n— what a waiver lets past —');
+check('the app is open with nothing filled in', gateFor('/', NOTHING_DONE, OPEN) === null);
+check('and every page inside it', gateFor('/links', NOTHING_DONE, OPEN) === null);
+check('without one, the same request is sent to step 1', gateFor('/links', NOTHING_DONE) === '/welcome');
+// The forms are still reachable, which is the point of the whole feature.
+check('the profile step is still openable', gateFor('/welcome', NOTHING_DONE, OPEN) === null);
+check('and the bank step, out of order', gateFor('/welcome/bank', NOTHING_DONE, OPEN) === null);
+check(
+  'a signed document still waits for the password',
+  gateFor('/welcome/w9', NOTHING_DONE, OPEN) === '/welcome',
+);
+check(
+  'and opens once it is set',
+  gateFor('/welcome/w9', state({ profile: true }), OPEN) === null,
+);
 
 console.log(`\nonboarding: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import { OnboardingRail } from '@/components/OnboardingRail';
-import { W9Form } from '@/components/onboarding/W9Form';
+import { W9Form, type W9Prefill } from '@/components/onboarding/W9Form';
+import { RevisitNotice } from '@/components/onboarding/StepControls';
+import { formatDateTime } from '@/lib/analytics';
+import { nextStep, previousStep, type W9Classification } from '@/lib/onboarding';
 import { requireStep } from '@/lib/onboarding-guard';
-import { readAgreement } from '@/lib/onboarding-store';
+import { readAgreement, readW9 } from '@/lib/onboarding-store';
 import { findUserById } from '@/lib/users';
 
 export const dynamic = 'force-dynamic';
@@ -10,13 +13,36 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Form W-9' };
 
 export default async function W9Page() {
-  const { viewer, state } = await requireStep('w9');
+  const { viewer, state, revisiting } = await requireStep('w9');
   const account = await findUserById(viewer.id).catch(() => null);
   // The address they typed one step ago. Asking for it twice on consecutive
   // screens is how a form earns the reputation of not paying attention.
   const agreement = await readAgreement(viewer.id).catch(() => null);
+  const filed = revisiting ? await readW9(viewer.id).catch(() => null) : null;
+
+  // Every field except the number itself, which nothing can read back.
+  const existing: W9Prefill | null = filed
+    ? {
+        line1Name: filed.line1Name,
+        line2Business: filed.line2Business,
+        classification: filed.classification as W9Classification | '',
+        llcCode: filed.llcCode,
+        otherText: filed.otherText,
+        foreignPartners: filed.foreignPartners,
+        exemptPayeeCode: filed.exemptPayeeCode,
+        fatcaCode: filed.fatcaCode,
+        address: filed.address,
+        cityStateZip: filed.cityStateZip,
+        accountNumbers: filed.accountNumbers,
+        tinType: filed.tinType,
+        tinLast4: filed.tinLast4,
+        signaturePng: filed.signaturePng,
+      }
+    : null;
 
   const today = new Date().toISOString().slice(0, 10);
+  const back = previousStep('w9');
+  const onward = nextStep(state);
 
   return (
     <div>
@@ -29,8 +55,8 @@ export default async function W9Page() {
           condition of being paid at all.
         </p>
         <p className="plain-note mt-4">
-          Your taxpayer number is encrypted before it is stored and is never shown back to anyone in
-          full — not on this screen, not to an admin, not in a list. If you would rather read the
+          Your taxpayer number is encrypted before it is stored and is never shown back to anyone
+          in full: not on this screen, not to an admin, not in a list. If you would rather read the
           IRS’s own instructions first, they are at <em>www.irs.gov/FormW9</em>.
         </p>
       </div>
@@ -39,10 +65,23 @@ export default async function W9Page() {
         <OnboardingRail current="w9" state={state} />
       </div>
 
+      {revisiting ? (
+        <RevisitNotice
+          savedAt={filed ? formatDateTime(filed.signedAt) : undefined}
+          what="This is the W-9 on file, filled in as you filed it."
+          resign
+        />
+      ) : null}
+
       <W9Form
         initialName={agreement?.affiliateName || account?.fullName || ''}
         initialAddress={agreement?.affiliateAddress ?? ''}
         today={today}
+        existing={existing}
+        revisiting={revisiting}
+        backTo={back ? { path: back.path, label: back.label } : undefined}
+        continueTo={onward?.path ?? '/'}
+        continueLabel={onward ? `Continue to ${onward.label.toLowerCase()}` : 'Go to the dashboard'}
       />
     </div>
   );

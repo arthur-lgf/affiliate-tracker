@@ -8,6 +8,8 @@ import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { Pager } from './Pager';
 import { TableScroller } from './TableScroller';
 import { BusyLabel } from './Spinner';
+import { ApprovalPill } from './ApprovalPill';
+import { awaitingReview, isBypassed, NO_BYPASS, type Approval, type Bypass } from '@/lib/approval';
 
 export type AccountRow = {
   id: string;
@@ -22,6 +24,10 @@ export type AccountRow = {
   createdBy: string;
   /** How far through onboarding they are. Null for an admin, who does not. */
   setup: OnboardingState | null;
+  /** Whether anybody has let them in. Null for an admin, who is not reviewed. */
+  approval: Approval | null;
+  /** Whether an admin waived the gate for them. */
+  bypass: Bypass | null;
 };
 
 type Fields = {
@@ -61,10 +67,41 @@ function signInDate(iso: string | null): string {
  * Username, name and email all match: an admin looking someone up has whichever
  * one of the three they were given.
  */
-export function matchAccounts(rows: AccountRow[], query: string, role: RoleFilter): AccountRow[] {
+/**
+ * The four answers the status filter can give.
+ *
+ * "Waiting" is the one that matters and the reason this exists: an admin coming
+ * to this page to clear a queue wants the queue, not a list of everybody with a
+ * few gold pills scattered through it. It is deliberately narrower than
+ * "pending", which also covers people who have signed up and filled in nothing.
+ */
+export type StatusFilter = 'all' | 'waiting' | 'approved' | 'declined' | 'bypassed';
+
+export function matchAccounts(
+  rows: AccountRow[],
+  query: string,
+  role: RoleFilter,
+  status: StatusFilter = 'all',
+): AccountRow[] {
   const needle = query.trim().toLowerCase();
   return rows.filter((row) => {
     if (role !== 'all' && row.role !== role) return false;
+    if (status !== 'all') {
+      // An admin has no approval state, so any status filter excludes them
+      // rather than silently treating "no answer" as a match.
+      if (!row.approval) return false;
+      const waived = row.bypass ? isBypassed(row.bypass) : false;
+      if (status === 'bypassed') return waived;
+      /*
+       * A waived account is in none of the other three. It is not in the queue
+       * (nobody is waiting on it), and listing it under approved or declined
+       * would put an account nobody has read beside accounts somebody has.
+       */
+      if (waived) return false;
+      if (status === 'waiting' && !awaitingReview(row.approval)) return false;
+      if (status === 'approved' && row.approval.status !== 'approved') return false;
+      if (status === 'declined' && row.approval.status !== 'declined') return false;
+    }
     if (!needle) return true;
     return [row.username, row.fullName, row.email, row.usr]
       .join(' ')
@@ -116,12 +153,29 @@ export function UsersPanel({
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');
   const [role, setRole] = useState<RoleFilter>('all');
+  const [status, setStatus] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const issuedRef = useRef<HTMLDivElement | null>(null);
   const formRef = useRef<HTMLInputElement | null>(null);
 
-  const matched = useMemo(() => matchAccounts(rows, query, role), [rows, query, role]);
+  const matched = useMemo(
+    () => matchAccounts(rows, query, role, status),
+    [rows, query, role, status],
+  );
+
+  /* Counted over everything rather than over what is on screen, so the number
+     beside "Waiting" does not change when somebody types in the search box. */
+  const waitingCount = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          row.approval &&
+          awaitingReview(row.approval) &&
+          !(row.bypass && isBypassed(row.bypass)),
+      ).length,
+    [rows],
+  );
 
   /*
    * Sliced rather than cut: an account disabled or deleted from the last page
@@ -226,7 +280,7 @@ export function UsersPanel({
   async function remove(row: AccountRow) {
     if (
       !confirm(
-        `Delete ${row.username} for good? Their links, leads and approvals are not touched — only the sign-in goes.`,
+        `Delete ${row.username} for good? Their links, leads and approvals are not touched. Only the sign-in goes.`,
       )
     ) {
       return;
@@ -420,6 +474,25 @@ export function UsersPanel({
             <option value="affiliate">Affiliate</option>
           </select>
 
+          <label className="sr-only" htmlFor="account-status">
+            Filter by approval
+          </label>
+          <select
+            id="account-status"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value as StatusFilter);
+              setPage(1);
+            }}
+            className="field w-auto"
+          >
+            <option value="all">Any status</option>
+            <option value="waiting">Waiting for review ({waitingCount})</option>
+            <option value="approved">Approved</option>
+            <option value="declined">Declined</option>
+            <option value="bypassed">Bypassed</option>
+          </select>
+
           {/* The primary action sits in the toolbar rather than above it: this
               panel is the whole page, and a button floating over it would have
               nothing to belong to. */}
@@ -444,7 +517,7 @@ export function UsersPanel({
           </p>
         ) : (
           <TableScroller label="Accounts" controlsClassName="px-5 pt-3">
-            <table className="w-full min-w-[1160px] border-collapse text-left">
+            <table className="w-full min-w-[1300px] border-collapse text-left">
               <thead>
                 <tr className="bg-paper-card">
                   <Th>Username</Th>
@@ -452,6 +525,7 @@ export function UsersPanel({
                   <Th>Role</Th>
                   <Th>Tracking key</Th>
                   <Th>Setup</Th>
+                  <Th>Status</Th>
                   <Th>Last sign-in</Th>
                   <Th align="right">Actions</Th>
                 </tr>
@@ -498,11 +572,17 @@ export function UsersPanel({
                       </td>
 
                       <td className="tnum px-5 py-3.5 text-[12px] text-ink-dim">
-                        {row.usr ? `usr=${row.usr}` : '—'}
+                        {row.usr ? `usr=${row.usr}` : 'None'}
                       </td>
 
                       <td className="px-5 py-3.5">
-                        <SetupCell id={row.id} state={row.setup} />
+                        <SetupCell id={row.id} state={row.setup} role={row.role} />
+                      </td>
+
+                      <td className="px-5 py-3.5">
+                        {row.approval ? (
+                          <ApprovalPill approval={row.approval} bypass={row.bypass ?? NO_BYPASS} />
+                        ) : null}
                       </td>
 
                       <td className="tnum px-5 py-3.5 text-[13px] text-ink-dim">
@@ -604,8 +684,25 @@ export function UsersPanel({
  * and a missing bank account stops a different one — and a fraction hides
  * exactly that. Hovering names each one; the link opens the record.
  */
-function SetupCell({ id, state }: { id: string; state: OnboardingState | null }) {
-  if (!state) return <span className="text-[12px] text-ink-dim">—</span>;
+function SetupCell({
+  id,
+  state,
+  role,
+}: {
+  id: string;
+  state: OnboardingState | null;
+  role: 'admin' | 'affiliate';
+}) {
+  /* Two different nothings. An admin has no onboarding, which is a fact; an
+     affiliate with no state is one the read did not answer for, which is not.
+     Printing the first when it is the second is a confident wrong answer. */
+  if (!state) {
+    return (
+      <span className="text-[12px] text-ink-dim">
+        {role === 'admin' ? 'Not applicable' : 'Unknown'}
+      </span>
+    );
+  }
   const done = STEPS.filter((step) => state[step.key]).length;
   return (
     <Link
@@ -705,7 +802,7 @@ const PasswordReveal = function PasswordReveal({
       {issued.usr ? (
         <p className="plain mt-2">
           Their tracking key is{' '}
-          <code className="tnum font-semibold text-ink">{issued.usr}</code> — it is already picked
+          <code className="tnum font-semibold text-ink">{issued.usr}</code>. It is already picked
           for them on the create-a-link page, and it stays in the list below.
         </p>
       ) : null}

@@ -91,6 +91,19 @@ export function nextStep(state: OnboardingState): Step | null {
   return STEPS.find((step) => !state[step.key]) ?? null;
 }
 
+/**
+ * The step before this one.
+ *
+ * What Back is wired to. The flow is a queue of forms, and the only way to
+ * check what went into the last one used to be to finish all four and go
+ * looking on the dashboard — so a step that has been done now stays open, and
+ * this is how you get back to it.
+ */
+export function previousStep(key: StepKey): Step | null {
+  const index = STEP_KEYS.indexOf(key);
+  return index > 0 ? (STEPS[index - 1] ?? null) : null;
+}
+
 /** The first *required* thing left to do. This is what bars the app. */
 export function firstMissingRequired(state: OnboardingState): Step | null {
   return STEPS.find((step) => step.required && !state[step.key]) ?? null;
@@ -114,14 +127,32 @@ export function progressOf(state: OnboardingState): { done: number; total: numbe
   };
 }
 
+/** The two steps that end in a signature. */
+const SIGNED_STEPS: StepKey[] = ['agreement', 'w9'];
+
 /**
  * A step you have not earned yet cannot be opened.
  *
  * Not for security — the routes check their own preconditions — but because
  * signing an agreement before you have set a password means signing it as an
  * account somebody else was handed the keys to. The order is the point.
+ *
+ * `bypassed` relaxes it, because an admin who has waived the gate has waived
+ * the queue with it: those four items become a list to work through in whatever
+ * order they are needed, not a corridor. One rule survives, and it is the one
+ * the ordering existed for in the first place — the two documents that carry a
+ * signature still need a password of their own behind them. An admin knows the
+ * password they issued, so a signature made under it is worth less than the
+ * thirty seconds it takes to change it.
  */
-export function canOpen(state: OnboardingState, key: StepKey): boolean {
+export function canOpen(
+  state: OnboardingState,
+  key: StepKey,
+  options: { bypassed?: boolean } = {},
+): boolean {
+  if (options.bypassed) {
+    return SIGNED_STEPS.includes(key) ? state.profile : true;
+  }
   const index = STEP_KEYS.indexOf(key);
   if (index <= 0) return true;
   // Every earlier step done, or this is the one they are already on.
@@ -132,26 +163,35 @@ export function canOpen(state: OnboardingState, key: StepKey): boolean {
  * Where a request should be sent, or null to let it through.
  *
  * `pathname` is the page being asked for. The welcome pages themselves are
- * never redirected away from — that is the loop this exists to avoid — except
- * to move somebody forward from a step they have already finished.
+ * never redirected away from — that is the loop this exists to avoid.
+ *
+ * A finished step used to be bounced forward, on the reasoning that nobody
+ * should sign the same document twice. That reasoning was about the *submit*
+ * and it was applied to the *page*, which left no way to go back and look at
+ * what had been put in — including on the step that is only a name, an email
+ * and a phone number. Order is still enforced going forwards. Going backwards
+ * is now allowed, and each page says plainly what re-submitting it would do.
  */
-export function gateFor(pathname: string, state: OnboardingState): string | null {
+export function gateFor(
+  pathname: string,
+  state: OnboardingState,
+  options: { bypassed?: boolean } = {},
+): string | null {
   const onWelcome = pathname === '/welcome' || pathname.startsWith('/welcome/');
 
   if (onWelcome) {
     const step = STEPS.find((candidate) => candidate.path === pathname);
     // An unknown /welcome/* path, or one whose earlier steps are unfinished:
     // send them to the earliest thing they can actually do.
-    if (!step || !canOpen(state, step.key)) {
+    if (!step || !canOpen(state, step.key, options)) {
       return (nextStep(state) ?? STEPS[0]!).path;
     }
-    // Already done, and nothing left: the flow is over, so they belong in the app.
-    if (state[step.key] && isComplete(state)) return '/';
-    // Already done, but something else is not: move them along rather than
-    // letting them re-sign a form they have signed.
-    if (state[step.key]) return nextStep(state)?.path ?? '/';
     return null;
   }
+
+  // Waived: nothing here bars any page. They still have the forms, reachable
+  // from their profile, and can work through whichever ones they need.
+  if (options.bypassed) return null;
 
   const missing = firstMissingRequired(state);
   return missing ? missing.path : null;
@@ -184,12 +224,27 @@ export function looksLikePhone(value: string): boolean {
 
 export const MIN_PASSWORD = 12;
 
-export function profileProblems(input: ProfileInput): Record<string, string> {
+/**
+ * `passwordSet` is true when they have already chosen one — which is to say,
+ * when this is a second visit to step 1 rather than the first.
+ *
+ * On that second visit, both password fields being empty means "leave it
+ * alone", not "set an empty password". Without that, coming back to correct a
+ * typo in a phone number would force a password change, and forcing a password
+ * change to fix a phone number is how people end up with a password they cannot
+ * remember.
+ */
+export function profileProblems(
+  input: ProfileInput,
+  options: { passwordSet?: boolean } = {},
+): Record<string, string> {
   const problems: Record<string, string> = {};
   if (!input.fullName?.trim()) problems.fullName = 'Tell us your name.';
   if (!looksLikeEmail(input.email ?? '')) problems.email = 'That does not look like an email address.';
   if (!input.position?.trim()) problems.position = 'What is your role?';
   if (!looksLikePhone(input.mobile ?? '')) problems.mobile = 'A mobile number, including the area code.';
+
+  if (keepsPassword(input, options)) return problems;
 
   const password = input.password ?? '';
   if (password.length < MIN_PASSWORD) {
@@ -198,6 +253,14 @@ export function profileProblems(input: ProfileInput): Record<string, string> {
     problems.confirmPassword = 'The two passwords are not the same.';
   }
   return problems;
+}
+
+/** Whether this submission is asking for the password to be left as it is. */
+export function keepsPassword(
+  input: ProfileInput,
+  options: { passwordSet?: boolean } = {},
+): boolean {
+  return Boolean(options.passwordSet) && !(input.password ?? '') && !(input.confirmPassword ?? '');
 }
 
 export type AgreementInput = {
@@ -278,7 +341,20 @@ export type W9Input = {
   certified: boolean;
 };
 
-export function w9Problems(input: W9Input): Record<string, string> {
+/**
+ * `tinOnFile` is the kind of number already sealed away for this person, or
+ * null when there is none.
+ *
+ * Nothing can read that number back to prefill it — that is the point of
+ * sealing it — so on a return visit the field is empty, and an empty field
+ * must not mean "erase it". It means keep it, but only while the *kind* still
+ * matches: switching SSN to EIN and saving would otherwise leave nine digits
+ * filed under the wrong sort of number.
+ */
+export function w9Problems(
+  input: W9Input,
+  options: { tinOnFile?: 'ssn' | 'ein' | null } = {},
+): Record<string, string> {
   const problems: Record<string, string> = {};
 
   // The form says it in as many words: "An entry is required."
@@ -297,6 +373,8 @@ export function w9Problems(input: W9Input): Record<string, string> {
 
   if (!input.tinType) {
     problems.tinType = 'An SSN or an EIN, whichever applies.';
+  } else if (keepsTin(input, options)) {
+    // Left empty on purpose, with the same kind of number already on file.
   } else if (!validTin(input.tin ?? '')) {
     problems.tin = `A ${input.tinType === 'ssn' ? 'Social Security number' : 'an employer identification number'} is nine digits.`;
   }
@@ -309,16 +387,32 @@ export function w9Problems(input: W9Input): Record<string, string> {
   return problems;
 }
 
+/** Whether this submission is asking for the stored taxpayer number to stand. */
+export function keepsTin(
+  input: W9Input,
+  options: { tinOnFile?: 'ssn' | 'ein' | null } = {},
+): boolean {
+  if (!options.tinOnFile) return false;
+  if (digitsOf(input.tin ?? '').length > 0) return false;
+  return input.tinType === options.tinOnFile;
+}
+
 export type BankInput = {
   accountName: string;
   bankName: string;
   accountNumber: string;
 };
 
-export function bankProblems(input: BankInput): Record<string, string> {
+/** `accountOnFile` says an account number is already sealed away, so leaving
+ *  the field empty corrects the name or the bank without retyping it. */
+export function bankProblems(
+  input: BankInput,
+  options: { accountOnFile?: boolean } = {},
+): Record<string, string> {
   const problems: Record<string, string> = {};
   if (!input.accountName?.trim()) problems.accountName = 'The name on the account.';
   if (!input.bankName?.trim()) problems.bankName = 'Which bank.';
+  if (keepsAccountNumber(input, options)) return problems;
   const digits = digitsOf(input.accountNumber ?? '');
   // No country agrees on a length. Four is the shortest that could identify
   // anything and seventeen covers the longest domestic account numbers.
@@ -326,4 +420,12 @@ export function bankProblems(input: BankInput): Record<string, string> {
     problems.accountNumber = 'An account number, 4 to 17 digits.';
   }
   return problems;
+}
+
+/** Whether this submission is asking for the stored account number to stand. */
+export function keepsAccountNumber(
+  input: BankInput,
+  options: { accountOnFile?: boolean } = {},
+): boolean {
+  return Boolean(options.accountOnFile) && digitsOf(input.accountNumber ?? '').length === 0;
 }

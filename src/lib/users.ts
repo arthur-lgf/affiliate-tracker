@@ -138,6 +138,19 @@ function fail(context: string, error: PostgrestErrorish): never {
       'The users table is missing columns this version needs. Run: npx supabase db push',
     );
   }
+  /*
+   * PostgREST answers a *write* against a column it does not know with
+   * PGRST204, not with Postgres's own 42703, and PGRST205 for a table. Both
+   * mean the same thing as the codes above: the migrations are behind the
+   * deploy. Without this branch the reader gets "Could not find the
+   * 'onboarding_bypass_note' column of 'users' in the schema cache", which
+   * names a column nobody has heard of and no way to fix it.
+   */
+  if (code === 'PGRST204' || code === 'PGRST205') {
+    throw new StoreConfigError(
+      'This database is missing columns this version needs. Run: npx supabase db push',
+    );
+  }
   if (code === '42501') {
     throw new StoreConfigError(
       'Supabase refused the request. SUPABASE_SERVICE_ROLE_KEY must be the service role key, not the publishable one.',
@@ -314,6 +327,13 @@ export async function createUser(
       full_name: input.fullName,
       email: input.email,
       active: true,
+      /*
+       * An affiliate starts pending and is let in by a person. An admin does
+       * not: they never see the onboarding flow, nothing gates them on this
+       * column, and leaving them at the default would put accounts in a review
+       * queue that has no bearing on them.
+       */
+      approval_status: input.role === 'admin' ? 'approved' : 'pending',
       created_by: input.createdBy,
     };
 

@@ -49,6 +49,34 @@ export function validTin(value: string): boolean {
   return digitsOf(value).length === 9;
 }
 
+/**
+ * The same dashes, but written in as the number is typed.
+ *
+ * Differs from formatTin below in the one way that matters at a keyboard: it
+ * formats a half-finished number. `1234` becomes `123-4` rather than being
+ * handed back raw and jumping into shape only at the ninth digit.
+ *
+ * A separator is never left dangling on the end. `123` stays `123` instead of
+ * becoming `123-`, which is what stops backspace from deadlocking: delete the
+ * fourth digit and the dash goes with it, rather than being immediately re-added
+ * so the caret can never get past it.
+ */
+export function formatTinAsTyped(value: string, type: 'ssn' | 'ein'): string {
+  const digits = digitsOf(value).slice(0, 9);
+  if (type === 'ein') {
+    return digits.length <= 2 ? digits : `${digits.slice(0, 2)}-${digits.slice(2)}`;
+  }
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
+/** How many characters a fully formatted number takes, so the input can stop
+ *  there rather than silently dropping what it will not keep. */
+export function tinMaxLength(type: 'ssn' | 'ein'): number {
+  return type === 'ssn' ? 11 : 10;
+}
+
 /** `123-45-6789` / `12-3456789`, for reading back a number that was typed as a
  *  run of digits. Anything that is not nine digits is handed back untouched
  *  rather than dressed up as something it is not. */

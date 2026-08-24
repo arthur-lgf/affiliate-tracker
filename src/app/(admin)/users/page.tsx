@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { UsersPanel, type AccountRow } from '@/components/UsersPanel';
 import { authConfigured } from '@/lib/auth';
+import { NO_BYPASS, UNREVIEWED } from '@/lib/approval';
 import { NOTHING_DONE } from '@/lib/onboarding';
 import { listOnboarding } from '@/lib/onboarding-store';
 import { listUsers, usersEnabled } from '@/lib/users';
@@ -51,10 +52,25 @@ export default async function UsersPage() {
    * rather than to an error panel.
    */
   const setup = new Map<string, AccountRow['setup']>();
+  const approvals = new Map<string, AccountRow['approval']>();
+  const bypasses = new Map<string, AccountRow['bypass']>();
+  let onboardingRead = true;
   try {
-    for (const row of await listOnboarding()) setup.set(row.userId, row.state);
+    for (const row of await listOnboarding()) {
+      setup.set(row.userId, row.state);
+      approvals.set(row.userId, row.approval);
+      bypasses.set(row.userId, row.bypass);
+    }
   } catch {
-    // Leave the map empty; the column renders as unknown.
+    /*
+     * Tracked rather than swallowed into an empty map. "No row for this person"
+     * and "the read failed" produce the same empty map and mean opposite
+     * things: the first is somebody who has not started, the second is nothing
+     * known about anybody. Drawing the first when it is the second would print
+     * "Not submitted" beside every account on the page, which is a confident
+     * wrong answer.
+     */
+    onboardingRead = false;
   }
 
   let rows: AccountRow[];
@@ -70,7 +86,18 @@ export default async function UsersPage() {
       createdAt: user.createdAt,
       lastLoginAt: user.lastLoginAt,
       createdBy: user.createdBy,
-      setup: user.role === 'affiliate' ? (setup.get(user.id) ?? { ...NOTHING_DONE }) : null,
+      setup:
+        user.role === 'affiliate' && onboardingRead
+          ? (setup.get(user.id) ?? { ...NOTHING_DONE })
+          : null,
+      approval:
+        user.role === 'affiliate' && onboardingRead
+          ? (approvals.get(user.id) ?? { ...UNREVIEWED })
+          : null,
+      bypass:
+        user.role === 'affiliate' && onboardingRead
+          ? (bypasses.get(user.id) ?? { ...NO_BYPASS })
+          : null,
     }));
   } catch (error) {
     return (

@@ -331,7 +331,7 @@ export function LinksBrowser({
                         {row.submissions.toLocaleString()}
                       </td>
                       <td className="tnum px-5 py-3.5 text-right text-[13px] text-ink-dim">
-                        {row.visits > 0 ? formatPercent(row.submissions / row.visits, 0) : '—'}
+                        {row.visits > 0 ? formatPercent(row.submissions / row.visits, 0) : 'No visits'}
                       </td>
                     </>
                   ) : null}

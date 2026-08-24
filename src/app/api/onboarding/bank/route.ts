@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { actorFor, invalid, jsonBody, storeResponse, str } from '@/lib/onboarding-api';
-import { bankProblems } from '@/lib/onboarding';
-import { saveBank } from '@/lib/onboarding-store';
+import { actorFor, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
+import { bankProblems, keepsAccountNumber } from '@/lib/onboarding';
+import { readBank, saveBank } from '@/lib/onboarding-store';
 import { secretsConfigured } from '@/lib/secret-box';
 
 export const dynamic = 'force-dynamic';
@@ -15,14 +15,14 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   const gate = await actorFor(request, 'bank');
   if ('response' in gate) return gate.response;
-  const { viewer } = gate;
+  const { viewer, state, approval, bypass } = gate;
 
   if (!secretsConfigured()) {
     return NextResponse.json(
       {
         error:
           'This deployment cannot accept bank details yet: ONBOARDING_SECRET_KEY is not set. ' +
-          'Tell your admin — nothing you typed has been stored.',
+          'Tell your admin. Nothing you typed has been stored.',
       },
       { status: 503 },
     );
@@ -39,14 +39,30 @@ export async function POST(request: Request) {
     accountNumber: str(body, 'accountNumber'),
   };
 
-  const problems = bankProblems(input);
+  // Same rule as the W-9: whether there is something to keep is the database's
+  // answer, not the browser's.
+  let accountOnFile = false;
+  if (state.bank) {
+    try {
+      accountOnFile = Boolean(await readBank(viewer.id));
+    } catch (error) {
+      return storeResponse(error);
+    }
+  }
+
+  const problems = bankProblems(input, { accountOnFile });
   if (Object.keys(problems).length > 0) return invalid(problems);
 
   try {
-    await saveBank(viewer.id, input);
+    await saveBank(viewer.id, {
+      ...input,
+      accountNumber: keepsAccountNumber(input, { accountOnFile }) ? '' : input.accountNumber,
+    });
   } catch (error) {
     return storeResponse(error);
   }
 
-  return NextResponse.json({ ok: true, next: '/' });
+  await noteSubmission(viewer.id, state, 'bank');
+
+  return NextResponse.json({ ok: true, next: nextPath(state, 'bank', approval, bypass) });
 }

@@ -1,12 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ApprovalPill } from '@/components/ApprovalPill';
 import { ErrorPanel } from '@/components/ErrorPanel';
 import { RevealSecret } from '@/components/onboarding/RevealSecret';
+import { BypassSwitch } from '@/components/onboarding/BypassSwitch';
+import { ReviewDecision } from '@/components/onboarding/ReviewDecision';
 import { formatDateTime } from '@/lib/analytics';
+import { isBypassed, NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '@/lib/approval';
 import { maskAccount, maskTin } from '@/lib/mask';
-import { W9_CLASSIFICATIONS } from '@/lib/onboarding';
-import { readAgreement, readBank, readOnboarding, readW9 } from '@/lib/onboarding-store';
+import { firstMissingRequired, STEPS, W9_CLASSIFICATIONS } from '@/lib/onboarding';
+import { readAgreement, readBank, readProgress, readW9 } from '@/lib/onboarding-store';
 import { findUserById, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
 
@@ -42,12 +46,23 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const account = await findUserById(id);
   if (!account) notFound();
 
-  const [state, agreement, w9, bank] = await Promise.all([
-    readOnboarding(id).catch(() => null),
+  const [progress, agreement, w9, bank] = await Promise.all([
+    readProgress(id).catch(() => null),
     readAgreement(id).catch(() => null),
     readW9(id).catch(() => null),
     readBank(id).catch(() => null),
   ]);
+  const state = progress?.state ?? null;
+  const approval = progress?.approval ?? { ...UNREVIEWED };
+  const bypass = progress?.bypass ?? { ...NO_BYPASS };
+  const outstanding = state
+    ? STEPS.filter((step) => step.required && !state[step.key]).map((step) => step.label)
+    : [];
+  const paperworkComplete = state ? firstMissingRequired(state) === null : false;
+  /* The read failed rather than came back empty. Those two produce the same
+     defaults and mean opposite things, so the page says which one it is
+     instead of asserting "not submitted" about somebody it could not look up. */
+  const unknown = progress === null;
 
   const classification = W9_CLASSIFICATIONS.find((c) => c.key === w9?.classification);
 
@@ -62,6 +77,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">
           {account.fullName || account.username}
         </h1>
+        {account.role === 'affiliate' && !unknown ? (
+          <p className="mt-2.5">
+            <ApprovalPill approval={approval} bypass={bypass} />
+          </p>
+        ) : null}
         <p className="plain mt-2">
           <span className="tnum">{account.username}</span>
           {account.usr ? (
@@ -139,8 +159,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Fact label="Filed" value={formatDateTime(w9.signedAt)} />
               <Fact label="Revision" value={w9.formRevision} />
-              <Fact label="Line 1 — name" value={w9.line1Name} />
-              <Fact label="Line 2 — business" value={w9.line2Business || '—'} />
+              <Fact label="Line 1, name" value={w9.line1Name} />
+              <Fact label="Line 2, business" value={w9.line2Business || 'None'} />
               <Fact
                 label="Classification"
                 value={
@@ -153,7 +173,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               />
               <Fact label="Address" value={w9.address} />
               <Fact label="City, state, ZIP" value={w9.cityStateZip} />
-              <Fact label="Exempt / FATCA" value={[w9.exemptPayeeCode, w9.fatcaCode].filter(Boolean).join(' / ') || '—'} mono />
+              <Fact label="Exempt / FATCA" value={[w9.exemptPayeeCode, w9.fatcaCode].filter(Boolean).join(' / ') || 'None'} mono />
               <div className="sm:col-span-2">
                 {/* The one number on this page that is not on this page. */}
                 <RevealSecret
@@ -174,6 +194,61 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           <p className="plain mt-2">Not filed yet. Nothing can be paid until it is.</p>
         )}
       </section>
+
+      {account.role === 'affiliate' && !unknown ? (
+        <section className="panel mt-5 p-6 sm:p-7">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+            <h2 className="text-[15px] font-semibold">Bypass onboarding</h2>
+            {isBypassed(bypass) ? (
+              <span className="text-[12px] text-ink-dim">
+                Waived {bypass.at ? formatDateTime(bypass.at) : ''}
+                {bypass.by ? ` by ${bypass.by}` : ''}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-4">
+            <BypassSwitch userId={id} bypass={bypass} outstanding={outstanding} />
+          </div>
+        </section>
+      ) : null}
+
+      {/* The decision. Last on the page on purpose: it comes after reading the
+          four things above it, which is the order the job is actually done in. */}
+      {account.role === 'affiliate' ? (
+        <section className="panel mt-5 p-6 sm:p-7">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
+            <h2 className="text-[15px] font-semibold">Review this account</h2>
+            {unknown ? null : <ApprovalPill approval={approval} bypass={bypass} />}
+          </div>
+
+          <p className="plain mt-1">{reviewBlurb(unknown, approval, bypass)}</p>
+
+          <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact
+              label="Submitted"
+              value={approval.submittedAt ? formatDateTime(approval.submittedAt) : 'Not yet'}
+            />
+            <Fact
+              label="Reviewed"
+              value={approval.reviewedAt ? formatDateTime(approval.reviewedAt) : 'Not yet'}
+            />
+            <Fact label="Reviewed by" value={approval.reviewedBy || 'Nobody'} />
+            <Fact
+              label="Approval email"
+              value={approval.emailedAt ? formatDateTime(approval.emailedAt) : 'Not sent'}
+            />
+          </dl>
+
+          <div className="mt-6 border-t border-edge-faint pt-6">
+            <ReviewDecision
+              userId={id}
+              approval={approval}
+              hasEmail={Boolean(account.email)}
+              paperworkComplete={paperworkComplete}
+            />
+          </div>
+        </section>
+      ) : null}
 
       {/* Step 4 */}
       <section className="panel mt-5 p-6 sm:p-7">
@@ -198,12 +273,31 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   );
 }
 
+/** One sentence for where this account stands, and what pressing a button
+ *  below would do about it. */
+function reviewBlurb(unknown: boolean, approval: Approval, bypass: Bypass): string {
+  if (isBypassed(bypass)) {
+    return 'Onboarding is waived for this account, so nothing here is blocking them. A decision is still worth recording for when the waiver comes off.';
+  }
+  if (unknown) {
+    return 'Their onboarding record could not be read, so nothing below is known. If this project has not had its migrations applied yet, run: npx supabase db push';
+  }
+  if (approval.status === 'approved') return 'Approved. Their dashboard is open.';
+  if (approval.status === 'declined') {
+    return 'Declined. They can see the reason and can correct it, which puts them back in the queue.';
+  }
+  if (approval.submittedAt) {
+    return 'Everything is in and waiting on you. Approving it opens their dashboard and emails them.';
+  }
+  return 'They have not finished their paperwork, so there is nothing to read yet.';
+}
+
 function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="min-w-0">
       <span className="field-label">{label}</span>
       <p className={`mt-1 break-words text-[13px] text-ink-soft ${mono ? 'tnum' : ''}`}>
-        {value || '—'}
+        {value || 'Not given'}
       </p>
     </div>
   );

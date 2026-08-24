@@ -25,8 +25,14 @@ import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
 import { Pager } from '../src/components/Pager';
 import { matchAccounts, type AccountRow } from '../src/components/UsersPanel';
-import { W9Form } from '../src/components/onboarding/W9Form';
+import { W9Form, type W9Prefill } from '../src/components/onboarding/W9Form';
+import { AgreementForm } from '../src/components/onboarding/AgreementForm';
+import { ProfileForm } from '../src/components/onboarding/ProfileForm';
 import { OnboardingRail } from '../src/components/OnboardingRail';
+import { COMPANY } from '../src/lib/agreement';
+import { NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '../src/lib/approval';
+import { ApprovalPill } from '../src/components/ApprovalPill';
+import { visibleItems } from '../src/components/Nav';
 import { NOTHING_DONE, STEPS } from '../src/lib/onboarding';
 import { affiliateRevenueOf, formatMoney, type ConversionView, type EarningsRow } from '../src/lib/analytics';
 import type { CpaRate } from '../src/lib/types';
@@ -458,6 +464,10 @@ function account(i: number, over: Partial<AccountRow> = {}): AccountRow {
     lastLoginAt: null,
     createdBy: 'seed',
     setup: null,
+    // An admin is not reviewed; the affiliates below are approved unless a
+    // check says otherwise.
+    approval: i === 0 ? null : { ...UNREVIEWED, status: 'approved' },
+    bypass: i === 0 ? null : { ...NO_BYPASS },
     ...over,
   };
 }
@@ -559,6 +569,217 @@ const railDone = renderToStaticMarkup(
 );
 check('a finished step is ticked', railDone.includes('✓'));
 check('and the count follows', railDone.includes('>3 of 4</span>'));
+
+console.log('\n— the agreement, as rendered —');
+const agreementHtml = renderToStaticMarkup(
+  <AgreementForm initialName="Arthur Reyes" initialEmail="a@example.com" today="2026-08-24" />,
+);
+
+check('all twelve sections are set', [...Array(12).keys()].every((i) => agreementHtml.includes(`${i + 1}. `)));
+check('section 12 is one of them', agreementHtml.includes('12. General'));
+/*
+ * The block the .docx ends on, which was missing: section 12 ran out and the
+ * page went straight to the signature pad, so the four things typed at the top
+ * never appeared as the execution of anything.
+ */
+check('the execution block is there', agreementHtml.includes('>Company</p>'));
+check('with both parties', agreementHtml.includes('>Affiliate</p>'));
+check('and the four lines each side', ['Signature:', 'Name:', 'Title:', 'Date:'].every((label) => agreementHtml.includes(label)));
+check('the affiliate side fills in live', agreementHtml.includes('>Arthur Reyes</span>'));
+check('and so does the date', agreementHtml.includes('>2026-08-24</span>'));
+check('the company is named', agreementHtml.includes(COMPANY.name));
+// The description that used to trail the company name everywhere.
+check('and not described after its own name', !agreementHtml.includes('a limited liability company'));
+check('the governing state is a visible blank until it is set', agreementHtml.includes('____________________'));
+
+console.log('\n— coming back to a step already done —');
+const agreementAgain = renderToStaticMarkup(
+  <AgreementForm
+    initialName="Arthur Reyes"
+    initialEmail="a@example.com"
+    initialAddress="1 Example Street"
+    today="2026-08-24"
+    previousSignature={'data:image/png;base64,' + 'A'.repeat(900)}
+    revisiting
+    backTo={{ path: '/welcome', label: 'Your details' }}
+    continueTo="/welcome/w9"
+    continueLabel="Continue to form w-9"
+  />,
+);
+check('Back points at the step before', agreementAgain.includes('href="/welcome"'));
+check('and says which one that is', agreementAgain.includes('Your details'));
+check('there is a way out without signing again', agreementAgain.includes('href="/welcome/w9"'));
+check('the button says what saving would do', agreementAgain.includes('Sign again and save'));
+check('the address they gave comes back', agreementAgain.includes('1 Example Street'));
+check('the signature on file is shown', agreementAgain.includes('The signature currently on file'));
+// Read-to-the-end gating is for a document nobody has read yet; making somebody
+// scroll a contract they have already signed to get the button back is not a
+// second reading, it is a scroll.
+check('and the document does not have to be re-scrolled', agreementAgain.includes('You have read to the end'));
+check('a first visit still has to scroll it', agreementHtml.includes('Scroll to the end of the agreement'));
+
+const w9Again = renderToStaticMarkup(
+  <W9Form
+    initialName="Arthur Reyes"
+    initialAddress="1 Example Street"
+    today="2026-08-24"
+    existing={{
+      line1Name: 'Arthur Reyes',
+      line2Business: 'Reyes Referrals',
+      classification: 'individual',
+      llcCode: '',
+      otherText: '',
+      foreignPartners: false,
+      exemptPayeeCode: '',
+      fatcaCode: '',
+      address: '1 Example Street',
+      cityStateZip: 'Austin, TX 78701',
+      accountNumbers: '',
+      tinType: 'ssn',
+      tinLast4: '6789',
+      signaturePng: 'data:image/png;base64,' + 'A'.repeat(900),
+    } satisfies W9Prefill}
+    revisiting
+    backTo={{ path: '/welcome/agreement', label: 'Affiliate agreement' }}
+    continueTo="/welcome/bank"
+  />,
+);
+check('the filed W-9 comes back filled in', w9Again.includes('value="Reyes Referrals"'));
+check('including the city line', w9Again.includes('value="Austin, TX 78701"'));
+/*
+ * The taxpayer number is the one field that cannot come back, because nothing
+ * unseals it to fill in a form. What comes back is the mask and an instruction,
+ * and the field itself must be empty — a prefilled-looking box that submits
+ * nothing is how somebody ends up wiping their own SSN.
+ */
+check('the number on file is shown as a mask', w9Again.includes('•••-••-6789'));
+check('with the field left empty', w9Again.includes('Leave empty to keep it'));
+check('and said in words too', w9Again.includes('Leave this empty to keep it'));
+check('Back points at the agreement', w9Again.includes('href="/welcome/agreement"'));
+check('the last signature is shown', w9Again.includes('The signature currently on file'));
+// Nothing carried over from the last certification: perjury is affirmed now or
+// not at all.
+check('the certification starts unticked', !w9Again.includes('type="checkbox" checked=""'));
+
+const profileAgain = renderToStaticMarkup(
+  <ProfileForm
+    initialName="Arthur Reyes"
+    initialEmail="a@example.com"
+    initialPosition="Affiliate"
+    initialMobile="+1 415 555 0123"
+    revisiting
+    continueTo="/welcome/agreement"
+    continueLabel="Continue to affiliate agreement"
+  />,
+);
+check('the details come back', profileAgain.includes('value="Affiliate"'));
+check('mobile included', profileAgain.includes('value="+1 415 555 0123"'));
+check('the password half becomes optional', profileAgain.includes('Change your password'));
+check('and says what leaving it empty means', profileAgain.includes('stays as it is'));
+check('with a way onward', profileAgain.includes('href="/welcome/agreement"'));
+
+console.log('\n— the rail as a way back —');
+const railMid = renderToStaticMarkup(
+  <OnboardingRail current="w9" state={{ profile: true, agreement: true, w9: false, bank: false }} />,
+);
+check('a finished step links to itself', railMid.includes('href="/welcome"'));
+check('and so does the one after it', railMid.includes('href="/welcome/agreement"'));
+// Nothing here may be used to jump the queue.
+check('the step they are on is not a link', !railMid.includes('href="/welcome/w9"'));
+check('nor is one they have not reached', !railMid.includes('href="/welcome/bank"'));
+check('an untouched rail links nowhere', !renderToStaticMarkup(
+  <OnboardingRail current="profile" state={{ ...NOTHING_DONE }} />,
+).includes('href='));
+
+console.log('\n— where an account stands —');
+/*
+ * ReviewDecision itself is not rendered here: it calls useRouter to refresh the
+ * page after a decision, which needs a Next request. Its one piece of logic,
+ * reviewProblems, is checked directly in approval-checks.
+ */
+const pill = (over: Partial<Approval> = {}) =>
+  renderToStaticMarkup(<ApprovalPill approval={{ ...UNREVIEWED, ...over }} />);
+
+check('an account that has sent nothing', pill().includes('Not submitted'));
+check('and it is drawn quietly', pill().includes('chip-quiet'));
+check('one waiting on an admin', pill({ submittedAt: '2026-08-24T10:00:00.000Z' }).includes('Awaiting review'));
+// Gold is this palette's "deal with me", which is what a queue entry is.
+check('in the colour that asks for attention', pill({ submittedAt: '2026-08-24T10:00:00.000Z' }).includes('chip-gold'));
+check('an approved one', pill({ status: 'approved' }).includes('Approved'));
+check('in green', pill({ status: 'approved' }).includes('chip-live'));
+check('a declined one', pill({ status: 'declined' }).includes('Declined'));
+check('in red', pill({ status: 'declined' }).includes('text-alarm'));
+check('no em dash anywhere in it', !pill({ submittedAt: 'x' }).includes('—'));
+
+console.log('\n— finding the queue —');
+const waiting: Approval = { ...UNREVIEWED, submittedAt: '2026-08-24T10:00:00.000Z' };
+const queueRows = [
+  account(0, { username: 'arthur' }),
+  account(1, { username: 'dana', approval: waiting }),
+  account(2, { username: 'ali', approval: { ...UNREVIEWED, status: 'declined' } }),
+  account(3, { username: 'kim', approval: { ...UNREVIEWED } }),
+  // account() approves every affiliate it makes unless told otherwise, so this
+  // one is the approved row.
+  account(4, { username: 'sam' }),
+];
+check('everybody, by default', matchAccounts(queueRows, '', 'all').length === 5);
+check('only the one waiting', names(matchAccounts(queueRows, '', 'all', 'waiting')) === 'dana');
+check('the declined one', names(matchAccounts(queueRows, '', 'all', 'declined')) === 'ali');
+check('the approved one', names(matchAccounts(queueRows, '', 'all', 'approved')) === 'sam');
+/*
+ * kim has signed up and filled in nothing. Pending, but not waiting on anybody:
+ * putting her in the queue would be asking an admin to approve a blank form.
+ */
+check('somebody who has not submitted is not in the queue', !names(matchAccounts(queueRows, '', 'all', 'waiting')).includes('kim'));
+// An admin has no approval state at all, so a status filter must exclude them
+// rather than treat "no answer" as a match.
+check('an admin is not in any status', matchAccounts(queueRows, '', 'all', 'approved').every((r) => r.role !== 'admin'));
+check('search still applies on top', names(matchAccounts(queueRows, 'dana', 'all', 'waiting')) === 'dana');
+check('and can rule the queue out', matchAccounts(queueRows, 'ali', 'all', 'waiting').length === 0);
+check('role and status together', matchAccounts(queueRows, '', 'affiliate', 'waiting').length === 1);
+
+console.log('\n— an account let in without the paperwork —');
+const WAIVED = { at: '2026-08-24T12:00:00.000Z', by: 'arthur', note: 'Signed on paper' };
+const waivedPill = renderToStaticMarkup(
+  <ApprovalPill approval={{ ...UNREVIEWED, submittedAt: '2026-08-24T10:00:00.000Z' }} bypass={WAIVED} />,
+);
+check('the pill says so', waivedPill.includes('Bypassed'));
+/*
+ * And says nothing else. Underneath, this account is pending and its paperwork
+ * is in the queue; on screen, the fact that matters is that nobody is blocked.
+ */
+check('rather than what the review column says', !waivedPill.includes('Awaiting review'));
+check('and it is not drawn as work to do', !waivedPill.includes('chip-gold'));
+check('no em dash', !waivedPill.includes('—'));
+
+const waivedRows = [
+  account(0, { username: 'arthur' }),
+  account(1, { username: 'dana', approval: { ...UNREVIEWED, submittedAt: '2026-08-24T10:00:00.000Z' } }),
+  account(2, { username: 'ali', approval: { ...UNREVIEWED, submittedAt: '2026-08-24T10:00:00.000Z' }, bypass: WAIVED }),
+  account(3, { username: 'sam' }),
+];
+check('the waived one is findable', names(matchAccounts(waivedRows, '', 'all', 'bypassed')) === 'ali');
+/*
+ * The one that would waste an admin's afternoon: ali has submitted and is
+ * pending, so on the raw numbers ali is in the queue. But nobody is waiting on
+ * ali, because ali is already inside. Listing them as work to do would mean
+ * clearing a queue that never empties.
+ */
+check('and is not also in the review queue', names(matchAccounts(waivedRows, '', 'all', 'waiting')) === 'dana');
+check('nor under approved', !names(matchAccounts(waivedRows, '', 'all', 'approved')).includes('ali'));
+check('the approved one is still there', names(matchAccounts(waivedRows, '', 'all', 'approved')) === 'sam');
+check('everybody, unfiltered', matchAccounts(waivedRows, '', 'all').length === 4);
+
+console.log('\n— where the forms live afterwards —');
+const affiliateTabs = visibleItems(false).map((item) => item.href);
+const adminTabs = visibleItems(true).map((item) => item.href);
+// The whole point of the waiver is that they can still fill things in, so there
+// has to be a way back to the forms from inside the app.
+check('an affiliate has a profile tab', affiliateTabs.includes('/profile'));
+check('and not the admin ones', !affiliateTabs.includes('/users') && !affiliateTabs.includes('/settings'));
+check('an admin does not get a profile tab', !adminTabs.includes('/profile'));
+check('but keeps People', adminTabs.includes('/users'));
+check('both keep the shared pages', ['/', '/links', '/cpa'].every((href) => affiliateTabs.includes(href) && adminTabs.includes(href)));
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

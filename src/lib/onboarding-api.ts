@@ -11,11 +11,29 @@
 import { NextResponse } from 'next/server';
 import { unauthorized, viewerFromRequest, type Viewer } from './api-auth';
 import { clientIp, userAgent } from './request';
-import { canOpen, type StepKey } from './onboarding';
-import { onboardingEnabled, readOnboarding, type SigningMeta } from './onboarding-store';
+import { blocksApp, isBypassed, NO_BYPASS, type Approval, type Bypass } from './approval';
+import { canOpen, firstMissingRequired, nextStep, type OnboardingState, type StepKey } from './onboarding';
+import {
+  markSubmitted,
+  onboardingEnabled,
+  readProgress,
+  type SigningMeta,
+} from './onboarding-store';
 import { StoreConfigError } from './store/errors';
 
-export type Actor = { viewer: Viewer; meta: SigningMeta };
+export type Actor = {
+  viewer: Viewer;
+  meta: SigningMeta;
+  /** What was already done when the request arrived. Routes need it to tell a
+   *  first submission from a correction, and to work out where to send them
+   *  next. */
+  state: OnboardingState;
+  /** Whether an admin has let them in yet. Decides whether the end of the flow
+   *  is the dashboard or the waiting page. */
+  approval: Approval;
+  /** Whether an admin waived the gate. Decides it again, differently. */
+  bypass: Bypass;
+};
 
 /**
  * Who is filling this in, or the response to send instead.
@@ -53,14 +71,15 @@ export async function actorFor(
     };
   }
 
-  let state;
+  let progress;
   try {
-    state = await readOnboarding(viewer.id);
+    progress = await readProgress(viewer.id);
   } catch (error) {
     return { response: storeResponse(error) };
   }
+  const { state, approval, bypass } = progress;
 
-  if (!canOpen(state, step)) {
+  if (!canOpen(state, step, { bypassed: isBypassed(bypass) })) {
     return {
       response: NextResponse.json(
         { error: 'Finish the earlier steps first.' },
@@ -72,7 +91,66 @@ export async function actorFor(
   return {
     viewer,
     meta: { ip: clientIp(request), userAgent: userAgent(request) },
+    state,
+    approval,
+    bypass,
   };
+}
+
+/**
+ * Where to send them once this step has landed.
+ *
+ * Worked out from the state as it will be, not as it was, so the step just
+ * saved is not offered back. On a first run through this is simply the next
+ * form; on a correction made later it is whatever they still owe, or the
+ * dashboard when the answer is nothing.
+ */
+export function nextPath(
+  state: OnboardingState,
+  justSaved: StepKey,
+  approval: Approval,
+  bypass: Bypass = NO_BYPASS,
+): string {
+  /*
+   * A waived account is not walking a queue. Saving one item should hand them
+   * back the list they picked it from, not march them into the next form as
+   * though the order still meant something.
+   */
+  if (isBypassed(bypass)) return '/profile';
+
+  const step = nextStep({ ...state, [justSaved]: true });
+  if (step) return step.path;
+  // Nothing left to fill in. That is not the same as being let in: an account
+  // still waiting on an admin would only be bounced straight back off the
+  // dashboard, so it is named here instead.
+  return blocksApp(approval) ? '/welcome/review' : '/';
+}
+
+/**
+ * Put them in the review queue once the required paperwork is all in.
+ *
+ * Called after every step rather than after the last one, because there is no
+ * fixed last one: somebody can go back and re-sign the agreement, and that is a
+ * resubmission the queue should show as such. The bank step is not required, so
+ * it is not what anybody is waiting on.
+ *
+ * Never allowed to fail the request. The step itself saved; if stamping the
+ * queue afterwards does not work, an admin sees an account whose paperwork is
+ * plainly complete, which is a great deal better than telling somebody their
+ * signature did not save when it did.
+ */
+export async function noteSubmission(
+  userId: string,
+  state: OnboardingState,
+  justSaved: StepKey,
+): Promise<void> {
+  const after = { ...state, [justSaved]: true };
+  if (firstMissingRequired(after)) return;
+  try {
+    await markSubmitted(userId);
+  } catch {
+    // Deliberately swallowed. See above.
+  }
 }
 
 /** A store failure the reader can act on, rather than a 500 they cannot. */

@@ -4,7 +4,7 @@ import {
   SESSION_COOKIE,
   sessionCookieOptions,
 } from '@/lib/auth';
-import { actorFor, invalid, jsonBody, storeResponse, str } from '@/lib/onboarding-api';
+import { actorFor, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
 import { profileProblems } from '@/lib/onboarding';
 import { saveProfile } from '@/lib/onboarding-store';
 import { isSecureRequest } from '@/lib/request';
@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   const gate = await actorFor(request, 'profile');
   if ('response' in gate) return gate.response;
-  const { viewer } = gate;
+  const { viewer, state, approval, bypass } = gate;
 
   const body = await jsonBody(request);
   if (body && typeof body === 'object' && 'response' in body) {
@@ -41,17 +41,30 @@ export async function POST(request: Request) {
     confirmPassword: str(body, 'confirmPassword'),
   };
 
-  const problems = profileProblems(input);
+  /*
+   * state.profile is true only for somebody who has been through this step
+   * before, which is exactly when leaving both password fields empty is a
+   * request to keep the password rather than an omission. On a first run they
+   * are still required: the whole reason step 1 exists is that the password on
+   * the account is one an admin typed.
+   */
+  const problems = profileProblems(input, { passwordSet: state.profile });
   if (Object.keys(problems).length > 0) return invalid(problems);
 
-  let passwordChangedAt: string;
+  let passwordChangedAt: string | null;
   try {
     ({ passwordChangedAt } = await saveProfile(viewer.id, input));
   } catch (error) {
     return storeResponse(error);
   }
 
-  const response = NextResponse.json({ ok: true, next: '/welcome/agreement' });
+  await noteSubmission(viewer.id, state, 'profile');
+
+  const response = NextResponse.json({ ok: true, next: nextPath(state, 'profile', approval, bypass) });
+
+  // Nothing to re-mint when the password did not move: the token they arrived
+  // with is still the right one.
+  if (!passwordChangedAt) return response;
 
   try {
     const token = await createSessionToken({

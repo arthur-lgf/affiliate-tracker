@@ -324,7 +324,7 @@ export function LeadsPanel({
                           approval needs tracing back to a person. */}
                       {showRef ? (
                         <td className="tnum px-5 py-3.5 text-[12px] text-ink-dim">
-                          {isLeadId(row.id) ? row.id : '—'}
+                          {isLeadId(row.id) ? row.id : 'None'}
                         </td>
                       ) : null}
 

@@ -1,8 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { BusyLabel } from '@/components/Spinner';
+import { ContinueLink } from '@/components/onboarding/StepControls';
 import { MIN_PASSWORD, profileProblems, type ProfileInput } from '@/lib/onboarding';
 
 /**
@@ -16,16 +16,27 @@ import { MIN_PASSWORD, profileProblems, type ProfileInput } from '@/lib/onboardi
 export function ProfileForm({
   initialName,
   initialEmail,
+  initialPosition = '',
+  initialMobile = '',
+  revisiting = false,
+  continueTo = '',
+  continueLabel = 'Continue',
 }: {
   initialName: string;
   initialEmail: string;
+  initialPosition?: string;
+  initialMobile?: string;
+  /** Already done once. Changes what the password half asks for. */
+  revisiting?: boolean;
+  /** Where "leave without saving" goes, when there is anywhere to go. */
+  continueTo?: string;
+  continueLabel?: string;
 }) {
-  const router = useRouter();
   const [values, setValues] = useState<ProfileInput>({
     fullName: initialName,
     email: initialEmail,
-    position: '',
-    mobile: '',
+    position: initialPosition,
+    mobile: initialMobile,
     password: '',
     confirmPassword: '',
   });
@@ -49,7 +60,7 @@ export function ProfileForm({
 
     // Checked here and again on the server. This half is for the person typing;
     // the other half is the one that counts.
-    const problems = profileProblems(values);
+    const problems = profileProblems(values, { passwordSet: revisiting });
     if (Object.keys(problems).length > 0) {
       setErrors(problems);
       return;
@@ -154,15 +165,18 @@ export function ProfileForm({
       </div>
 
       <div className="mt-6 border-t border-edge-faint pt-6">
-        <h2 className="text-[15px] font-semibold">Choose a password</h2>
+        <h2 className="text-[15px] font-semibold">
+          {revisiting ? 'Change your password' : 'Choose a password'}
+        </h2>
         <p className="plain mt-1">
-          The one you were given was typed by somebody else and is not yours. Replace it now, and
-          nobody but you knows how to sign in as you.
+          {revisiting
+            ? 'Only if you want to. Leave both boxes empty and the password you already chose stays as it is.'
+            : 'The one you were given was typed by somebody else and is not yours. Replace it now, and nobody but you knows how to sign in as you.'}
         </p>
 
         <div className="mt-4 grid gap-5 sm:grid-cols-2">
           <label className="block">
-            <span className="field-label">New password</span>
+            <span className="field-label">{revisiting ? 'New password' : 'Password'}</span>
             <input
               className="field mt-1.5"
               type="password"
@@ -197,10 +211,19 @@ export function ProfileForm({
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
+        {/* No Back here: this is the first step, and there is nothing behind it. */}
         <button type="submit" className="btn-gold" disabled={busy} aria-busy={busy}>
-          <BusyLabel busy={busy} idle="Save and continue" busyLabel="Saving…" />
+          <BusyLabel
+            busy={busy}
+            idle={revisiting ? 'Save changes' : 'Save and continue'}
+            busyLabel="Saving…"
+          />
         </button>
-        <span className="text-[12px] text-ink-dim">Next: the affiliate agreement.</span>
+        {revisiting && continueTo ? (
+          <ContinueLink to={continueTo} label={continueLabel} />
+        ) : (
+          <span className="text-[12px] text-ink-dim">Next: the affiliate agreement.</span>
+        )}
       </div>
     </form>
   );

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-type Item = { href: string; label: string; adminOnly?: boolean };
+type Item = { href: string; label: string; adminOnly?: boolean; affiliateOnly?: boolean };
 
 const ITEMS: Item[] = [
   { href: '/', label: 'Overview' },
@@ -19,6 +19,10 @@ const ITEMS: Item[] = [
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
   { href: '/settings', label: 'Settings', adminOnly: true },
+  // Their own paperwork. Affiliates only: an admin reaches anybody's, including
+  // their own, through People, and a tab that duplicates a page they already
+  // have is a tab that makes the row longer for nothing.
+  { href: '/profile', label: 'Profile', affiliateOnly: true },
 ];
 
 /**
@@ -26,8 +30,8 @@ const ITEMS: Item[] = [
  * re-checks the role server-side, because a hidden link is still a URL anyone
  * can type. This exists so an affiliate is not shown doors that all say no.
  */
-function visibleItems(isAdmin: boolean): Item[] {
-  return isAdmin ? ITEMS : ITEMS.filter((item) => !item.adminOnly);
+export function visibleItems(isAdmin: boolean): Item[] {
+  return ITEMS.filter((item) => (isAdmin ? !item.affiliateOnly : !item.adminOnly));
 }
 
 /** Which item owns the current URL. `/affiliate/*` belongs to Overview — it is
@@ -39,6 +43,7 @@ function isActive(href: string, pathname: string): boolean {
   if (href === '/reports') return pathname.startsWith('/reports');
   if (href === '/users') return pathname.startsWith('/users');
   if (href === '/settings') return pathname.startsWith('/settings');
+  if (href === '/profile') return pathname.startsWith('/profile');
   return pathname.startsWith('/links/new');
 }
 

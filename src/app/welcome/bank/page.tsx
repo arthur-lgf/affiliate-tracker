@@ -3,8 +3,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { OnboardingRail } from '@/components/OnboardingRail';
 import { BankForm } from '@/components/onboarding/BankForm';
+import { formatDateTime } from '@/lib/analytics';
 import { maskAccount } from '@/lib/mask';
-import { canOpen } from '@/lib/onboarding';
+import { canOpen, previousStep } from '@/lib/onboarding';
 import { onboardingFor } from '@/lib/onboarding-guard';
 import { readBank } from '@/lib/onboarding-store';
 import { requireViewer } from '@/lib/viewer';
@@ -14,12 +15,11 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Bank details' };
 
 /**
- * The one step that can be come back to.
+ * The last step, and the only one that never barred the door.
  *
- * requireStep() is not used here on purpose: it moves somebody on from a step
- * they have finished, which is right for a signature and wrong for a bank
- * account. People change banks, and a screen that says "done" with no way to
- * correct it is a screen that sends them looking for an admin.
+ * requireStep() is not used here because this page also has to be reachable
+ * from the banner inside the app, by somebody who finished everything weeks ago
+ * and has since changed bank — a case that has nothing to do with the flow.
  */
 export default async function BankPage() {
   const viewer = await requireViewer();
@@ -28,6 +28,7 @@ export default async function BankPage() {
   if (!canOpen(state, 'bank')) redirect('/welcome');
 
   const existing = state.bank ? await readBank(viewer.id).catch(() => null) : null;
+  const back = previousStep('bank');
 
   return (
     <div>
@@ -45,15 +46,17 @@ export default async function BankPage() {
       </div>
 
       {existing ? (
-        <div className="panel mt-5 p-5">
-          <p className="text-[13px] text-ink-soft">
-            On file:{' '}
-            <strong className="text-ink">{existing.accountName}</strong> at{' '}
-            <strong className="text-ink">{existing.bankName}</strong>,{' '}
+        <div className="panel mt-5 border-leaf-edge bg-leaf-wash p-5">
+          <p className="text-[13px] text-ink">
+            <span aria-hidden className="mr-1.5 font-semibold text-leaf-text">
+              ✓
+            </span>
+            On file{existing.savedAt ? ` since ${formatDateTime(existing.savedAt)}` : ''}:{' '}
+            <strong>{existing.accountName}</strong> at <strong>{existing.bankName}</strong>,{' '}
             <span className="tnum">{maskAccount(existing.accountLast4)}</span>.
           </p>
           <p className="plain mt-1.5">
-            Filling the form in again replaces it. Nothing else changes.{' '}
+            Nothing changes unless you save.{' '}
             <Link href="/" className="link-text">
               Or go to your dashboard
             </Link>
@@ -62,15 +65,23 @@ export default async function BankPage() {
         </div>
       ) : null}
 
-      <BankForm alreadySaved={Boolean(existing)} />
+      <BankForm
+        alreadySaved={Boolean(existing)}
+        initialAccountName={existing?.accountName ?? ''}
+        initialBankName={existing?.bankName ?? ''}
+        accountLast4={existing?.accountLast4 ?? ''}
+        backTo={back ? { path: back.path, label: back.label } : undefined}
+        continueTo="/"
+        continueLabel="Go to the dashboard"
+      />
 
       {!existing ? (
         <p className="plain mt-5">
           Do not have these to hand?{' '}
           <Link href="/" className="link-text">
             Skip for now
-          </Link>{' '}
-          — everything else is done, so the dashboard is open to you. We will keep asking until this
+          </Link>
+          . Everything else is done, so the dashboard is open to you. We will keep asking until this
           is filled in, because nothing can be paid out without it.
         </p>
       ) : null}

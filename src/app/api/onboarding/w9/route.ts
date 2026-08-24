@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { actorFor, bool, invalid, jsonBody, storeResponse, str } from '@/lib/onboarding-api';
-import { w9Problems, type W9Classification, type W9Input } from '@/lib/onboarding';
-import { saveW9 } from '@/lib/onboarding-store';
+import { actorFor, bool, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
+import { keepsTin, w9Problems, type W9Classification, type W9Input } from '@/lib/onboarding';
+import { readW9, saveW9 } from '@/lib/onboarding-store';
 import { secretsConfigured } from '@/lib/secret-box';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +23,7 @@ const CLASSIFICATIONS = new Set<W9Classification>([
 export async function POST(request: Request) {
   const gate = await actorFor(request, 'w9');
   if ('response' in gate) return gate.response;
-  const { viewer, meta } = gate;
+  const { viewer, meta, state, approval, bypass } = gate;
 
   /*
    * Refused before the body is even read. Without a key there is nowhere safe
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       {
         error:
           'This deployment cannot accept taxpayer details yet: ONBOARDING_SECRET_KEY is not set. ' +
-          'Tell your admin — nothing you typed has been stored.',
+          'Tell your admin. Nothing you typed has been stored.',
       },
       { status: 503 },
     );
@@ -66,7 +66,21 @@ export async function POST(request: Request) {
     certified: bool(body, 'certified'),
   };
 
-  const problems = w9Problems(input);
+  /*
+   * Read from the database, never from the body. "There is already a number on
+   * file, so this blank field means keep it" is a claim that decides whether a
+   * taxpayer number gets written, and a browser does not get to make it.
+   */
+  let tinOnFile: 'ssn' | 'ein' | null = null;
+  if (state.w9) {
+    try {
+      tinOnFile = (await readW9(viewer.id))?.tinType ?? null;
+    } catch (error) {
+      return storeResponse(error);
+    }
+  }
+
+  const problems = w9Problems(input, { tinOnFile });
   if (Object.keys(problems).length > 0) return invalid(problems);
 
   if (input.signaturePng.length > 600_000) {
@@ -81,6 +95,9 @@ export async function POST(request: Request) {
         // Narrowed by the validation above, which the type system cannot see.
         classification: input.classification as W9Classification,
         tinType: input.tinType as 'ssn' | 'ein',
+        // Empty on purpose keeps the sealed number; empty for any other reason
+        // was rejected two lines up.
+        tin: keepsTin(input, { tinOnFile }) ? '' : input.tin,
       },
       meta,
       FORM_REVISION,
@@ -89,5 +106,7 @@ export async function POST(request: Request) {
     return storeResponse(error);
   }
 
-  return NextResponse.json({ ok: true, next: '/welcome/bank' });
+  await noteSubmission(viewer.id, state, 'w9');
+
+  return NextResponse.json({ ok: true, next: nextPath(state, 'w9', approval, bypass) });
 }

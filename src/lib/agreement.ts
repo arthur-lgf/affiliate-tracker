@@ -40,8 +40,12 @@ export const AGREEMENT_VERSION = '2026-08';
  * state on somebody's behalf is worse than leaving the blank visible.
  */
 export const COMPANY = {
+  /* Named exactly as it is named on the paperwork, and nothing after it. The
+     ", a limited liability company" that used to follow is what a contract
+     drafter appends when the entity type is not otherwise stated; here it is
+     already in the name, so it read as a stutter on every screen it appeared
+     on. */
   name: 'LaunchStone LLC',
-  description: 'a limited liability company',
   /** TODO(owner): the State whose law governs, e.g. 'Delaware'. Renders as a
    *  visible blank until it is set. */
   governingState: '',

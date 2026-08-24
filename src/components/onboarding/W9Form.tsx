@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BusyLabel } from '@/components/Spinner';
 import { SignaturePad } from '@/components/SignaturePad';
+import { BackLink, ContinueLink } from '@/components/onboarding/StepControls';
 import { COMPANY } from '@/lib/agreement';
-import { formatTin } from '@/lib/mask';
+import { digitsOf, formatTinAsTyped, maskTin, tinMaxLength } from '@/lib/mask';
 import {
   needsForeignPartnersQuestion,
   w9Problems,
@@ -34,16 +35,50 @@ import {
 
 const IRS_BLACK = 'border-[#0b2239]';
 
-export function W9Form({
-  initialName,
-  initialAddress,
-  today,
-}: {
-  initialName: string;
-  initialAddress: string;
-  today: string;
-}) {
-  const [values, setValues] = useState<W9Input>({
+/**
+ * A W-9 already on file, as this form can see it.
+ *
+ * Every field except one. The taxpayer number is sealed and nothing unseals it
+ * to populate a form, so what comes back is the last four digits — the field
+ * itself starts empty with those shown beside it.
+ */
+export type W9Prefill = {
+  line1Name: string;
+  line2Business: string;
+  classification: W9Classification | '';
+  llcCode: string;
+  otherText: string;
+  foreignPartners: boolean;
+  exemptPayeeCode: string;
+  fatcaCode: string;
+  address: string;
+  cityStateZip: string;
+  accountNumbers: string;
+  tinType: 'ssn' | 'ein';
+  tinLast4: string;
+  signaturePng: string;
+};
+
+/** What the fields hold before anybody touches them. */
+function startingValues(
+  existing: W9Prefill | null,
+  initialName: string,
+  initialAddress: string,
+): W9Input {
+  if (existing) {
+    const { tinLast4: _tinLast4, signaturePng: _signaturePng, ...rest } = existing;
+    return {
+      ...rest,
+      // Empty, and it stays empty unless they type a new one. The note beside
+      // the field says what that means.
+      tin: '',
+      // Made afresh or not at all: a certification under penalties of perjury
+      // is not something to inherit from the last visit.
+      signaturePng: '',
+      certified: false,
+    };
+  }
+  return {
     line1Name: initialName,
     line2Business: '',
     classification: '',
@@ -59,8 +94,47 @@ export function W9Form({
     tin: '',
     signaturePng: '',
     certified: false,
-  });
+  };
+}
+
+/**
+ * Layout effect on the client, plain effect on the server.
+ *
+ * The caret has to be repositioned in the same frame the reformatted value is
+ * painted, or it visibly jumps to the end and back. useLayoutEffect does that
+ * and warns when it runs during server rendering, which this component does —
+ * so the server gets the version that is a no-op there anyway.
+ */
+const useCaretEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+export function W9Form({
+  initialName,
+  initialAddress,
+  today,
+  existing = null,
+  revisiting = false,
+  backTo,
+  continueTo = '',
+  continueLabel = 'Continue',
+}: {
+  initialName: string;
+  initialAddress: string;
+  today: string;
+  /** What was filed before, when this is a second look at the step. */
+  existing?: W9Prefill | null;
+  revisiting?: boolean;
+  backTo?: { path: string; label: string };
+  continueTo?: string;
+  continueLabel?: string;
+}) {
+  const [values, setValues] = useState<W9Input>(() =>
+    startingValues(existing, initialName, initialAddress),
+  );
+  const tinOnFile = existing?.tinType ?? null;
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const tinRef = useRef<HTMLInputElement | null>(null);
+  /** Where the caret should land once the reformatted value is on screen. */
+  const caretRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -73,6 +147,40 @@ export function W9Form({
       return next;
     });
   }
+
+  /**
+   * The dashes, written in as they type.
+   *
+   * The caret is the whole difficulty. Reformatting replaces the value, and a
+   * controlled input puts the caret at the end of whatever it is given — so
+   * correcting the third digit of a number sends you to the end of it. What
+   * survives a reformat is not a character offset but a digit count, so that is
+   * what gets carried across: count the digits before the caret, then find the
+   * spot in the new string with the same number of digits behind it.
+   */
+  function typeTin(raw: string, caret: number) {
+    const type = values.tinType || 'ssn';
+    const digitsBefore = digitsOf(raw.slice(0, caret)).length;
+    const next = formatTinAsTyped(raw, type);
+
+    let at = 0;
+    let seen = 0;
+    while (at < next.length && seen < digitsBefore) {
+      if (/\d/.test(next[at]!)) seen += 1;
+      at += 1;
+    }
+    caretRef.current = at;
+    set('tin', next);
+  }
+
+  useCaretEffect(() => {
+    const el = tinRef.current;
+    const at = caretRef.current;
+    if (el && at !== null) {
+      caretRef.current = null;
+      el.setSelectionRange(at, at);
+    }
+  });
 
   function chooseClassification(key: W9Classification) {
     setValues((current) => ({
@@ -96,7 +204,7 @@ export function W9Form({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    const problems = w9Problems(values);
+    const problems = w9Problems(values, { tinOnFile });
     if (Object.keys(problems).length > 0) {
       setErrors(problems);
       return;
@@ -389,8 +497,15 @@ export function W9Form({
                     name="tinType"
                     checked={values.tinType === type}
                     onChange={() => {
-                      set('tinType', type);
-                      set('tin', '');
+                      // Re-grouped, not thrown away: the digits are the same
+                      // number of digits either way, and clearing the field
+                      // because somebody corrected which kind it is means
+                      // typing all nine again.
+                      setValues((current) => ({
+                        ...current,
+                        tinType: type,
+                        tin: formatTinAsTyped(current.tin, type),
+                      }));
                     }}
                     className="h-3.5 w-3.5 flex-none accent-[var(--color-navy)]"
                   />
@@ -408,10 +523,17 @@ export function W9Form({
               }`}
               inputMode="numeric"
               autoComplete="off"
-              placeholder={values.tinType === 'ssn' ? '123-45-6789' : '12-3456789'}
+              placeholder={
+                tinOnFile === values.tinType
+                  ? 'Leave empty to keep it'
+                  : values.tinType === 'ssn'
+                    ? '123-45-6789'
+                    : '12-3456789'
+              }
+              ref={tinRef}
+              maxLength={tinMaxLength(values.tinType || 'ssn')}
               value={values.tin}
-              onChange={(e) => set('tin', e.target.value.replace(/[^\d-]/g, ''))}
-              onBlur={() => set('tin', formatTin(values.tin, values.tinType || 'ssn'))}
+              onChange={(e) => typeTin(e.target.value, e.target.selectionStart ?? e.target.value.length)}
               aria-label={
                 values.tinType === 'ssn' ? 'Social security number' : 'Employer identification number'
               }
@@ -419,9 +541,20 @@ export function W9Form({
             />
             {errors.tin ? <span className="field-error">{errors.tin}</span> : null}
             {errors.tinType ? <span className="field-error">{errors.tinType}</span> : null}
-            <p className="mt-2 text-[11px] text-ink-dim">
-              Stored encrypted. Only the last four digits are ever shown back.
-            </p>
+            {tinOnFile && existing ? (
+              <p className="mt-2 text-[11px] text-ink-dim">
+                <span className="tnum font-semibold text-ink-soft">
+                  {maskTin(existing.tinLast4, tinOnFile)}
+                </span>{' '}
+                is on file. Leave this empty to keep it. It cannot be shown back to you in
+                full, so there is nothing to check it against. Type a number here only to replace
+                it.
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] text-ink-dim">
+                Stored encrypted. Only the last four digits are ever shown back.
+              </p>
+            )}
           </div>
         </div>
 
@@ -485,6 +618,21 @@ export function W9Form({
             <p className="url-box mt-1.5 font-sans text-[13px] text-ink">{today}</p>
           </div>
         </div>
+
+        {revisiting && existing?.signaturePng.startsWith('data:image/png;base64,') ? (
+          <div className={`border-t px-4 py-3 ${IRS_BLACK}`}>
+            <span className="field-label">What you signed last time</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={existing.signaturePng}
+              alt="The signature currently on file"
+              className="mt-1.5 max-h-[60px] w-auto max-w-full rounded-[3px] border border-edge bg-panel p-2"
+            />
+            <p className="plain mt-1.5">
+              Still on file. It stays there unless you sign again above and save.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <label className="mt-5 flex cursor-pointer items-start gap-3">
@@ -503,10 +651,19 @@ export function W9Form({
       {errors.certified ? <span className="field-error">{errors.certified}</span> : null}
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
+        {backTo ? <BackLink to={backTo.path} label={backTo.label} /> : null}
         <button type="submit" className="btn-gold" disabled={busy} aria-busy={busy}>
-          <BusyLabel busy={busy} idle="Submit W-9" busyLabel="Submitting…" />
+          <BusyLabel
+            busy={busy}
+            idle={revisiting ? 'Sign again and save' : 'Submit W-9'}
+            busyLabel="Submitting…"
+          />
         </button>
-        <span className="text-[12px] text-ink-dim">Next: where to send the money.</span>
+        {revisiting && continueTo ? (
+          <ContinueLink to={continueTo} label={continueLabel} />
+        ) : (
+          <span className="text-[12px] text-ink-dim">Next: where to send the money.</span>
+        )}
       </div>
     </form>
   );

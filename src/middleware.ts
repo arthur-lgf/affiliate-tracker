@@ -167,6 +167,10 @@ export const config = {
     '/welcome/:path*',
     '/api/onboarding',
     '/api/onboarding/:path*',
+    // Somebody's own paperwork: their name, address and the last four digits of
+    // a taxpayer number. Gated exactly like /welcome, and for the same reason.
+    '/profile',
+    '/profile/:path*',
     // Settings. A campaign decides where a link sends people, so the page and
     // the route behind it are gated like account administration is.
     '/settings',

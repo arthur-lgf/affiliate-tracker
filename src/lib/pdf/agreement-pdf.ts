@@ -123,7 +123,7 @@ class Flow {
   /** A label and its value, side by side, the way the .docx sets the parties. */
   field(label: string, value: string) {
     const labelWidth = 120;
-    const lines = this.lines(value || '—', this.bold, 10, WIDTH - labelWidth);
+    const lines = this.lines(value || 'None', this.bold, 10, WIDTH - labelWidth);
     this.need(lines.length * 13 + 4);
     this.page.drawText(label, { x: MARGIN, y: this.y - 10, size: 9, font: this.body, color: DIM });
     lines.forEach((line, index) => {
@@ -156,7 +156,7 @@ export async function renderAgreementPdf(record: AgreementRecord): Promise<Uint8
 
   // ---- The parties -------------------------------------------------------
   flow.field('Effective Date', record.effectiveDate);
-  flow.field('Company', `${COMPANY.name}, ${COMPANY.description}`);
+  flow.field('Company', COMPANY.name);
   flow.field('Affiliate', record.affiliateName);
   flow.field('Affiliate Email', record.affiliateEmail);
   flow.field('Affiliate Address', record.affiliateAddress);

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { BusyLabel } from '@/components/Spinner';
 import { SignaturePad } from '@/components/SignaturePad';
+import { BackLink, ContinueLink } from '@/components/onboarding/StepControls';
 import {
   AGREEMENT_VERSION,
   CLAUSES,
@@ -14,6 +15,26 @@ import {
   SUMMARY_INTRO,
 } from '@/lib/agreement';
 import { agreementProblems, type AgreementInput } from '@/lib/onboarding';
+
+/**
+ * One `Label: ______` line of the execution block.
+ *
+ * An unfilled line is drawn as a rule rather than left blank, because that is
+ * what it is on paper: a space somebody has still to write in. The company's
+ * side stays ruled until the two constants in lib/agreement.ts are set.
+ */
+function ExecutionLine({ label, value }: { label: string; value: string }) {
+  return (
+    <p className="mt-2.5 flex items-baseline gap-2 text-[12px]">
+      <span className="flex-none text-ink-dim">{label}:</span>
+      {value ? (
+        <span className="min-w-0 break-words font-medium text-ink">{value}</span>
+      ) : (
+        <span aria-hidden className="min-w-0 flex-1 border-b border-dotted border-ink-mute" />
+      )}
+    </p>
+  );
+}
 
 /**
  * The agreement, readable and signable on one page.
@@ -31,18 +52,33 @@ import { agreementProblems, type AgreementInput } from '@/lib/onboarding';
 export function AgreementForm({
   initialName,
   initialEmail,
+  initialAddress = '',
   today,
+  previousSignature = '',
+  revisiting = false,
+  backTo,
+  continueTo = '',
+  continueLabel = 'Continue',
 }: {
   initialName: string;
   initialEmail: string;
+  initialAddress?: string;
   /** Yesterday's date on a server in another timezone is not today's date here,
    *  so the default comes from the server that will store it. */
   today: string;
+  /** What they drew last time, shown beside the pad on a revisit. Not loaded
+   *  into the canvas: a signature is made, not restored, and a pad that came
+   *  pre-drawn would collect a signature nobody signed. */
+  previousSignature?: string;
+  revisiting?: boolean;
+  backTo?: { path: string; label: string };
+  continueTo?: string;
+  continueLabel?: string;
 }) {
   const [values, setValues] = useState<AgreementInput>({
     affiliateName: initialName,
     affiliateEmail: initialEmail,
-    affiliateAddress: '',
+    affiliateAddress: initialAddress,
     effectiveDate: today,
     signaturePng: '',
     affirmed: false,
@@ -50,7 +86,7 @@ export function AgreementForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [read, setRead] = useState(false);
+  const [read, setRead] = useState(revisiting);
   const scroller = useRef<HTMLDivElement | null>(null);
 
   function set<K extends keyof AgreementInput>(key: K, value: AgreementInput[K]) {
@@ -175,9 +211,7 @@ export function AgreementForm({
 
           <div className="block">
             <span className="field-label">Company</span>
-            <p className="url-box mt-1.5 font-sans text-[13px] text-ink">
-              {COMPANY.name}, {COMPANY.description}
-            </p>
+            <p className="url-box mt-1.5 font-sans text-[13px] text-ink">{COMPANY.name}</p>
           </div>
         </div>
       </section>
@@ -237,6 +271,52 @@ export function AgreementForm({
             </div>
           ))}
 
+          {/*
+            The block the document actually ends on. It is in the .docx directly
+            under section 12 and it was missing here, which made the agreement
+            on screen stop mid-sentence relative to the copy that gets signed —
+            and left the four things somebody types at the top with nowhere on
+            the page where they visibly become the execution of a contract.
+
+            The affiliate column fills in live from the fields above, so the
+            answer to "what am I about to sign" is on the page rather than in
+            the PDF that arrives afterwards.
+          */}
+          <div className="mt-7 overflow-hidden rounded-[3px] border border-edge">
+            <div className="grid grid-cols-1 sm:grid-cols-2">
+              <p className="bg-gold-deep px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white">
+                Company
+              </p>
+              <p className="hidden bg-gold-deep px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white sm:block sm:border-l sm:border-white/25">
+                Affiliate
+              </p>
+
+              <div className="border-t border-edge px-4 py-4">
+                <p className="text-[13px] font-semibold">{COMPANY.name}</p>
+                <ExecutionLine label="Signature" value="" />
+                <ExecutionLine label="Name" value={COMPANY.signatoryName} />
+                <ExecutionLine label="Title" value={COMPANY.signatoryTitle} />
+                <ExecutionLine label="Date" value="" />
+              </div>
+
+              <p className="bg-gold-deep px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-white sm:hidden">
+                Affiliate
+              </p>
+              <div className="border-t border-edge px-4 py-4 sm:border-l">
+                <p className="text-[13px] font-semibold">
+                  {values.affiliateName.trim() || 'The Affiliate'}
+                </p>
+                <ExecutionLine
+                  label="Signature"
+                  value={values.signaturePng ? 'Signed below' : ''}
+                />
+                <ExecutionLine label="Name" value={values.affiliateName.trim()} />
+                <ExecutionLine label="Title" value="Affiliate" />
+                <ExecutionLine label="Date" value={values.effectiveDate} />
+              </div>
+            </div>
+          </div>
+
           {!governingStateSet() ? (
             <p className="plain-note mt-5">
               The governing state in section 12 has not been filled in on this copy. Ask your admin
@@ -273,6 +353,21 @@ export function AgreementForm({
           />
         </div>
 
+        {revisiting && previousSignature.startsWith('data:image/png;base64,') ? (
+          <div className="mt-4">
+            <span className="field-label">What you signed last time</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={previousSignature}
+              alt="The signature currently on file"
+              className="mt-1.5 max-h-[70px] w-auto max-w-full rounded-[3px] border border-edge bg-panel p-2"
+            />
+            <p className="plain mt-1.5">
+              Still on file. It stays there unless you sign again above and save.
+            </p>
+          </div>
+        ) : null}
+
         <label className="mt-5 flex cursor-pointer items-start gap-3">
           <input
             type="checkbox"
@@ -289,6 +384,7 @@ export function AgreementForm({
         {errors.affirmed ? <span className="field-error">{errors.affirmed}</span> : null}
 
         <div className="mt-6 flex flex-wrap items-center gap-4">
+          {backTo ? <BackLink to={backTo.path} label={backTo.label} /> : null}
           <button
             type="submit"
             className="btn-gold"
@@ -296,9 +392,17 @@ export function AgreementForm({
             aria-busy={busy}
             title={read ? undefined : 'Read to the end of the agreement first.'}
           >
-            <BusyLabel busy={busy} idle="Sign and continue" busyLabel="Signing…" />
+            <BusyLabel
+              busy={busy}
+              idle={revisiting ? 'Sign again and save' : 'Sign and continue'}
+              busyLabel="Signing…"
+            />
           </button>
-          <span className="text-[12px] text-ink-dim">Next: your W-9.</span>
+          {revisiting && continueTo ? (
+            <ContinueLink to={continueTo} label={continueLabel} />
+          ) : (
+            <span className="text-[12px] text-ink-dim">Next: your W-9.</span>
+          )}
         </div>
       </section>
     </form>

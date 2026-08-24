@@ -1,4 +1,5 @@
-import { progressOf, STEPS, type OnboardingState, type StepKey } from '@/lib/onboarding';
+import Link from 'next/link';
+import { canOpen, progressOf, STEPS, type OnboardingState, type StepKey } from '@/lib/onboarding';
 
 /**
  * Where they are in the four steps.
@@ -7,8 +8,13 @@ import { progressOf, STEPS, type OnboardingState, type StepKey } from '@/lib/onb
  * "three done" but "two more to go" — somebody deciding whether to start this
  * now or after lunch is asking how much is left.
  *
- * A plain list, not links. Jumping back to a signed agreement would only bounce
- * off the guard, and a control that always refuses is worse than no control.
+ * A finished step is a link back to itself. It was a plain list while the guard
+ * bounced anyone off a step they had completed — a control that always refuses
+ * being worse than no control — but the guard allows it now, so the four
+ * headings people are already reading as a map are the map.
+ *
+ * A step not yet reached stays plain text. Nothing here can be used to skip
+ * ahead, which is the one ordering the flow actually depends on.
  */
 export function OnboardingRail({
   current,
@@ -25,14 +31,11 @@ export function OnboardingRail({
         {STEPS.map((step, index) => {
           const isCurrent = step.key === current;
           const isDone = state[step.key];
-          return (
-            <li
-              key={step.key}
-              aria-current={isCurrent ? 'step' : undefined}
-              className={`flex min-w-0 flex-1 items-center gap-3 border-b border-edge px-5 py-3.5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${
-                isCurrent ? 'bg-paper-card' : ''
-              }`}
-            >
+          // Openable and not where they already are: worth a link.
+          const linked = !isCurrent && isDone && canOpen(state, step.key);
+
+          const inner = (
+            <>
               <span
                 aria-hidden
                 className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[2px] text-[11px] font-semibold ${
@@ -57,6 +60,30 @@ export function OnboardingRail({
                   <span className="block text-[11px] text-ink-dim">Can wait</span>
                 )}
               </span>
+            </>
+          );
+
+          const shared = 'flex min-w-0 flex-1 items-center gap-3 px-5 py-3.5';
+
+          return (
+            <li
+              key={step.key}
+              aria-current={isCurrent ? 'step' : undefined}
+              className={`flex min-w-0 flex-1 border-b border-edge last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${
+                isCurrent ? 'bg-paper-card' : ''
+              }`}
+            >
+              {linked ? (
+                <Link
+                  href={step.path}
+                  className={`${shared} hover:bg-paper-card`}
+                  title={`Back to ${step.label.toLowerCase()}`}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <span className={shared}>{inner}</span>
+              )}
             </li>
           );
         })}

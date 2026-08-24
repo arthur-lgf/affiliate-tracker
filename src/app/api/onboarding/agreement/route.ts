@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { AGREEMENT_VERSION } from '@/lib/agreement';
-import { actorFor, bool, invalid, jsonBody, storeResponse, str } from '@/lib/onboarding-api';
+import { actorFor, bool, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
 import { agreementProblems } from '@/lib/onboarding';
 import { saveAgreement } from '@/lib/onboarding-store';
 
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   const gate = await actorFor(request, 'agreement');
   if ('response' in gate) return gate.response;
-  const { viewer, meta } = gate;
+  const { viewer, meta, state, approval, bypass } = gate;
 
   const body = await jsonBody(request);
   if (body && typeof body === 'object' && 'response' in body) {
@@ -47,5 +47,7 @@ export async function POST(request: Request) {
     return storeResponse(error);
   }
 
-  return NextResponse.json({ ok: true, next: '/welcome/w9' });
+  await noteSubmission(viewer.id, state, 'agreement');
+
+  return NextResponse.json({ ok: true, next: nextPath(state, 'agreement', approval, bypass) });
 }

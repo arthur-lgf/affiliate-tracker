@@ -72,7 +72,7 @@ export function CopyButton({
       aria-label={label}
       title={
         state === 'error'
-          ? 'The browser refused the clipboard. The link is in the Short link column — select it there and copy it by hand.'
+          ? 'The browser refused the clipboard. The link is in the Short link column. Select it there and copy it by hand.'
           : value
       }
       className={state === 'copied' ? 'btn-outline btn-sm' : 'btn-quiet btn-sm'}

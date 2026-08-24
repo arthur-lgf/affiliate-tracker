@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { BusyLabel } from '@/components/Spinner';
+import { BackLink, ContinueLink } from '@/components/onboarding/StepControls';
+import { maskAccount } from '@/lib/mask';
 import { bankProblems, type BankInput } from '@/lib/onboarding';
 
 /**
@@ -16,10 +18,28 @@ import { bankProblems, type BankInput } from '@/lib/onboarding';
  * account is a thing people do, and a screen that says "done" with no way to
  * correct it is a screen that sends them looking for an admin.
  */
-export function BankForm({ alreadySaved }: { alreadySaved: boolean }) {
+export function BankForm({
+  alreadySaved,
+  initialAccountName = '',
+  initialBankName = '',
+  accountLast4 = '',
+  backTo,
+  continueTo = '',
+  continueLabel = 'Continue',
+}: {
+  alreadySaved: boolean;
+  initialAccountName?: string;
+  initialBankName?: string;
+  /** The four digits of what is already stored, so the field can be left empty
+   *  to keep it. The rest of the number cannot be read back. */
+  accountLast4?: string;
+  backTo?: { path: string; label: string };
+  continueTo?: string;
+  continueLabel?: string;
+}) {
   const [values, setValues] = useState<BankInput>({
-    accountName: '',
-    bankName: '',
+    accountName: initialAccountName,
+    bankName: initialBankName,
     accountNumber: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -39,7 +59,7 @@ export function BankForm({ alreadySaved }: { alreadySaved: boolean }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    const problems = bankProblems(values);
+    const problems = bankProblems(values, { accountOnFile: alreadySaved });
     if (Object.keys(problems).length > 0) {
       setErrors(problems);
       return;
@@ -115,26 +135,38 @@ export function BankForm({ alreadySaved }: { alreadySaved: boolean }) {
             onChange={(e) => set('accountNumber', e.target.value)}
             inputMode="numeric"
             autoComplete="off"
+            placeholder={alreadySaved ? 'Leave empty to keep it' : undefined}
             aria-invalid={errors.accountNumber ? true : undefined}
           />
           <span className="field-note">
-            Encrypted before it is stored. Only the last four digits are ever shown back.
+            {alreadySaved ? (
+              <>
+                <span className="tnum font-semibold text-ink-soft">{maskAccount(accountLast4)}</span>{' '}
+                is on file. Leave this empty to correct the name or the bank without retyping
+                the number, which cannot be shown back to you in full.
+              </>
+            ) : (
+              'Encrypted before it is stored. Only the last four digits are ever shown back.'
+            )}
           </span>
           {errors.accountNumber ? <span className="field-error">{errors.accountNumber}</span> : null}
         </label>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-4">
+        {backTo ? <BackLink to={backTo.path} label={backTo.label} /> : null}
         <button type="submit" className="btn-gold" disabled={busy} aria-busy={busy}>
           <BusyLabel
             busy={busy}
-            idle={alreadySaved ? 'Replace bank details' : 'Save and finish'}
+            idle={alreadySaved ? 'Save changes' : 'Save and finish'}
             busyLabel="Saving…"
           />
         </button>
-        <span className="text-[12px] text-ink-dim">
-          {alreadySaved ? 'This replaces what is on file.' : 'That is everything.'}
-        </span>
+        {alreadySaved && continueTo ? (
+          <ContinueLink to={continueTo} label={continueLabel} />
+        ) : (
+          <span className="text-[12px] text-ink-dim">That is everything.</span>
+        )}
       </div>
     </form>
   );
