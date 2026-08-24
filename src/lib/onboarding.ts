@@ -70,6 +70,78 @@ export const STEPS: Step[] = [
 
 export const STEP_KEYS = STEPS.map((step) => step.key);
 
+/**
+ * The two steps that end in a signature, and the two a waiver removes.
+ *
+ * An admin who waives onboarding is nearly always an admin who has the
+ * agreement signed on paper and the W-9 sitting in an email. Asking for both
+ * again, inside an app the person has already been let into, collects nothing
+ * but a second copy of something that is already filed. What that admin still
+ * wants is the other two: who this person is, and where the money goes.
+ */
+export const SIGNED_STEPS: StepKey[] = ['agreement', 'w9'];
+
+export function isSignedStep(key: StepKey): boolean {
+  return SIGNED_STEPS.includes(key);
+}
+
+/**
+ * The steps that still apply to somebody.
+ *
+ * Everything that counts, orders or offers a step runs through this, so a
+ * waived account is never told it is "1 of 4" done on a list where two of the
+ * four are never coming.
+ */
+export function stepsFor(options: { bypassed?: boolean } = {}): Step[] {
+  return options.bypassed ? STEPS.filter((step) => !isSignedStep(step.key)) : STEPS;
+}
+
+/** The steps a waiver takes off the table. Pages ask for them so they can say
+ *  so plainly, rather than quietly dropping two items somebody was expecting. */
+export function waivedSteps(options: { bypassed?: boolean } = {}): Step[] {
+  return options.bypassed ? STEPS.filter((step) => isSignedStep(step.key)) : [];
+}
+
+/** Where somebody whose gate was waived keeps their own paperwork. Named here
+ *  because gateFor has to be able to send them back to it. */
+export const WAIVED_HOME = '/profile';
+
+/**
+ * Whether a signed document has been settled and can no longer be replaced.
+ *
+ * Only the two that carry a signature, only once they exist, and only once
+ * somebody has acted on them: approving an account, or waiving the gate to let
+ * the person in, are both decisions taken by reading what was filed. A document
+ * that can still be swapped out afterwards makes that decision meaningless,
+ * because what was approved and what is on file need never be the same thing
+ * again.
+ *
+ * It is not a permanent state and is not meant to read as one. An admin who
+ * puts an account back in the review queue unlocks both documents, which is
+ * how a genuine correction is made: somebody decides it is warranted.
+ *
+ * Locked is not closed. The page still opens, the record still shows, the PDF
+ * still downloads. What stops is overwriting.
+ */
+export function isLocked(
+  key: StepKey,
+  state: OnboardingState,
+  options: { approved?: boolean; bypassed?: boolean } = {},
+): boolean {
+  if (!isSignedStep(key)) return false;
+  if (!state[key]) return false;
+  return Boolean(options.approved) || Boolean(options.bypassed);
+}
+
+/** "Step 2 of 4", counted over the steps that apply to this person. */
+export function stepPosition(
+  key: StepKey,
+  options: { bypassed?: boolean } = {},
+): { index: number; total: number } {
+  const steps = stepsFor(options);
+  return { index: steps.findIndex((step) => step.key === key) + 1, total: steps.length };
+}
+
 /** What has been done. Every field is simply "is there a row for this". */
 export type OnboardingState = Record<StepKey, boolean>;
 
@@ -87,8 +159,11 @@ export function stepByKey(key: StepKey): Step {
 }
 
 /** The first thing left to do, or null when there is nothing. */
-export function nextStep(state: OnboardingState): Step | null {
-  return STEPS.find((step) => !state[step.key]) ?? null;
+export function nextStep(
+  state: OnboardingState,
+  options: { bypassed?: boolean } = {},
+): Step | null {
+  return stepsFor(options).find((step) => !state[step.key]) ?? null;
 }
 
 /**
@@ -99,14 +174,21 @@ export function nextStep(state: OnboardingState): Step | null {
  * looking on the dashboard — so a step that has been done now stays open, and
  * this is how you get back to it.
  */
-export function previousStep(key: StepKey): Step | null {
-  const index = STEP_KEYS.indexOf(key);
-  return index > 0 ? (STEPS[index - 1] ?? null) : null;
+export function previousStep(
+  key: StepKey,
+  options: { bypassed?: boolean } = {},
+): Step | null {
+  const steps = stepsFor(options);
+  const index = steps.findIndex((step) => step.key === key);
+  return index > 0 ? (steps[index - 1] ?? null) : null;
 }
 
 /** The first *required* thing left to do. This is what bars the app. */
-export function firstMissingRequired(state: OnboardingState): Step | null {
-  return STEPS.find((step) => step.required && !state[step.key]) ?? null;
+export function firstMissingRequired(
+  state: OnboardingState,
+  options: { bypassed?: boolean } = {},
+): Step | null {
+  return stepsFor(options).find((step) => step.required && !state[step.key]) ?? null;
 }
 
 /** Whether the app is barred to this person right now. */
@@ -115,20 +197,21 @@ export function isBlocked(state: OnboardingState): boolean {
 }
 
 /** Everything, including the step that only nags. */
-export function isComplete(state: OnboardingState): boolean {
-  return STEPS.every((step) => state[step.key]);
+export function isComplete(state: OnboardingState, options: { bypassed?: boolean } = {}): boolean {
+  return stepsFor(options).every((step) => state[step.key]);
 }
 
 /** For the progress bar: how far through, counting every step. */
-export function progressOf(state: OnboardingState): { done: number; total: number } {
+export function progressOf(
+  state: OnboardingState,
+  options: { bypassed?: boolean } = {},
+): { done: number; total: number } {
+  const steps = stepsFor(options);
   return {
-    done: STEPS.filter((step) => state[step.key]).length,
-    total: STEPS.length,
+    done: steps.filter((step) => state[step.key]).length,
+    total: steps.length,
   };
 }
-
-/** The two steps that end in a signature. */
-const SIGNED_STEPS: StepKey[] = ['agreement', 'w9'];
 
 /**
  * A step you have not earned yet cannot be opened.
@@ -137,22 +220,22 @@ const SIGNED_STEPS: StepKey[] = ['agreement', 'w9'];
  * signing an agreement before you have set a password means signing it as an
  * account somebody else was handed the keys to. The order is the point.
  *
- * `bypassed` relaxes it, because an admin who has waived the gate has waived
- * the queue with it: those four items become a list to work through in whatever
- * order they are needed, not a corridor. One rule survives, and it is the one
- * the ordering existed for in the first place — the two documents that carry a
- * signature still need a password of their own behind them. An admin knows the
- * password they issued, so a signature made under it is worth less than the
- * thirty seconds it takes to change it.
+ * `bypassed` changes what the question even is. A waiver does not reorder the
+ * queue, it shortens it: the agreement and the W-9 are not "later", they are
+ * not being collected here at all. What is left is two items, in whatever order
+ * they are wanted, and neither of them is a signature.
+ *
+ * One exception, and it is about not taking things away from people. Somebody
+ * who signed before the waiver was granted keeps the door to what they signed.
+ * Skipping a signature is the point; hiding a document somebody has already put
+ * their name to is not, and there is no other way for them to read it back.
  */
 export function canOpen(
   state: OnboardingState,
   key: StepKey,
   options: { bypassed?: boolean } = {},
 ): boolean {
-  if (options.bypassed) {
-    return SIGNED_STEPS.includes(key) ? state.profile : true;
-  }
+  if (options.bypassed) return isSignedStep(key) ? state[key] : true;
   const index = STEP_KEYS.indexOf(key);
   if (index <= 0) return true;
   // Every earlier step done, or this is the one they are already on.
@@ -184,6 +267,9 @@ export function gateFor(
     // An unknown /welcome/* path, or one whose earlier steps are unfinished:
     // send them to the earliest thing they can actually do.
     if (!step || !canOpen(state, step.key, options)) {
+      // A waived account has no next step to be marched to. What is left of
+      // their paperwork is a list, and the list lives on their profile.
+      if (options.bypassed) return WAIVED_HOME;
       return (nextStep(state) ?? STEPS[0]!).path;
     }
     return null;

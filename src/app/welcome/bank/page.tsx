@@ -4,8 +4,9 @@ import { redirect } from 'next/navigation';
 import { OnboardingRail } from '@/components/OnboardingRail';
 import { BankForm } from '@/components/onboarding/BankForm';
 import { formatDateTime } from '@/lib/analytics';
+import { isBypassed } from '@/lib/approval';
 import { maskAccount } from '@/lib/mask';
-import { canOpen, previousStep } from '@/lib/onboarding';
+import { canOpen, previousStep, stepPosition } from '@/lib/onboarding';
 import { onboardingFor } from '@/lib/onboarding-guard';
 import { readBank } from '@/lib/onboarding-store';
 import { requireViewer } from '@/lib/viewer';
@@ -23,17 +24,27 @@ export const metadata: Metadata = { title: 'Bank details' };
  */
 export default async function BankPage() {
   const viewer = await requireViewer();
-  const { state, applies } = await onboardingFor(viewer);
+  const { state, applies, bypass } = await onboardingFor(viewer);
   if (!applies) redirect('/');
-  if (!canOpen(state, 'bank')) redirect('/welcome');
+  /*
+   * The waiver has to be passed in here, not assumed away. Without it this
+   * check reads the ordinary queue, decides a waived account has not reached
+   * step 4, and bounces the one person who was told they could fill this in
+   * whenever they liked straight back to step 1.
+   */
+  const waived = isBypassed(bypass);
+  if (!canOpen(state, 'bank', { bypassed: waived })) redirect(waived ? '/profile' : '/welcome');
 
   const existing = state.bank ? await readBank(viewer.id).catch(() => null) : null;
-  const back = previousStep('bank');
+  const back = previousStep('bank', { bypassed: waived });
+  const { index, total } = stepPosition('bank', { bypassed: waived });
 
   return (
     <div>
       <div className="rise">
-        <p className="label-cap">Step 4 of 4</p>
+        <p className="label-cap">
+          Step {index} of {total}
+        </p>
         <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">Where the money goes</h1>
         <p className="plain mt-2.5">
           Payment is by ACH, thirty days after a referral is approved. This is the account it lands
@@ -42,7 +53,7 @@ export default async function BankPage() {
       </div>
 
       <div className="mt-6">
-        <OnboardingRail current="bank" state={state} />
+        <OnboardingRail current="bank" state={state} bypassed={waived} />
       </div>
 
       {existing ? (
@@ -81,8 +92,11 @@ export default async function BankPage() {
           <Link href="/" className="link-text">
             Skip for now
           </Link>
-          . Everything else is done, so the dashboard is open to you. We will keep asking until this
-          is filled in, because nothing can be paid out without it.
+          .{' '}
+          {waived
+            ? 'Nothing is blocking your dashboard either way.'
+            : 'Everything else is done, so the dashboard is open to you.'}{' '}
+          We will keep asking until this is filled in, because nothing can be paid out without it.
         </p>
       ) : null}
     </div>

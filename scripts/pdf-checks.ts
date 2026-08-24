@@ -154,15 +154,28 @@ async function main() {
   const w9Bytes = await renderW9Pdf(w9, '123456789');
   const w9Doc = await PDFDocument.load(w9Bytes);
   check('it is a PDF', w9Bytes[0] === 0x25 && w9Bytes[1] === 0x50);
-  check('one page, like the form', w9Doc.getPageCount() === 1);
+  /*
+   * Six, like the form. The five after the first are the IRS instructions, and
+   * they are the half of this document nobody notices is missing until a year
+   * later when the copy on file turns out to be an extract.
+   */
+  check('all six pages of the form', w9Doc.getPageCount() === 6);
   const [w, h] = [w9Doc.getPage(0).getWidth(), w9Doc.getPage(0).getHeight()];
   check('US Letter', Math.round(w) === 612 && Math.round(h) === 792);
+  check('and every page is', w9Doc.getPages().every((page) => Math.round(page.getWidth()) === 612 && Math.round(page.getHeight()) === 792));
   // The blank form is 786KB of JPEG; anything much smaller means the background
   // did not go in, which is the difference between a W-9 and a page of text.
   check('the scanned form went in as the background', w9Bytes.length > 400_000);
+  // The instructions are another 1.5MB of scan on top of that. Under two
+  // megabytes means some of them silently did not make it.
+  check('and the instructions with it', w9Bytes.length > 2_000_000);
+  // A serverless response has a ceiling around 4.5MB, which is why pages 2 to 6
+  // are downsampled rather than copied at native resolution.
+  check('without becoming undeliverable', w9Bytes.length < 4_000_000);
 
   const ein = await renderW9Pdf({ ...w9, tinType: 'ein' }, '123456789');
   check('an EIN renders too', ein.length > 400_000);
+  check('with its instructions', (await PDFDocument.load(ein)).getPageCount() === 6);
 
   const llc = await renderW9Pdf(
     { ...w9, classification: 'llc', llcCode: 'S' },

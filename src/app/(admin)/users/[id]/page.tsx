@@ -9,7 +9,7 @@ import { ReviewDecision } from '@/components/onboarding/ReviewDecision';
 import { formatDateTime } from '@/lib/analytics';
 import { isBypassed, NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '@/lib/approval';
 import { maskAccount, maskTin } from '@/lib/mask';
-import { firstMissingRequired, STEPS, W9_CLASSIFICATIONS } from '@/lib/onboarding';
+import { firstMissingRequired, NOTHING_DONE, W9_CLASSIFICATIONS } from '@/lib/onboarding';
 import { readAgreement, readBank, readProgress, readW9 } from '@/lib/onboarding-store';
 import { findUserById, usersEnabled } from '@/lib/users';
 import { requireAdmin } from '@/lib/viewer';
@@ -55,9 +55,6 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const state = progress?.state ?? null;
   const approval = progress?.approval ?? { ...UNREVIEWED };
   const bypass = progress?.bypass ?? { ...NO_BYPASS };
-  const outstanding = state
-    ? STEPS.filter((step) => step.required && !state[step.key]).map((step) => step.label)
-    : [];
   const paperworkComplete = state ? firstMissingRequired(state) === null : false;
   /* The read failed rather than came back empty. Those two produce the same
      defaults and mean opposite things, so the page says which one it is
@@ -139,7 +136,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             <Audit ip={agreement.signedIp} agent={agreement.signedUserAgent} />
           </>
         ) : (
-          <p className="plain mt-2">Not signed yet.</p>
+          <p className="plain mt-2">
+            {isBypassed(bypass)
+              ? 'Waived for this account, so they are not being asked to sign it.'
+              : 'Not signed yet.'}
+          </p>
         )}
       </section>
 
@@ -191,7 +192,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             <Audit ip={w9.signedIp} agent={w9.signedUserAgent} />
           </>
         ) : (
-          <p className="plain mt-2">Not filed yet. Nothing can be paid until it is.</p>
+          <p className="plain mt-2">
+            {isBypassed(bypass)
+              ? 'Waived for this account, so they are not being asked to file one.'
+              : 'Not filed yet. Nothing can be paid until it is.'}
+          </p>
         )}
       </section>
 
@@ -207,7 +212,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             ) : null}
           </div>
           <div className="mt-4">
-            <BypassSwitch userId={id} bypass={bypass} outstanding={outstanding} />
+            <BypassSwitch userId={id} bypass={bypass} state={state ?? NOTHING_DONE} />
           </div>
         </section>
       ) : null}

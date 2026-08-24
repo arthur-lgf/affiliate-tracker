@@ -12,7 +12,15 @@ import { NextResponse } from 'next/server';
 import { unauthorized, viewerFromRequest, type Viewer } from './api-auth';
 import { clientIp, userAgent } from './request';
 import { blocksApp, isBypassed, NO_BYPASS, type Approval, type Bypass } from './approval';
-import { canOpen, firstMissingRequired, nextStep, type OnboardingState, type StepKey } from './onboarding';
+import {
+  canOpen,
+  firstMissingRequired,
+  isLocked,
+  nextStep,
+  stepByKey,
+  type OnboardingState,
+  type StepKey,
+} from './onboarding';
 import {
   markSubmitted,
   onboardingEnabled,
@@ -79,10 +87,38 @@ export async function actorFor(
   }
   const { state, approval, bypass } = progress;
 
-  if (!canOpen(state, step, { bypassed: isBypassed(bypass) })) {
+  const waived = isBypassed(bypass);
+  if (!canOpen(state, step, { bypassed: waived })) {
     return {
       response: NextResponse.json(
-        { error: 'Finish the earlier steps first.' },
+        {
+          // Two refusals that would otherwise wear the same wrong sentence. A
+          // waived account is not early for the W-9; it is never being asked
+          // for it, and "finish the earlier steps" describes a queue they are
+          // not in.
+          error: waived
+            ? 'The agreement and the W-9 are waived for this account.'
+            : 'Finish the earlier steps first.',
+        },
+        { status: 409 },
+      ),
+    };
+  }
+
+  /*
+   * Checked here rather than in each of the four routes. Three of them would
+   * have got it right and the fourth is the one that matters: this is the layer
+   * that stands between a hand-made POST and a signed document being quietly
+   * replaced after somebody approved it.
+   */
+  if (isLocked(step, state, { approved: approval.status === 'approved', bypassed: waived })) {
+    return {
+      response: NextResponse.json(
+        {
+          error:
+            `Your ${stepByKey(step).label.toLowerCase()} is on file and can no longer be ` +
+            'changed here. Ask an admin if it needs correcting.',
+        },
         { status: 409 },
       ),
     };

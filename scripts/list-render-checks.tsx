@@ -29,6 +29,7 @@ import { W9Form, type W9Prefill } from '../src/components/onboarding/W9Form';
 import { AgreementForm } from '../src/components/onboarding/AgreementForm';
 import { ProfileForm } from '../src/components/onboarding/ProfileForm';
 import { OnboardingRail } from '../src/components/OnboardingRail';
+import { LockedDocument } from '../src/components/onboarding/LockedDocument';
 import { COMPANY } from '../src/lib/agreement';
 import { NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '../src/lib/approval';
 import { ApprovalPill } from '../src/components/ApprovalPill';
@@ -569,6 +570,51 @@ const railDone = renderToStaticMarkup(
 );
 check('a finished step is ticked', railDone.includes('✓'));
 check('and the count follows', railDone.includes('>3 of 4</span>'));
+
+/*
+ * Waived: two steps rather than four. The rail is the map of what is being
+ * asked of somebody, and drawing two rooms that have been taken off the
+ * building is how a waived affiliate ends up hunting for a W-9 nobody wants.
+ */
+const railWaived = renderToStaticMarkup(
+  <OnboardingRail current="profile" state={{ ...NOTHING_DONE }} bypassed />,
+);
+check('a waived account still gets their own details', railWaived.includes('Your details'));
+check('and their bank details', railWaived.includes('Bank details'));
+check('but not the agreement', !railWaived.includes('Affiliate agreement'));
+check('nor the W-9', !railWaived.includes('Form W-9'));
+check('the count is out of two', railWaived.includes('>0 of 2</span>'));
+check('nothing claims to be blocking them', !railWaived.includes('before you can use the dashboard'));
+check('because nothing is', railWaived.includes('Neither of these is blocking'));
+
+console.log('\n- a document that has settled -');
+const settled = renderToStaticMarkup(
+  <LockedDocument
+    title="Signed"
+    savedAt="24 Aug 2026"
+    note="It is on file as part of your account now."
+    facts={[
+      { label: 'Name signed', value: 'Arthur Reyes' },
+      { label: 'Effective date', value: '2026-08-24' },
+    ]}
+    signaturePng={'data:image/png;base64,' + 'A'.repeat(900)}
+    downloadHref="/api/onboarding/u-1/agreement.pdf"
+    onward={{ path: '/profile', label: 'Back to your profile' }}
+  />,
+);
+check('it says what happened and when', settled.includes('Signed on 24 Aug 2026'));
+check('the details are shown', settled.includes('Arthur Reyes'));
+check('so is the signature that is on it', settled.includes('data:image/png;base64,'));
+check('the file is offered', settled.includes('href="/api/onboarding/u-1/agreement.pdf"'));
+check('and there is a way back', settled.includes('href="/profile"'));
+/*
+ * The point of this component. A disabled form is still a form: it looks like
+ * somewhere to type and the only way to find out it is not is to fill it in and
+ * be refused. There is nothing here to press that will not work.
+ */
+check('there is no form left to submit', !settled.includes('<form'));
+check('and no button that would refuse', !settled.includes('<button'));
+check('an empty fact reads as absent rather than blank', settled.includes('Not given') === false);
 
 console.log('\n— the agreement, as rendered —');
 const agreementHtml = renderToStaticMarkup(

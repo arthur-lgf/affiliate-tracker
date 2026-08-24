@@ -16,6 +16,7 @@ import {
   gateFor,
   isBlocked,
   isComplete,
+  isLocked,
   keepsAccountNumber,
   keepsPassword,
   keepsTin,
@@ -29,7 +30,11 @@ import {
   profileProblems,
   progressOf,
   STEPS,
+  stepPosition,
+  stepsFor,
   w9Problems,
+  WAIVED_HOME,
+  waivedSteps,
   type OnboardingState,
   type W9Input,
 } from '../src/lib/onboarding';
@@ -445,38 +450,102 @@ check(
   formatTinAsTyped('123456789', 'ein') === formatTin('123456789', 'ein'),
 );
 
-console.log('\n— what a waiver opens —');
+console.log('\n— what a waiver drops —');
 const OPEN = { bypassed: true };
+check('two steps are left, not four', stepsFor(OPEN).length === 2);
+check('their own details', stepsFor(OPEN).some((step) => step.key === 'profile'));
+check('and their bank details', stepsFor(OPEN).some((step) => step.key === 'bank'));
+check('the agreement is not one of them', !stepsFor(OPEN).some((step) => step.key === 'agreement'));
+check('nor the W-9', !stepsFor(OPEN).some((step) => step.key === 'w9'));
+check('and the two dropped can be named', waivedSteps(OPEN).map((step) => step.key).join() === 'agreement,w9');
+check('without a waiver nothing is dropped', waivedSteps().length === 0);
+check('and all four still apply', stepsFor().length === 4);
+
+console.log('\n— what a waiver opens —');
 check('the first step, as always', canOpen(NOTHING_DONE, 'profile', OPEN));
 check('the bank step, with nothing else done', canOpen(NOTHING_DONE, 'bank', OPEN));
 /*
- * The one ordering a waiver does not lift. Both of these end in a signature,
- * and a signature made on an account whose password an admin issued and read
- * out is worth less than the thirty seconds it takes to change it.
+ * The point of the whole feature. An admin who waives onboarding has the
+ * agreement on paper and the W-9 in an email; asking for both again inside an
+ * app the person is already in collects a second copy of something already
+ * filed. So they are not deferred, they are gone.
  */
-check('but not the agreement, before a password of their own', !canOpen(NOTHING_DONE, 'agreement', OPEN));
+check('but not the agreement', !canOpen(NOTHING_DONE, 'agreement', OPEN));
 check('nor the W-9', !canOpen(NOTHING_DONE, 'w9', OPEN));
-check('both open once the password is theirs', canOpen(state({ profile: true }), 'agreement', OPEN));
-check('and in either order', canOpen(state({ profile: true }), 'w9', OPEN));
+check('and a password of their own does not unlock either', !canOpen(state({ profile: true }), 'agreement', OPEN));
+check('nor does having done everything else', !canOpen(state({ profile: true, bank: true }), 'w9', OPEN));
+/*
+ * The exception, and it only ever runs one way. Somebody who signed before the
+ * waiver keeps the door to what they signed: skipping a signature is the point,
+ * hiding a document somebody put their name to is not, and this app gives an
+ * affiliate no other way to read it back.
+ */
+check('a document already signed can still be read', canOpen(state({ profile: true, agreement: true }), 'agreement', OPEN));
+check('and a W-9 already filed', canOpen(state({ w9: true }), 'w9', OPEN));
 // Without a waiver the corridor is unchanged.
 check('the queue still holds for everybody else', !canOpen(state({ profile: true }), 'w9'));
 check('and the default is no waiver', canOpen(state({ profile: true }), 'agreement'));
+
+console.log('\n— counted over what is left —');
+check('the bank step is the second of two', stepPosition('bank', OPEN).index === 2);
+check('out of two', stepPosition('bank', OPEN).total === 2);
+check('and the fourth of four without a waiver', stepPosition('bank').index === 4);
+check('back from the bank step is their own details', previousStep('bank', OPEN)?.key === 'profile');
+check('rather than the W-9 it sits behind normally', previousStep('bank')?.key === 'w9');
+check('and there is nothing before the first', previousStep('profile', OPEN) === null);
+check('onward from nothing is their own details', nextStep(NOTHING_DONE, OPEN)?.key === 'profile');
+check('then the bank step, skipping both documents', nextStep(state({ profile: true }), OPEN)?.key === 'bank');
+check('and nothing once the two are in', nextStep(state({ profile: true, bank: true }), OPEN) === null);
+check('progress is out of two', progressOf(state({ profile: true }), OPEN).total === 2);
+check('with one done', progressOf(state({ profile: true }), OPEN).done === 1);
+check(
+  'and a signature made before the waiver does not pad it',
+  progressOf(state({ profile: true, agreement: true }), OPEN).done === 1,
+);
+check('nothing required is left once their details are in', firstMissingRequired(state({ profile: true }), OPEN) === null);
+check('while the ordinary gate still wants the agreement', firstMissingRequired(state({ profile: true }))?.key === 'agreement');
+check('complete means the two that apply', isComplete(state({ profile: true, bank: true }), OPEN));
+check('which is not complete for anybody else', !isComplete(state({ profile: true, bank: true })));
 
 console.log('\n— what a waiver lets past —');
 check('the app is open with nothing filled in', gateFor('/', NOTHING_DONE, OPEN) === null);
 check('and every page inside it', gateFor('/links', NOTHING_DONE, OPEN) === null);
 check('without one, the same request is sent to step 1', gateFor('/links', NOTHING_DONE) === '/welcome');
-// The forms are still reachable, which is the point of the whole feature.
-check('the profile step is still openable', gateFor('/welcome', NOTHING_DONE, OPEN) === null);
+// The two forms they can still fill in are still reachable, in either order.
+check('the profile step is openable', gateFor('/welcome', NOTHING_DONE, OPEN) === null);
 check('and the bank step, out of order', gateFor('/welcome/bank', NOTHING_DONE, OPEN) === null);
-check(
-  'a signed document still waits for the password',
-  gateFor('/welcome/w9', NOTHING_DONE, OPEN) === '/welcome',
-);
-check(
-  'and opens once it is set',
-  gateFor('/welcome/w9', state({ profile: true }), OPEN) === null,
-);
+/*
+ * The redirect that has to land somewhere real. Sending a waived account to
+ * "the next step they owe" would send them to the very document being refused,
+ * which is a loop; the list on their profile is the only honest destination.
+ */
+check('the waived home is their profile', WAIVED_HOME === '/profile');
+check('an unsigned agreement sends them to the list', gateFor('/welcome/agreement', NOTHING_DONE, OPEN) === WAIVED_HOME);
+check('and so does the W-9, with the password set', gateFor('/welcome/w9', state({ profile: true }), OPEN) === WAIVED_HOME);
+check('which is not the page they asked for', gateFor('/welcome/w9', state({ profile: true }), OPEN) !== '/welcome/w9');
+check('one they did sign opens', gateFor('/welcome/agreement', state({ profile: true, agreement: true }), OPEN) === null);
+check('an unknown welcome path lands on the list too', gateFor('/welcome/nope', NOTHING_DONE, OPEN) === WAIVED_HOME);
+
+console.log('\n- when a signed document settles -');
+const SETTLED = { approved: true };
+/*
+ * Approving an account is a decision taken by reading two documents. If either
+ * can be swapped out afterwards then what was approved and what is on file need
+ * never be the same thing again, and there is nothing in the record to say so.
+ */
+check('the W-9 is fixed once the account is approved', isLocked('w9', ALL_DONE, SETTLED));
+check('and the agreement with it', isLocked('agreement', ALL_DONE, SETTLED));
+check('a waiver settles them the same way', isLocked('agreement', state({ agreement: true }), { bypassed: true }));
+// The other two are not documents and do change: people move house and banks
+// close accounts.
+check('their own details stay editable', !isLocked('profile', ALL_DONE, SETTLED));
+check('and their bank details', !isLocked('bank', ALL_DONE, SETTLED));
+// Nothing is locked before it exists, or the first submission would be refused.
+check('a W-9 that was never filed is not locked', !isLocked('w9', state({ profile: true }), SETTLED));
+check('nor an unsigned agreement under a waiver', !isLocked('agreement', state({ profile: true }), { bypassed: true }));
+// Waiting, and turned down, are both states somebody can still act on.
+check('a pending account can still re-sign', !isLocked('agreement', ALL_DONE));
+check('and so can a declined one', !isLocked('w9', ALL_DONE, { approved: false }));
 
 console.log(`\nonboarding: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

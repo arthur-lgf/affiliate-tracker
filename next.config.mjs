@@ -76,7 +76,9 @@ const nextConfig = {
   // serverless bundle unless it is named here — and the first sign of that
   // being missed is a download that 500s in production and works locally.
   outputFileTracingIncludes: {
-    '/api/onboarding/**': ['./assets/w9-page1.jpg'],
+    // Every page of the blank form, not only the one with the boxes. Named as
+    // a glob so adding a page to assets/ does not also mean remembering this.
+    '/api/onboarding/**': ['./assets/w9-page*.jpg'],
   },
   // Not set as a default: every response should carry these, including the
   // public landing pages and the API routes.

@@ -5,7 +5,7 @@ import { authConfigured } from '@/lib/auth';
 import { initialsOf } from '@/lib/analytics';
 import { storageStatus, type StorageStatus } from '@/lib/store';
 import { isBypassed } from '@/lib/approval';
-import { STEPS } from '@/lib/onboarding';
+import { stepsFor } from '@/lib/onboarding';
 import { requireOnboarded } from '@/lib/onboarding-guard';
 
 export const dynamic = 'force-dynamic';
@@ -44,12 +44,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // is a month of Net-30 slack to produce it in, so it is not worth a wall.
   const bankMissing = applies && !state.bank;
   /*
-   * A waived account can be missing far more than a bank account, and the
-   * banner that only ever mentions one of them would be quietly wrong about
-   * the other three. So for those it names the count and points at the list.
+   * A waived account can be missing its own details as well as its bank
+   * account, and a banner that only ever mentions one of them would be quietly
+   * wrong about the other. So for those it names the count and points at the
+   * list. The two waived documents are not counted: nobody is waiting on them.
    */
   const waived = applies && isBypassed(bypass);
-  const owed = waived ? STEPS.filter((step) => !state[step.key]).length : 0;
+  const owed = waived
+    ? stepsFor({ bypassed: true }).filter((step) => !state[step.key]).length
+    : 0;
 
   return (
     <div className="min-h-screen bg-paper">
@@ -120,7 +123,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <strong className="font-semibold text-ink">
               {owed === 1 ? 'One thing is still outstanding.' : `${owed} things are still outstanding.`}
             </strong>
-            <span>Nothing is blocked, but a payment needs the W-9 and your bank details.</span>
+            <span>Nothing is blocked, but a payment needs your bank details.</span>
             <Link href="/profile" className="link-text font-medium">
               See what is left
             </Link>

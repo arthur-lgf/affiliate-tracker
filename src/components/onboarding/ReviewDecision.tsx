@@ -166,6 +166,18 @@ export function ReviewDecision({
         ) : null}
       </div>
 
+      {/*
+        The other half of approving, and not obvious from the button: it fixes
+        the two signed documents. Somebody who needs an affiliate to re-file a
+        W-9 would otherwise go looking for an unlock switch that does not exist,
+        when the answer is the button already on this page.
+      */}
+      <p className="plain mt-3">
+        {decided
+          ? 'While this account is approved, their agreement and W-9 are fixed: they can read and download them but not replace them. Putting it back in the queue lets them file again.'
+          : 'Approving also settles their agreement and W-9. They keep both to read and download, and cannot replace either until somebody puts this account back in the queue.'}
+      </p>
+
       {!hasEmail ? (
         <p className="plain mt-3">
           This account has no email address, so approving it cannot notify anyone. Add one on their

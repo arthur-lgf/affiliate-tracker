@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireApiAdmin } from '@/lib/api-auth';
+import { requireApiSelfOrAdmin } from '@/lib/api-auth';
 import { renderAgreementPdf } from '@/lib/pdf/agreement-pdf';
 import { renderW9Pdf } from '@/lib/pdf/w9-pdf';
 import { readAgreement, readW9, revealTin } from '@/lib/onboarding-store';
@@ -9,11 +9,13 @@ import { storeResponse } from '@/lib/onboarding-api';
 export const dynamic = 'force-dynamic';
 
 /**
- * Download somebody's signed paperwork as a PDF.
+ * Download signed paperwork as a PDF.
  *
- * Admin only, and there is no self-service equivalent yet — an affiliate can
- * see what they signed on the page that shows it, but the file is the thing an
- * accountant asks for and that is an admin's errand.
+ * An admin, or the affiliate it belongs to. The second half of that is not a
+ * relaxation of the first: a W-9 and a signed agreement are the two documents
+ * a person is most likely to be asked for by somebody else — an accountant, a
+ * lender, their own records — and the copy they signed should not be something
+ * they have to ask us to send them.
  *
  * Generated on demand from the stored fields rather than saved as a blob when
  * they signed. A stored file is a file that can be out of step with the row it
@@ -22,16 +24,21 @@ export const dynamic = 'force-dynamic';
  *
  * The W-9 is the one place in the application where a plaintext taxpayer number
  * is deliberately produced. It goes straight into the page image and is never
- * returned as JSON, logged, or held beyond the request.
+ * returned as JSON, logged, or held beyond the request. The affiliate reading
+ * their own copy is reading their own number back, which is the one case where
+ * that needs no ceremony at all.
  */
 export async function GET(
   request: Request,
   context: { params: Promise<{ userId: string; doc: string }> },
 ) {
-  const gate = await requireApiAdmin(request, 'Only an admin can download these.');
-  if ('response' in gate) return gate.response;
-
   const { userId, doc } = await context.params;
+  const gate = await requireApiSelfOrAdmin(
+    request,
+    userId,
+    'That paperwork belongs to somebody else.',
+  );
+  if ('response' in gate) return gate.response;
   if (doc !== 'agreement.pdf' && doc !== 'w9.pdf') {
     return NextResponse.json({ error: 'No such document.' }, { status: 404 });
   }

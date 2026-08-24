@@ -58,3 +58,23 @@ export async function requireApiAdmin(
   if (viewer.role !== 'admin') return { response: forbidden(message) };
   return { viewer };
 }
+
+/**
+ * An admin, or the one person the record is about.
+ *
+ * Not "any signed-in affiliate": the id in the path decides. An affiliate who
+ * types somebody else's id into the URL is refused, which is the whole reason
+ * this takes the id rather than trusting the route to compare it afterwards
+ * and one route forgetting to.
+ */
+export async function requireApiSelfOrAdmin(
+  request: Request,
+  userId: string,
+  message = 'That is not yours to read.',
+): Promise<{ viewer: Viewer } | { response: NextResponse }> {
+  const viewer = await viewerFromRequest(request);
+  if (!viewer) return { response: unauthorized() };
+  if (viewer.role === 'admin') return { viewer };
+  if (viewer.id && viewer.id === userId) return { viewer };
+  return { response: forbidden(message) };
+}

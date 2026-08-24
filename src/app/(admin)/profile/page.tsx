@@ -4,7 +4,7 @@ import { ApprovalPill } from '@/components/ApprovalPill';
 import { formatDateTime } from '@/lib/analytics';
 import { isBypassed } from '@/lib/approval';
 import { maskAccount, maskTin } from '@/lib/mask';
-import { canOpen, STEPS, type StepKey } from '@/lib/onboarding';
+import { canOpen, isLocked, stepsFor, waivedSteps, type StepKey } from '@/lib/onboarding';
 import { onboardingFor } from '@/lib/onboarding-guard';
 import { readAgreement, readBank, readW9 } from '@/lib/onboarding-store';
 import { findUserById } from '@/lib/users';
@@ -31,6 +31,21 @@ export default async function ProfilePage() {
   const viewer = await requireViewer();
   const { state, applies, approval, bypass } = await onboardingFor(viewer);
   const waived = isBypassed(bypass);
+  /*
+   * Two lists, because a waiver produces two different kinds of item. The
+   * agreement and the W-9 are not late, they are not being collected; showing
+   * them in the same list with a disabled button would read as a form that has
+   * broken rather than a decision somebody made.
+   */
+  const mine = stepsFor({ bypassed: waived });
+  const skipped = waivedSteps({ bypassed: waived });
+  const approved = approval.status === 'approved';
+
+  /** The two steps that produce a file. The other two produce rows. */
+  const pdfFor: Partial<Record<StepKey, string>> = {
+    agreement: `/api/onboarding/${encodeURIComponent(viewer.id)}/agreement.pdf`,
+    w9: `/api/onboarding/${encodeURIComponent(viewer.id)}/w9.pdf`,
+  };
 
   const [account, agreement, w9, bank] = await Promise.all([
     findUserById(viewer.id).catch(() => null),
@@ -84,8 +99,9 @@ export default async function ProfilePage() {
                 need, in any order.
               </p>
               <p className="plain mt-1.5">
-                The W-9 and your bank details are still what make a payment possible, so they are
-                worth doing before your first one is due.
+                The agreement and the W-9 have been waived, so there is nothing for you to sign.
+                Your bank details are the one thing a payment still needs, so they are worth doing
+                before your first one is due.
                 {bypass.by ? ` Waived by ${bypass.by}` : ''}
                 {bypass.at ? ` on ${formatDateTime(bypass.at)}` : ''}
                 {bypass.by || bypass.at ? '.' : ''}
@@ -108,13 +124,17 @@ export default async function ProfilePage() {
               <h2 className="text-[15px] font-semibold">Your paperwork</h2>
               <p className="plain mt-1">
                 Open any of these to fill it in or change what is there. Nothing is lost by looking.
+                The agreement and the W-9 settle once your account does: after that they are yours
+                to read and download, and an admin has to be asked to change one.
               </p>
             </div>
 
             <ul>
-              {STEPS.map((step) => {
+              {mine.map((step) => {
                 const done = state[step.key];
                 const open = canOpen(state, step.key, { bypassed: waived });
+                const settled = isLocked(step.key, state, { approved, bypassed: waived });
+                const pdf = done ? pdfFor[step.key] : undefined;
                 return (
                   <li
                     key={step.key}
@@ -134,19 +154,61 @@ export default async function ProfilePage() {
                       <span className="block text-[12px] text-ink-dim">{detail[step.key]}</span>
                     </span>
 
+                    {pdf ? (
+                      <a href={pdf} className="link-text flex-none text-[12px] font-medium">
+                        Download PDF
+                      </a>
+                    ) : null}
+
                     {open ? (
                       <Link href={step.path} className="btn-outline btn-sm flex-none">
-                        {done ? 'Change' : 'Fill it in'}
+                        {settled ? 'View' : done ? 'Change' : 'Fill it in'}
                       </Link>
                     ) : (
                       <span className="flex-none text-[12px] text-ink-dim">
-                        Set your own password first
+                        Earlier steps come first
                       </span>
                     )}
                   </li>
                 );
               })}
             </ul>
+
+            {skipped.length > 0 ? (
+              <div className="border-t border-edge bg-paper-card px-5 py-4">
+                <p className="text-[13px] font-semibold text-ink">Not needed for your account</p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {skipped.map((step) => (
+                  <li
+                    key={step.key}
+                    className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-ink-dim"
+                  >
+                    <span className="font-medium text-ink-soft">{step.label}</span>
+                    <span>
+                      {state[step.key]
+                        ? `${detail[step.key]}. Kept on file.`
+                        : 'Waived by an admin. There is nothing here for you to sign.'}
+                    </span>
+                    {/* Signed before the waiver was granted. Not being asked
+                        for it again is one thing; being unable to read back
+                        what you put your name to is another. */}
+                    {state[step.key] ? (
+                      <>
+                        <Link href={step.path} className="link-text">
+                          Read it
+                        </Link>
+                        {pdfFor[step.key] ? (
+                          <a href={pdfFor[step.key]} className="link-text">
+                            Download PDF
+                          </a>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              </div>
+            ) : null}
           </section>
 
           <p className="plain mt-5">

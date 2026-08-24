@@ -24,8 +24,10 @@ import {
 import {
   canOpen,
   firstMissingRequired,
+  isLocked,
   nextStep,
   NOTHING_DONE,
+  WAIVED_HOME,
   type OnboardingState,
   type StepKey,
 } from './onboarding';
@@ -85,6 +87,9 @@ export type Onboarding = {
    *  again. Pages use it to say so rather than pretending it is the first
    *  time. */
   revisiting: boolean;
+  /** True when this step is a signed document that has been settled: the page
+   *  shows the record and the download, and offers no way to replace it. */
+  locked: boolean;
   /** Whether an admin has let them in. Always approved for anybody the flow
    *  does not apply to. */
   approval: Approval;
@@ -99,19 +104,22 @@ export async function onboardingFor(viewer: Viewer): Promise<Onboarding> {
       state: { ...NOTHING_DONE },
       applies: false,
       revisiting: false,
+      locked: false,
       approval: { ...NOT_APPLICABLE },
       bypass: { ...NO_BYPASS },
     };
   }
   const { state, approval, bypass } = await stateFor(viewer.id);
-  return { viewer, state, applies: true, revisiting: false, approval, bypass };
+  return { viewer, state, applies: true, revisiting: false, locked: false, approval, bypass };
 }
 
 /** Where somebody waiting on an admin is sent. */
 export const REVIEW_PATH = '/welcome/review';
 
-/** Where somebody who is already inside the app manages their own paperwork. */
-export const PROFILE_PATH = '/profile';
+/** Where somebody who is already inside the app manages their own paperwork.
+ *  The same path lib/onboarding.ts sends a waived account back to, named once
+ *  so the two cannot drift apart. */
+export const PROFILE_PATH = WAIVED_HOME;
 
 /**
  * For any page inside the app.
@@ -190,11 +198,22 @@ export async function requireStep(key: StepKey): Promise<Onboarding> {
   const { state, bypass } = onboarding;
   const bypassed = isBypassed(bypass);
   if (!canOpen(state, key, { bypassed })) {
-    // The one ordering a waiver does not lift: a signature made on an account
-    // whose password an admin issued is worth less than changing it.
-    redirect(bypassed ? '/welcome' : ((nextStep(state) ?? { path: '/' }).path));
+    /*
+     * Two different refusals. Without a waiver this is the queue: they have not
+     * reached this step yet and are sent to the one they are on. With a waiver
+     * it is the agreement or the W-9, which are not being collected from them
+     * at all, so they go back to the list of what is.
+     */
+    redirect(bypassed ? PROFILE_PATH : (nextStep(state) ?? { path: '/' }).path);
   }
-  return { ...onboarding, revisiting: state[key] };
+  return {
+    ...onboarding,
+    revisiting: state[key],
+    locked: isLocked(key, state, {
+      approved: onboarding.approval.status === 'approved',
+      bypassed,
+    }),
+  };
 }
 
 /**

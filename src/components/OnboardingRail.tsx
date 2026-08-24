@@ -1,5 +1,11 @@
 import Link from 'next/link';
-import { canOpen, progressOf, STEPS, type OnboardingState, type StepKey } from '@/lib/onboarding';
+import {
+  canOpen,
+  progressOf,
+  stepsFor,
+  type OnboardingState,
+  type StepKey,
+} from '@/lib/onboarding';
 
 /**
  * Where they are in the four steps.
@@ -15,24 +21,31 @@ import { canOpen, progressOf, STEPS, type OnboardingState, type StepKey } from '
  *
  * A step not yet reached stays plain text. Nothing here can be used to skip
  * ahead, which is the one ordering the flow actually depends on.
+ *
+ * A waived account sees two steps rather than four, numbered one and two.
+ * Drawing the agreement and the W-9 greyed out would be a map to two rooms
+ * that have been taken off the building.
  */
 export function OnboardingRail({
   current,
   state,
+  bypassed = false,
 }: {
   current: StepKey;
   state: OnboardingState;
+  bypassed?: boolean;
 }) {
-  const { done, total } = progressOf(state);
+  const steps = stepsFor({ bypassed });
+  const { done, total } = progressOf(state, { bypassed });
 
   return (
     <div className="panel overflow-hidden">
       <ol className="flex flex-col sm:flex-row">
-        {STEPS.map((step, index) => {
+        {steps.map((step, index) => {
           const isCurrent = step.key === current;
           const isDone = state[step.key];
           // Openable and not where they already are: worth a link.
-          const linked = !isCurrent && isDone && canOpen(state, step.key);
+          const linked = !isCurrent && isDone && canOpen(state, step.key, { bypassed });
 
           const inner = (
             <>
@@ -93,7 +106,10 @@ export function OnboardingRail({
         <span className="tnum font-semibold text-ink-soft">
           {done} of {total}
         </span>{' '}
-        done. The first three are needed before you can use the dashboard.
+        done.{' '}
+        {bypassed
+          ? 'Neither of these is blocking your dashboard. They are here whenever you want them.'
+          : 'The first three are needed before you can use the dashboard.'}
       </p>
     </div>
   );

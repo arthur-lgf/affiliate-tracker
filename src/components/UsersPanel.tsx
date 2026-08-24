@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { STEPS, type OnboardingState } from '@/lib/onboarding';
+import { stepsFor, waivedSteps, type OnboardingState } from '@/lib/onboarding';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { Pager } from './Pager';
 import { TableScroller } from './TableScroller';
@@ -576,7 +576,12 @@ export function UsersPanel({
                       </td>
 
                       <td className="px-5 py-3.5">
-                        <SetupCell id={row.id} state={row.setup} role={row.role} />
+                        <SetupCell
+                          id={row.id}
+                          state={row.setup}
+                          role={row.role}
+                          bypass={row.bypass ?? NO_BYPASS}
+                        />
                       </td>
 
                       <td className="px-5 py-3.5">
@@ -683,15 +688,21 @@ export function UsersPanel({
  * Which step is outstanding is the useful fact — a missing W-9 stops a payment
  * and a missing bank account stops a different one — and a fraction hides
  * exactly that. Hovering names each one; the link opens the record.
+ *
+ * A waived account gets two ticks rather than four. Drawing the two waived
+ * documents in the red of an outstanding item would put a whole column of
+ * accounts in a queue nobody is actually waiting on.
  */
 function SetupCell({
   id,
   state,
   role,
+  bypass,
 }: {
   id: string;
   state: OnboardingState | null;
   role: 'admin' | 'affiliate';
+  bypass: Bypass;
 }) {
   /* Two different nothings. An admin has no onboarding, which is a fact; an
      affiliate with no state is one the read did not answer for, which is not.
@@ -703,15 +714,20 @@ function SetupCell({
       </span>
     );
   }
-  const done = STEPS.filter((step) => state[step.key]).length;
+  const waived = isBypassed(bypass);
+  const steps = stepsFor({ bypassed: waived });
+  const done = steps.filter((step) => state[step.key]).length;
   return (
     <Link
       href={`/users/${encodeURIComponent(id)}`}
       className="inline-flex items-center gap-2 hover:underline"
-      title={STEPS.map((step) => `${step.label}: ${state[step.key] ? 'done' : 'outstanding'}`).join(' · ')}
+      title={[
+        ...steps.map((step) => `${step.label}: ${state[step.key] ? 'done' : 'outstanding'}`),
+        ...waivedSteps({ bypassed: waived }).map((step) => `${step.label}: waived`),
+      ].join(' · ')}
     >
       <span aria-hidden className="flex gap-[3px]">
-        {STEPS.map((step) => (
+        {steps.map((step) => (
           <span
             key={step.key}
             className={`h-[10px] w-[10px] rounded-[2px] ${
@@ -725,7 +741,7 @@ function SetupCell({
         ))}
       </span>
       <span className="tnum text-[12px] text-ink-soft">
-        {done}/{STEPS.length}
+        {done}/{steps.length}
       </span>
     </Link>
   );

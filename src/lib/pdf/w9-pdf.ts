@@ -8,6 +8,14 @@
  * typewriter face. What comes out looks like a W-9 somebody filled in, because
  * it is one.
  *
+ * All six pages go in, not just the one with the boxes. Pages 2 to 6 are the
+ * IRS instructions, and a W-9 without them is an extract of a form rather than
+ * the form: it is what the signer certified they had read, it is what the
+ * document says on its face it includes, and somebody filing this away for
+ * seven years should be filing the whole thing. They are stamped with nothing
+ * and are carried through as scans, at 150dpi rather than the 200dpi of page 1
+ * so that a download stays around two megabytes.
+ *
  * The coordinates below are measured, not guessed. Every rule and box on the
  * scan was found by scanning the JPEG for dark runs at native resolution
  * (1700x2200 = 200dpi = US Letter) and converting to points, which is why they
@@ -73,21 +81,48 @@ const F = {
   date: { x: 420, y: 594 },
 };
 
+/** How many pages the blank form runs to. scripts/prepare-w9-assets.ts writes
+ *  one JPEG per page; this is the other half of that arrangement. */
+const FORM_PAGES = 6;
+
 /**
  * The blank form, read once and held.
  *
- * A 786KB JPEG re-read on every download would be 786KB of disk per request for
- * a file that never changes. Read from the repo rather than bundled as base64:
- * a megabyte of base64 in a TypeScript file is a megabyte the type checker and
- * the bundler both have to walk on every build.
+ * Two megabytes of JPEG re-read on every download would be two megabytes of
+ * disk per request for files that never change. Read from the repo rather than
+ * bundled as base64: a megabyte of base64 in a TypeScript file is a megabyte
+ * the type checker and the bundler both have to walk on every build.
  */
-let blankForm: Uint8Array | null = null;
+const scans = new Map<number, Uint8Array>();
 
-async function formImage(): Promise<Uint8Array> {
-  if (blankForm) return blankForm;
-  const file = path.join(process.cwd(), 'assets', 'w9-page1.jpg');
-  blankForm = new Uint8Array(await readFile(file));
-  return blankForm;
+async function formImage(page = 1): Promise<Uint8Array> {
+  const held = scans.get(page);
+  if (held) return held;
+  const file = path.join(process.cwd(), 'assets', `w9-page${page}.jpg`);
+  const bytes = new Uint8Array(await readFile(file));
+  scans.set(page, bytes);
+  return bytes;
+}
+
+/**
+ * The instruction pages, carried through untouched.
+ *
+ * Page 1 is essential and is allowed to fail loudly: without it there is no
+ * form to stamp. These are not. If a deployment ever ships without them, the
+ * right outcome is a filled W-9 that is missing its instructions, not an error
+ * page where somebody's signed document should have been.
+ */
+async function appendInstructions(pdf: PDFDocument): Promise<void> {
+  for (let number = 2; number <= FORM_PAGES; number++) {
+    try {
+      const scan = await pdf.embedJpg(await formImage(number));
+      const page = pdf.addPage([PAGE_W, PAGE_H]);
+      page.drawImage(scan, { x: 0, y: 0, width: PAGE_W, height: PAGE_H });
+    } catch {
+      console.warn(`W-9 instruction page ${number} is missing from assets/.`);
+      return;
+    }
+  }
 }
 
 /** Draw text, clipped to a width so a long entry cannot run off the form. */
@@ -209,6 +244,9 @@ export async function renderW9Pdf(form: W9Record, tin: string): Promise<Uint8Arr
   }
 
   write(page, body, (form.signedAt || '').slice(0, 10), F.date.x, F.date.y, 10);
+
+  // Last, so that nothing above has to know it is drawing on page 1 of six.
+  await appendInstructions(pdf);
 
   return await pdf.save();
 }

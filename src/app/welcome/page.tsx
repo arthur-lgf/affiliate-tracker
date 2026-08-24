@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { OnboardingRail } from '@/components/OnboardingRail';
 import { ProfileForm } from '@/components/onboarding/ProfileForm';
 import { RevisitNotice } from '@/components/onboarding/StepControls';
-import { nextStep } from '@/lib/onboarding';
+import { isBypassed } from '@/lib/approval';
+import { nextStep, stepPosition } from '@/lib/onboarding';
 import { requireStep } from '@/lib/onboarding-guard';
 import { findUserById } from '@/lib/users';
 
@@ -11,7 +12,10 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Your details' };
 
 export default async function WelcomePage() {
-  const { viewer, state, revisiting } = await requireStep('profile');
+  const { viewer, state, revisiting, bypass } = await requireStep('profile');
+  // Waived accounts do two of these, not four, and are already inside the app.
+  // Both facts change what this page should say to them.
+  const waived = isBypassed(bypass);
 
   // Prefilled from whatever the admin typed when they made the account, which
   // is usually right and always editable. Asking somebody to retype their own
@@ -21,24 +25,29 @@ export default async function WelcomePage() {
   const account = await findUserById(viewer.id).catch(() => null);
 
   // Where "leave without saving" goes: whatever they still owe, or the app.
-  const onward = nextStep(state);
+  const onward = nextStep(state, { bypassed: waived });
+  const { index, total } = stepPosition('profile', { bypassed: waived });
 
   return (
     <div>
       <div className="rise">
-        <p className="label-cap">Step 1 of 4</p>
+        <p className="label-cap">
+          Step {index} of {total}
+        </p>
         <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">
-          {revisiting ? 'Your details' : 'Welcome. Let’s get you set up.'}
+          {revisiting || waived ? 'Your details' : 'Welcome. Let’s get you set up.'}
         </h1>
         <p className="plain mt-2.5">
           {revisiting
             ? 'What you told us about yourself. Change anything that is wrong and save, or leave it be.'
-            : 'Four short steps. The first three have to be done before the dashboard opens: the agreement and the W-9 are what make it possible to pay you at all.'}
+            : waived
+              ? 'An admin has already let you in, so nothing here is holding anything up. This is who you are, how to reach you, and a password only you know.'
+              : 'Four short steps. The first three have to be done before the dashboard opens: the agreement and the W-9 are what make it possible to pay you at all.'}
         </p>
       </div>
 
       <div className="mt-6">
-        <OnboardingRail current="profile" state={state} />
+        <OnboardingRail current="profile" state={state} bypassed={waived} />
       </div>
 
       {revisiting ? <RevisitNotice what="This is what is on file." /> : null}
