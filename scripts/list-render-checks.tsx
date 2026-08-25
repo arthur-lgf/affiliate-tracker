@@ -30,6 +30,7 @@ import { AgreementForm } from '../src/components/onboarding/AgreementForm';
 import { ProfileForm } from '../src/components/onboarding/ProfileForm';
 import { OnboardingRail } from '../src/components/OnboardingRail';
 import { LockedDocument } from '../src/components/onboarding/LockedDocument';
+import { peopleInListOrder, personLabel, type KnownPerson } from '../src/components/LinkForm';
 import { COMPANY } from '../src/lib/agreement';
 import { NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '../src/lib/approval';
 import { ApprovalPill } from '../src/components/ApprovalPill';
@@ -826,6 +827,39 @@ check('and not the admin ones', !affiliateTabs.includes('/users') && !affiliateT
 check('an admin does not get a profile tab', !adminTabs.includes('/profile'));
 check('but keeps People', adminTabs.includes('/users'));
 check('both keep the shared pages', ['/', '/links', '/cpa'].every((href) => affiliateTabs.includes(href) && adminTabs.includes(href)));
+
+console.log('\n— who a new link belongs to —');
+{
+  /*
+   * LinkForm itself is not rendered here: it calls useRouter at the top, which
+   * cannot be mounted outside a Next request. The two decisions the dropdown
+   * rests on are exported instead and checked directly, the same arrangement
+   * UsersPanel has above.
+   */
+  const people: KnownPerson[] = [
+    { usr: 'zzz111', assignee: 'Zoe Adams', email: '', username: 'zoe' },
+    { usr: 'aaa222', assignee: 'arthur reyes', email: '', username: 'arthur' },
+    { usr: 'bbb333', assignee: '', email: '', username: 'no-name' },
+    { usr: 'ccc444', assignee: 'Arthur Reyes', email: '', username: 'arthur2' },
+  ];
+  const order = peopleInListOrder(people).map((person) => person.usr);
+
+  check('the list reads alphabetically', order.join() === 'aaa222,ccc444,bbb333,zzz111');
+  /* Case is how somebody typed the account, not a sort key. Without this,
+     "arthur" files under a different letter from "Arthur" and the two sit
+     apart in a list being scanned for exactly that name. */
+  check('regardless of how the name was capitalised', order.indexOf('aaa222') < order.indexOf('bbb333'));
+  check('and the array it was given is not reordered', people[0]!.usr === 'zzz111');
+
+  // Two people, one name. The key is what decides who gets paid, so it belongs
+  // on the line rather than somewhere else on the page.
+  const twins = people.filter((person) => (person.assignee || '').toLowerCase() === 'arthur reyes');
+  check('a shared name is still told apart', personLabel(twins[0]!) !== personLabel(twins[1]!));
+  check('because the key is on the line', personLabel(twins[0]!).includes('usr=aaa222'));
+  // Somebody with no display name still has to be pickable.
+  check('a nameless account falls back to its username', personLabel(people[2]!).startsWith('no-name'));
+  check('and never reads as blank', personLabel({ usr: 'ddd555', assignee: '', email: '' }).startsWith('ddd555'));
+}
 
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

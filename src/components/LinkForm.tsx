@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SharingRule } from './SharingRule';
-import { initialsOf } from '@/lib/analytics';
 import { withTrackingKey, type CampaignOption } from '@/lib/campaigns';
 import { BusyLabel } from './Spinner';
 
@@ -195,6 +194,15 @@ export function LinkForm({
     setPickedUsr('');
     setValues((prev) => ({ ...prev, assignee: '', usr: '', assigneeEmail: '' }));
   }
+
+  /**
+   * The list in the order a dropdown is read in.
+   *
+   * A wall of pills could be scanned in any order and the accounts arrived in
+   * whatever order they were created. A select is read one line at a time, and
+   * alphabetical is the only order somebody scanning for a name can predict.
+   */
+  const sortedPeople = useMemo(() => peopleInListOrder(people), [people]);
 
   const picked = lockedTo ?? people.find((person) => person.usr === pickedUsr) ?? null;
 
@@ -471,74 +479,56 @@ export function LinkForm({
             </p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-3.5">
-                {people.map((person) => {
-                  const active = personMode === 'known' && pickedUsr === person.usr;
-                  return (
-                    <button
-                      key={person.usr}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => pickPerson(person)}
-                      className="pill-filter h-[68px] max-w-full gap-3.5 pl-3.5 pr-6"
-                      data-active={active}
-                    >
-                      <span
-                        aria-hidden
-                        className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 text-[12px] font-bold"
-                        style={
-                          active
-                            ? {
-                                background: 'var(--color-navy)',
-                                borderColor: 'var(--color-navy)',
-                                color: '#ffffff',
-                              }
-                            : {
-                                background: 'var(--color-paper-sunk)',
-                                borderColor: 'var(--color-edge)',
-                                color: 'var(--color-ink-soft)',
-                              }
-                        }
-                      >
-                        {initialsOf(person.assignee || person.usr)}
-                      </span>
-                      {/* Names are free text and the pill cannot wrap — truncate
-                          rather than let one long name widen the page. The key is
-                          shown too, because two people can share a display name and
-                          the key is the thing that decides who gets paid. */}
-                      <span className="min-w-0 text-left">
-                        <span className="block truncate text-[13px] font-semibold leading-tight">
-                          {person.assignee || person.username || person.usr}
-                        </span>
-                        <span className="tnum block truncate text-[11px] leading-tight text-ink-soft">
-                          usr={person.usr}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  aria-pressed={personMode === 'house'}
-                  data-active={personMode === 'house'}
-                  onClick={keepInHouse}
-                  className="pill-filter h-[68px] px-7 text-[13px]"
+              <div className="max-w-[440px]">
+                <Field
+                  label="Assign it to"
+                  error={errors.usr || errors.assignee}
+                  note={
+                    people.length === 0
+                      ? 'Nobody has an affiliate account yet, so this can only be a house link.'
+                      : 'Only people with an account are listed. Their tracking key was generated when the account was made, so there is nothing to type and no way to mistype it.'
+                  }
                 >
-                  Keep it in house
-                </button>
+                  <select
+                    className="field"
+                    value={personMode === 'known' ? pickedUsr : ''}
+                    onChange={(event) => {
+                      const person = people.find(
+                        (candidate) => candidate.usr === event.target.value,
+                      );
+                      if (person) pickPerson(person);
+                      else keepInHouse();
+                    }}
+                  >
+                    {/* House is the empty value as well as the first option: a
+                        link with no tracking key *is* a house link, so "nothing
+                        chosen" and "in house" are one state rather than two that
+                        can disagree. */}
+                    <option value="">Keep it in house</option>
+                    {sortedPeople.map((person) => (
+                      <option key={person.usr} value={person.usr}>
+                        {personLabel(person)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </div>
 
               {people.length === 0 ? (
-                <p className="plain-note mt-5">
-                  Nobody has an affiliate account yet, so this link can only be a house link. Create
-                  someone on the <Link href="/users" className="link-text">People page</Link> and
-                  they will appear here with a tracking key of their own.
+                <p className="plain-note mt-4">
+                  Create someone on the{' '}
+                  <Link href="/users" className="link-text">
+                    People page
+                  </Link>{' '}
+                  and they will appear here with a tracking key of their own.
                 </p>
               ) : (
-                <p className="field-note mt-4">
-                  Only people with an account are listed. Their tracking key was generated when the
-                  account was made, so there is nothing to type and no way to mistype it. Add
-                  someone on the <Link href="/users" className="link-text">People page</Link>.
+                <p className="field-note mt-3">
+                  Somebody missing? Add them on the{' '}
+                  <Link href="/users" className="link-text">
+                    People page
+                  </Link>
+                  .
                 </p>
               )}
             </>
@@ -827,6 +817,28 @@ function Step({
       </div>
       <div className="mt-7">{children}</div>
     </section>
+  );
+}
+
+/**
+ * How one person reads in the list.
+ *
+ * The key is part of the label, not a detail underneath it: two people can
+ * share a display name, and the key is the thing that decides who gets paid.
+ */
+export function personLabel(person: KnownPerson): string {
+  const name = person.assignee || person.username || person.usr;
+  return `${name} · usr=${person.usr}`;
+}
+
+/**
+ * Exported and pure so it can be checked directly: this component calls
+ * useRouter, which cannot be mounted outside a Next request, so it is not
+ * rendered in scripts/list-render-checks.tsx. Same arrangement as UsersPanel.
+ */
+export function peopleInListOrder(people: KnownPerson[]): KnownPerson[] {
+  return [...people].sort((a, b) =>
+    personLabel(a).localeCompare(personLabel(b), undefined, { sensitivity: 'base' }),
   );
 }
 
