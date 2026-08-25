@@ -596,6 +596,16 @@ export function UsersPanel({
 
                       <td className="whitespace-nowrap px-5 py-2.5 text-right">
                         <span className="inline-flex justify-end gap-1.5">
+                          {/*
+                            First, and a link rather than a button: it is the
+                            only action here that is not destructive and the one
+                            most often wanted. The record was reachable before
+                            only through the ticks in the Setup column, which is
+                            a link nobody reads as "open this person".
+                          */}
+                          <Link href={`/users/${encodeURIComponent(row.id)}`} className="btn-quiet btn-sm">
+                            View
+                          </Link>
                           <button
                             type="button"
                             className="btn-quiet btn-sm"

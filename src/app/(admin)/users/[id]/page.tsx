@@ -64,7 +64,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const classification = W9_CLASSIFICATIONS.find((c) => c.key === w9?.classification);
 
   return (
-    <div className="w-full max-w-[1000px]">
+    <div className="mx-auto w-full max-w-[1000px]">
       <div className="rise">
         <p className="label-cap">
           <Link href="/users" className="link-text">

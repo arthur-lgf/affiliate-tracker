@@ -69,8 +69,13 @@ export default async function ProfilePage() {
       : 'Where the ACH payment goes.',
   };
 
+  /*
+   * Centred, like the welcome pages this is the sequel to. A 900px column
+   * pinned to the left edge of a wide window reads as a page that failed to
+   * load the rest of itself.
+   */
   return (
-    <div className="w-full max-w-[900px]">
+    <div className="mx-auto w-full max-w-[900px]">
       <div className="rise">
         <h1 className="font-display text-[26px] leading-[1.05]">Your profile</h1>
         <p className="plain mt-2.5">
