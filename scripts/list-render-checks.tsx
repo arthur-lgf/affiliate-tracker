@@ -17,7 +17,17 @@
 //   npx tsx --tsconfig scripts/render.tsconfig.json scripts/list-render-checks.tsx
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ApprovalsList } from '../src/components/ApprovalsList';
-import { CpaBrowser, groupRates, tierCount, tiersOf } from '../src/components/CpaBrowser';
+import { CpaBrowser } from '../src/components/CpaBrowser';
+// The grouping, the columns and the sort moved out of the component once the
+// downloads started reading them too. The checks follow them rather than go
+// through a re-export, so there is one place they are defined.
+import {
+  columnsFor,
+  defaultSort,
+  groupRates,
+  tierCount,
+  tiersOf,
+} from '../src/lib/cpa-groups';
 import { problemsIn } from '../src/components/CampaignSettings';
 import { ratesForViewer } from '../src/lib/cpa';
 import { sortRows } from '../src/lib/report-table';
@@ -308,7 +318,39 @@ check('the rate column is named for what it answers', card.includes('Pays now'))
 check('the affiliate half has a column', card.includes('Potential revenue'));
 // 100 for the first flat card, so the affiliate keeps 50.
 check('and it is half of what the card pays', card.includes(formatMoney(affiliateRevenueOf(100))));
-check('a card at zero pays the affiliate zero, not a dash', (card.match(/\$0/g) || []).length >= 2);
+/*
+ * Their own two-card fixture, small enough that neither paging nor sorting can
+ * hide the subject. Both of these used to read the main table, where they found
+ * what they were looking for only because the cheapest cards happened to arrive
+ * first — so defaulting the sort to highest-paying pushed both off page one and
+ * failed two checks that were really about formatting.
+ */
+const edges: CpaRate[] = [
+  {
+    placement: '714025 - LGF',
+    issuer: 'AmEx Consumer',
+    card: 'Pays Nothing Card',
+    tier: '',
+    current: 0,
+    previous: 0,
+    change: null,
+    changedOn: '2026-07-01',
+  },
+  {
+    placement: '714025 - LGF',
+    issuer: 'Capital One',
+    card: 'Modest Card',
+    tier: '',
+    current: 100,
+    previous: 90,
+    change: 0.1,
+    changedOn: '2026-07-01',
+  },
+];
+const edgeCard = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(edges, true)} gross />);
+const edgeOwn = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(edges, false)} gross={false} />);
+
+check('a card at zero pays the affiliate zero, not a dash', (edgeCard.match(/\$0/g) || []).length >= 2);
 
 // The grouping itself.
 check('a tiered card is foldable', card.includes('aria-expanded="true"'));
@@ -407,12 +449,91 @@ check('the half is printed', ownCard.includes(formatMoney(350)));
 check('the merchant rate is not printed', !ownCard.includes(formatMoney(700)));
 // 90 is a flat card's previous rate and is nobody's half, so finding it
 // would mean the merchant's own figure had reached the page.
-check('nor the rate it paid before', !ownCard.includes(formatMoney(90)) && card.includes(formatMoney(90)));
+check('nor the rate it paid before', !edgeOwn.includes(formatMoney(90)) && edgeCard.includes(formatMoney(90)));
+
+console.log('\n— what the rate card opens on —');
+{
+  /*
+   * The table used to open unsorted, which is alphabetical by issuer: an order
+   * that answers "who do we work with" when the question this page exists for
+   * is "which card is worth pushing".
+   */
+  check('the money column, highest first', defaultSort(true).direction === 'desc');
+  check('an admin opens on what the merchant pays', defaultSort(true).key === 'current');
+  /* "Pays now" is admin-only. Naming it for an affiliate would leave the table
+     unsorted, because the sort is looked up among the columns that viewer was
+     given, and the arrow would be drawn on no header at all. */
+  check('an affiliate opens on their own half instead', defaultSort(false).key === 'affiliate');
+  check('which is a column they have', columnsFor(false).some((c) => c.key === defaultSort(false).key));
+  check('as is the admin one', columnsFor(true).some((c) => c.key === defaultSort(true).key));
+
+  /*
+   * The rendered order, not the intent. Venture tops out at 720, Gold at 710,
+   * Platinum at 700 — so this also pins that a tiered card is ranked on its
+   * best tier rather than on its name, which alphabetical order would reverse.
+   */
+  const rank = (html: string, name: string) => html.indexOf(name);
+  check('the highest payer is the first row', rank(card, 'Venture Card') < rank(card, 'Gold Card'));
+  check('and the order runs down from there', rank(card, 'Gold Card') < rank(card, 'Platinum Card'));
+  check('with the flat cards below all three', rank(card, 'Platinum Card') < rank(card, 'Flat Card'));
+  check('the header says which way it points', card.includes('aria-sort="descending"'));
+  // Ten cards to a page, so the cheapest of fifteen is no longer on the first.
+  check('the card paying nothing is off page one', !card.includes('Flat Card 5'));
+
+  check('an affiliate sees the same ranking', rank(ownCard, 'Venture Card') < rank(ownCard, 'Gold Card'));
+  check('and their column carries the arrow', ownCard.includes('aria-sort="descending"'));
+}
 check('the cards are still grouped and foldable', ownCard.includes('aria-expanded="true"'));
 check('the tiers are still listed', ownCard.includes('Tier 1') && ownCard.includes('Tier 3'));
 check('the banding survives the narrower table', ownCard.includes('bg-paper-sunk'));
 check('and it is still sortable by tier', ownCard.includes('Sort by Tier'));
 check('the Tier heading is a control now', card.includes('Sort by Tier'));
+
+console.log('\n— narrowing it down, and taking it away —');
+{
+  /*
+   * The search box was the only filter here, and searching is the wrong tool
+   * for "which cards are worth quoting": the answer to that is an amount, and
+   * an amount is not a word you can type into a name.
+   */
+  check('there is an issuer to pick', card.includes('id="cpa-issuer"'));
+  check('with every issuer on the card in it', card.includes('<option value="AmEx Consumer">') && card.includes('<option value="Capital One">'));
+  check('and a way back to all of them', card.includes('Every issuer'));
+
+  check('there is a floor', card.includes('id="cpa-min"'));
+  check('in round numbers', card.includes('<option value="200">'));
+  /*
+   * The same control, worded twice. A floor reads against whichever money
+   * column the viewer has, so 200 means the merchant's rate to an admin and
+   * their own half to everybody else, and the label is the only thing that
+   * says which.
+   */
+  check('an admin sets what a card pays', card.includes('Pays $200 or more'));
+  check('an affiliate sets what they would earn', ownCard.includes('Earns $200 or more'));
+  check('and never sees the merchant wording', !ownCard.includes('Pays $200 or more'));
+
+  check('there is a tiers filter', card.includes('id="cpa-shape"'));
+  check('with both kinds of card and each on its own', card.includes('Tiered and flat') && card.includes('>Tiered cards<') && card.includes('One rate only'));
+
+  // Nothing is filtered on the first render, so there is nothing to clear.
+  check('no clear button until something is set', !card.includes('>Clear</button>'));
+
+  console.log('\n— the downloads —');
+  check('a PDF can be had', card.includes('/api/cpa/export?format=pdf'));
+  check('so can a spreadsheet', card.includes('/api/cpa/export?format=xlsx'));
+  check('and the data on its own', card.includes('/api/cpa/export?format=csv'));
+  check('an affiliate gets all three too', ['pdf', 'xlsx', 'csv'].every((format) => ownCard.includes(`/api/cpa/export?format=${format}`)));
+  /*
+   * A download follows the table: the same cards, in the same order. Unfiltered
+   * that is the sort and nothing else, and the ampersands are entities because
+   * this is an href in HTML rather than a URL in a string.
+   */
+  check('the link carries the order the table is in', card.includes('format=pdf&amp;sort=current&amp;dir=desc'));
+  check('which on their copy is their own column', ownCard.includes('format=pdf&amp;sort=affiliate&amp;dir=desc'));
+  check('and no filter, because none is set', !card.includes('&amp;q=') && !card.includes('&amp;min=') && !card.includes('&amp;issuer='));
+  check('the reader is told what a download will contain', card.includes('A download takes all 15 cards.'));
+  check('and that it is not just the page they are on', !card.includes('takes the 15 cards this filter'));
+}
 
 console.log('\n— the campaign settings table —');
 /*

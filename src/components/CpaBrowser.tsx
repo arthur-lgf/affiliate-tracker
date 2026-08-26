@@ -6,14 +6,28 @@ import { SortHeader, nextSort, type SortState } from '@/components/SortHeader';
 import { TableScroller } from '@/components/TableScroller';
 import { formatDay, formatMoney, formatPercent } from '@/lib/analytics';
 import type { CpaRateView } from '@/lib/cpa';
-import { BLANK, sortRows, type ColumnKind } from '@/lib/report-table';
+import {
+  MIN_STEPS,
+  columnsFor,
+  defaultSort,
+  filterGroups,
+  filterQuery,
+  groupRates,
+  isFiltered,
+  issuersOf,
+  sortGroups,
+  tiersOf,
+  type CpaFilter,
+  type CpaShape,
+} from '@/lib/cpa-groups';
+import { BLANK } from '@/lib/report-table';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 
 /**
  * The rate card, grouped the way the report itself is written: one row per
  * card, with its tiers folded underneath it.
  *
- * The export is a list of rates, but a person reads it as a list of cards —
+ * The export is a list of rates, but a person reads it as a list of cards:
  * "what does the Platinum pay" is one question, not three. Flat, a nine-tier
  * card is nine rows that push everything else off the screen; grouped, it is
  * one row you open when you need it.
@@ -22,127 +36,22 @@ import { PAGE_SIZES, pageSlice } from '@/lib/paging';
  * pager: a page is ten cards, never ten rates, because half a card's tiers at
  * the bottom of one page and the rest at the top of the next is not something
  * anybody can read.
- */
-
-/** One card, with every tier it pays at. An untiered card has exactly one. */
-export type Group = {
-  key: string;
-  issuer: string;
-  card: string;
-  rates: CpaRateView[];
-  /** True when the export gave this card's rows tier labels. */
-  tiered: boolean;
-};
-
-type Column = {
-  key: string;
-  label: string;
-  right: boolean;
-  /**
-   * What this column sorts a whole card by. A tiered card has no single rate,
-   * so money sorts by its best tier — the honest answer to "which card pays
-   * most", which is the question somebody sorting by it is asking.
-   */
-  read: (group: Group) => unknown;
-  kind: ColumnKind;
-};
-
-/**
- * The columns this viewer may read.
  *
- * The merchant's own figures — what it pays, what it paid before, how it moved
- * — are an admin's. They are not blanked out for everybody else: the rows
- * arrive without them (see `ratesForViewer`), so a column of dashes would be a
- * standing reminder of a number nobody is going to be shown.
+ * The grouping, the columns, the sort and the filter all live in
+ * lib/cpa-groups, which knows nothing about React. That is what lets the three
+ * downloads at the top of the table be built from the same rules on the server:
+ * a PDF that disagreed with the page it was printed from would be a rate card
+ * with different numbers in it.
  */
-const GROSS_ONLY = new Set(['current', 'previous', 'change']);
-
-export function columnsFor(gross: boolean): Column[] {
-  return gross ? COLUMNS : COLUMNS.filter((column) => !GROSS_ONLY.has(column.key));
-}
-
-/** What the Tier column puts a card in order by: the number in its badge. */
-export function tierCount(group: Group): number | null {
-  return group.tiered ? group.rates.length : null;
-}
-
-/**
- * A card's tiers, in the order the sort asks for.
- *
- * They arrive as the report writes them, Tier 1 first, which is the order to
- * read them in and the order to go back to. Only the Tier column's own
- * descending sort flips them, because that is the one click that means "start
- * from the highest".
- */
-export function tiersOf(group: Group, sort: SortState): CpaRateView[] {
-  const flip = sort?.key === 'tier' && sort.direction === 'desc';
-  return flip ? [...group.rates].reverse() : group.rates;
-}
-
-/**
- * The best-paying of a card's tiers, ignoring any with no rate at all.
- *
- * Picked on the affiliate's half rather than the merchant's rate, because that
- * is the figure every reader has: one is a fixed fraction of the other, so the
- * order is the same either way, and choosing the one that is always there means
- * the table sorts identically for an admin and for everybody else.
- */
-function best(group: Group): CpaRateView | null {
-  let found: CpaRateView | null = null;
-  for (const rate of group.rates) {
-    if (rate.revenue === null) continue;
-    if (found === null || rate.revenue > (found.revenue ?? 0)) found = rate;
-  }
-  return found;
-}
-
-const COLUMNS: Column[] = [
-  { key: 'issuer', label: 'Issuer', right: false, read: (g) => g.issuer, kind: 'text' },
-  { key: 'card', label: 'Card', right: false, read: (g) => g.card, kind: 'text' },
-  /*
-   * How many tiers the card pays at — the number in the badge, which is all
-   * this column says about a card. An untiered card has no tier to be put in
-   * order by, so it reads blank and falls to the end whichever way the arrow
-   * points, the same as every other blank in this table.
-   *
-   * Sorting it also turns the tiers inside each card round: see `tiersOf`.
-   * Without that, "highest tier first" would reorder seven cards and leave
-   * Tier 1 sitting at the top of each of them.
-   */
-  { key: 'tier', label: 'Tier', right: false, read: tierCount, kind: 'number' },
-  { key: 'current', label: 'Pays now', right: true, read: (g) => best(g)?.current ?? null, kind: 'currency' },
-  /*
-   * Half of what the card pays, through the same helper the dashboard's
-   * Potential revenue column uses. One definition of the share, in
-   * AFFILIATE_SHARE, so the rate card and the earnings table can never quote
-   * two different splits for the same dollar.
-   */
-  { key: 'affiliate', label: 'Potential revenue', right: true, read: (g) => best(g)?.revenue ?? null, kind: 'currency' },
-  { key: 'previous', label: 'Paid before', right: true, read: (g) => best(g)?.previous ?? null, kind: 'currency' },
-  { key: 'change', label: 'Change', right: true, read: (g) => best(g)?.change ?? null, kind: 'percent' },
-  { key: 'changedOn', label: 'Changed', right: true, read: (g) => best(g)?.changedOn ?? '', kind: 'text' },
-];
-
-/** Rates into cards, keeping the order they arrived in. */
-export function groupRates(rows: CpaRateView[]): Group[] {
-  const groups = new Map<string, Group>();
-  for (const rate of rows) {
-    const key = `${rate.issuer}|${rate.card}`;
-    const group = groups.get(key);
-    if (group) group.rates.push(rate);
-    else groups.set(key, { key, issuer: rate.issuer, card: rate.card, rates: [rate], tiered: false });
-  }
-  for (const group of groups.values()) {
-    // Tiered because the export said so, not because there is more than one
-    // row. One tier is still a tier, and the report writes it as one.
-    group.tiered = group.rates.some((rate) => rate.tier !== '');
-  }
-  return [...groups.values()];
-}
 
 export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolean }) {
-  const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<SortState>(null);
+  const [filter, setFilter] = useState<CpaFilter>({
+    query: '',
+    issuer: '',
+    min: null,
+    shape: 'all',
+  });
+  const [sort, setSort] = useState<SortState>(() => defaultSort(gross));
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   /**
@@ -154,33 +63,37 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
 
   const groups = useMemo(() => groupRates(rows), [rows]);
   const columns = useMemo(() => columnsFor(gross), [gross]);
-  // Rebuilt with the columns, so a sort can only ever name one this viewer has.
-  const byKey = useMemo(() => new Map(columns.map((column) => [column.key, column])), [columns]);
+  const issuers = useMemo(() => issuersOf(groups), [groups]);
 
-  const matched = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const filtered = needle
-      ? groups.filter((group) =>
-          // Who pays, what for, and which tier. Not the amounts — "420"
-          // matching a dollar figure and a date at once is noise, not a search.
-          `${group.issuer} ${group.card} ${group.rates.map((rate) => rate.tier).join(' ')}`
-            .toLowerCase()
-            .includes(needle),
-        )
-      : groups;
-
-    if (!sort) return filtered;
-    const column = byKey.get(sort.key);
-    if (!column) return filtered;
-    return sortRows(filtered, column.read, column.kind, sort.direction);
-  }, [groups, query, sort, byKey]);
+  const matched = useMemo(
+    () => sortGroups(filterGroups(groups, filter, gross), sort, gross),
+    [groups, filter, sort, gross],
+  );
 
   const visible = pageSlice(matched, page, perPage);
   const anyTiered = groups.some((group) => group.tiered);
   const allClosed = anyTiered && groups.every((group) => !group.tiered || closed.has(group.key));
+  const narrowed = isFiltered(filter);
 
-  function search(next: string) {
-    setQuery(next);
+  /*
+   * The filter and the sort, handed to the server so a download is the table
+   * somebody is looking at rather than the whole rate card. Not the page: a
+   * two-page PDF of page one of a table is nobody's idea of an export.
+   */
+  const query = filterQuery(filter, sort);
+  const href = (format: 'pdf' | 'xlsx' | 'csv') =>
+    `/api/cpa/export?format=${format}${query ? `&${query}` : ''}`;
+
+  function change(next: Partial<CpaFilter>) {
+    setFilter((current) => ({ ...current, ...next }));
+    // Any change to what is listed sends the reader back to the first page.
+    // Staying on page four of a list that is now two pages long shows an empty
+    // table and reads as "nothing matched".
+    setPage(1);
+  }
+
+  function clear() {
+    setFilter({ query: '', issuer: '', min: null, shape: 'all' });
     setPage(1);
   }
 
@@ -206,7 +119,7 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
 
   return (
     <>
-      <div className="mt-6 flex flex-wrap items-center gap-4">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <div className="min-w-[200px] flex-1">
           <label className="sr-only" htmlFor="cpa-search">
             Search the rate card
@@ -214,12 +127,76 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
           <input
             id="cpa-search"
             type="search"
-            value={query}
-            onChange={(event) => search(event.target.value)}
+            value={filter.query}
+            onChange={(event) => change({ query: event.target.value })}
             placeholder="Search an issuer, a card or a tier…"
             className="field"
           />
         </div>
+
+        <label className="sr-only" htmlFor="cpa-issuer">
+          Issuer
+        </label>
+        <select
+          id="cpa-issuer"
+          value={filter.issuer}
+          onChange={(event) => change({ issuer: event.target.value })}
+          className="field w-auto max-w-[220px] truncate"
+        >
+          <option value="">Every issuer</option>
+          {issuers.map((issuer) => (
+            <option key={issuer} value={issuer}>
+              {issuer}
+            </option>
+          ))}
+        </select>
+
+        {/*
+          The floor, in round numbers. It reads against whichever money column
+          this viewer has, so an admin filters on what the merchant pays and
+          everybody else on what they would keep. The label says which.
+        */}
+        <label className="sr-only" htmlFor="cpa-min">
+          {gross ? 'The least a card may pay' : 'The least a card may earn you'}
+        </label>
+        <select
+          id="cpa-min"
+          value={filter.min === null ? '' : String(filter.min)}
+          onChange={(event) =>
+            change({ min: event.target.value === '' ? null : Number(event.target.value) })
+          }
+          className="field w-auto"
+        >
+          <option value="">Any amount</option>
+          {MIN_STEPS.map((step) => (
+            <option key={step} value={step}>
+              {/* One string rather than three, so the label is one text node in
+                  the markup instead of three with comment separators between
+                  them. It reads the same and it can be searched for. */}
+              {`${gross ? 'Pays' : 'Earns'} ${formatMoney(step)} or more`}
+            </option>
+          ))}
+        </select>
+
+        <label className="sr-only" htmlFor="cpa-shape">
+          Tiers
+        </label>
+        <select
+          id="cpa-shape"
+          value={filter.shape}
+          onChange={(event) => change({ shape: event.target.value as CpaShape })}
+          className="field w-auto"
+        >
+          <option value="all">Tiered and flat</option>
+          <option value="tiered">Tiered cards</option>
+          <option value="flat">One rate only</option>
+        </select>
+
+        {narrowed ? (
+          <button type="button" className="btn-quiet btn-sm" onClick={clear}>
+            Clear
+          </button>
+        ) : null}
         {anyTiered ? (
           <button type="button" className="btn-quiet btn-sm" onClick={toggleAll}>
             {allClosed ? 'Open every card' : 'Fold every card'}
@@ -227,11 +204,42 @@ export function CpaBrowser({ rows, gross }: { rows: CpaRateView[]; gross: boolea
         ) : null}
       </div>
 
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+        <p className="text-[12px] text-ink-soft">
+          {narrowed
+            ? `A download takes the ${matched.length.toLocaleString()} card${
+                matched.length === 1 ? '' : 's'
+              } this filter leaves, not the page you are on.`
+            : `A download takes all ${groups.length.toLocaleString()} card${
+                groups.length === 1 ? '' : 's'
+              }.`}
+        </p>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-dim">
+            Download
+          </span>
+          {/* Plain links rather than a fetch and a blob: the server names the
+              file and the browser saves it, which is one moving part instead of
+              three and works with a middle click. */}
+          <a className="btn-quiet btn-sm" href={href('pdf')}>
+            PDF
+          </a>
+          <a className="btn-quiet btn-sm" href={href('xlsx')}>
+            Excel
+          </a>
+          <a className="btn-quiet btn-sm" href={href('csv')}>
+            CSV
+          </a>
+        </span>
+      </div>
+
       {matched.length === 0 ? (
         <p className="mt-8 rounded-[20px] border-2 border-dashed border-edge-strong bg-panel px-6 py-16 text-center text-[13px] text-ink-soft">
           {groups.length === 0
             ? 'No rates uploaded yet.'
-            : `Nothing matches${query ? ` “${query}”` : ''}.`}
+            : narrowed
+              ? 'No cards match those filters.'
+              : 'Nothing matches.'}
         </p>
       ) : (
         <TableScroller className="mt-5" label="Card rates">
