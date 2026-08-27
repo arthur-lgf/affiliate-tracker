@@ -41,7 +41,7 @@ import { ProfileForm } from '../src/components/onboarding/ProfileForm';
 import { OnboardingRail } from '../src/components/OnboardingRail';
 import { LockedDocument } from '../src/components/onboarding/LockedDocument';
 import { peopleInListOrder, personLabel, type KnownPerson } from '../src/components/LinkForm';
-import { COMPANY } from '../src/lib/agreement';
+import { AGREEMENT_VERSION, COMPANY } from '../src/lib/agreement';
 import { NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '../src/lib/approval';
 import { ApprovalPill } from '../src/components/ApprovalPill';
 import { visibleItems } from '../src/components/Nav';
@@ -759,6 +759,15 @@ check('the company is named', agreementHtml.includes(COMPANY.name));
 // The description that used to trail the company name everywhere.
 check('and not described after its own name', !agreementHtml.includes('a limited liability company'));
 check('the governing state is a visible blank until it is set', agreementHtml.includes('____________________'));
+/*
+ * The page somebody signs shows the wording in force, always. An older version
+ * is only ever read back for a copy of something already signed, which is the
+ * PDF's job and is checked in pdf-checks.
+ */
+check('the payment term they are agreeing to is Net 45', agreementHtml.includes('Net 45'));
+check('section 4 spells it out the same way', agreementHtml.includes('net forty-five (45) days'));
+check('and the term it replaced is nowhere on the page', !agreementHtml.includes('Net 30') && !agreementHtml.includes('net thirty'));
+check('the version stamped on it is the one in force', agreementHtml.includes(AGREEMENT_VERSION));
 
 console.log('\n— coming back to a step already done —');
 const agreementAgain = renderToStaticMarkup(

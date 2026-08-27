@@ -1,15 +1,25 @@
-import { ratesForViewer } from '../src/lib/cpa';
-import { groupRates, defaultSort, sortGroups, NO_FILTER } from '../src/lib/cpa-groups';
-import { buildCpaPdf } from '../src/lib/pdf/cpa-pdf';
-import type { CpaExportMeta } from '../src/lib/cpa-export';
+import { renderAgreementPdf } from '../src/lib/pdf/agreement-pdf';
 import { pdfContent } from './read-pdf';
+import type { AgreementRecord } from '../src/lib/onboarding-store';
+
+const record: AgreementRecord = {
+  affiliateName: 'Arthur Reyes',
+  affiliateEmail: 'a@example.com',
+  affiliateAddress: '1 Example Street',
+  effectiveDate: '2026-08-24',
+  signaturePng: '',
+  affirmed: true,
+  signedAt: '2026-08-24T18:42:58.327Z',
+  signedIp: '203.0.113.9',
+  signedUserAgent: 'Mozilla/5.0',
+  agreementVersion: '2026-08',
+} as AgreementRecord;
 
 async function main() {
-  const rows = ratesForViewer([{ placement: 'p', issuer: 'AmEx', card: 'Platinum Card', tier: '', current: 700, previous: 600, change: 0.1, changedOn: '2026-07-01' }], true);
-  const meta: CpaExportMeta = { reportDate: '2026-07-01', exportedOn: '2026-08-26T10:00:00Z', exportedBy: 'evan', gross: true, filter: NO_FILTER, sort: defaultSort(true), total: 1 };
-  const bytes = await buildCpaPdf(sortGroups(groupRates(rows), defaultSort(true), true), meta);
-  const text = await pdfContent(bytes);
-  console.log('length', text.length);
-  console.log(JSON.stringify(text.slice(0, 700)));
+  const text = await pdfContent(await renderAgreementPdf(record));
+  const at = text.indexOf('thirty');
+  console.log('has thirty:', at);
+  console.log(JSON.stringify(text.slice(0, 500)));
+  if (at > 0) console.log(JSON.stringify(text.slice(at - 300, at + 200)));
 }
 void main();

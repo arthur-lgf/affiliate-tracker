@@ -46,8 +46,8 @@ export function accountApprovedEmail(input: {
     'Sign in here:',
     signIn,
     '',
-    'Your tracking link is on the Links page. Payment is by ACH, thirty days after a',
-    'referral is approved, to the account you gave us.',
+    'Your tracking link is on the Links page. Payment is by ACH, forty-five days',
+    'after a referral is approved, to the account you gave us.',
     ...(note ? ['', 'A note from the team:', note] : []),
     '',
     'If anything looks wrong, reply to this message and we will sort it out.',
@@ -77,8 +77,8 @@ export function accountApprovedEmail(input: {
         </a>
       </p>
       <p style="margin:20px 0 0;font-size:13px;line-height:1.6;color:#33475b;">
-        Your tracking link is on the Links page. Payment is by ACH, thirty days after a referral
-        is approved, to the account you gave us.
+        Your tracking link is on the Links page. Payment is by ACH, forty-five days after a
+        referral is approved, to the account you gave us.
       </p>
       ${
         note

@@ -41,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const isAdmin = viewer.role === 'admin';
   // The one step that nags instead of barring. §2 of the agreement makes a
   // payment impossible without it, so it is worth a standing line — but there
-  // is a month of Net-30 slack to produce it in, so it is not worth a wall.
+  // are six weeks of Net-45 slack to produce it in, so it is not worth a wall.
   const bankMissing = applies && !state.bank;
   /*
    * A waived account can be missing its own details as well as its bank

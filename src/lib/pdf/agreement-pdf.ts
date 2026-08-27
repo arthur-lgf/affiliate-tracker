@@ -13,12 +13,13 @@
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import {
-  CLAUSES,
+  clausesFor,
   clauseText,
   COMPANY,
   PREAMBLE,
-  SUMMARY,
+  summaryFor,
   SUMMARY_INTRO,
+  wordingKnown,
 } from '../agreement';
 import type { AgreementRecord } from '../onboarding-store';
 import { isDrawablePng } from './png';
@@ -166,7 +167,13 @@ export async function renderAgreementPdf(record: AgreementRecord): Promise<Uint8
   flow.heading('AGREEMENT SUMMARY');
   flow.paragraph(SUMMARY_INTRO);
   flow.gap(4);
-  for (const row of SUMMARY) {
+  /*
+   * The wording this person signed, not the wording in force today. Every copy
+   * of a signed agreement is drawn on demand from this file, so reading the
+   * current text here would redraw four already-signed contracts the day the
+   * payment terms changed. See SUPERSEDED in lib/agreement.
+   */
+  for (const row of summaryFor(record.agreementVersion)) {
     flow.need(20);
     flow.paragraph(row.term, { font: bold, size: 9.5, leading: 12, color: INK });
     flow.paragraph(row.details, { indent: 12 });
@@ -177,7 +184,7 @@ export async function renderAgreementPdf(record: AgreementRecord): Promise<Uint8
   flow.paragraph(PREAMBLE);
 
   // ---- The clauses -------------------------------------------------------
-  for (const clause of CLAUSES) {
+  for (const clause of clausesFor(record.agreementVersion)) {
     flow.heading(`${clause.n}. ${clause.title}`);
     for (const para of clause.paras) {
       flow.paragraph(clauseText(para));
@@ -259,6 +266,21 @@ export async function renderAgreementPdf(record: AgreementRecord): Promise<Uint8
       `Browser: ${record.signedUserAgent || 'not recorded'}.`,
     { size: 7.5, leading: 10 },
   );
+
+  /*
+   * Only for a version whose text this deployment does not hold, which is what
+   * a row signed under a later revision looks like to an older build. Refusing
+   * to draw somebody their own agreement would be worse than drawing it, but it
+   * has to say on its face which text it is.
+   */
+  if (!wordingKnown(record.agreementVersion)) {
+    flow.paragraph(
+      `The exact wording of version ${record.agreementVersion || 'this signature'} is not on file ` +
+        'here. The text above is the current wording of the agreement and may differ from what was ' +
+        'signed.',
+      { size: 7.5, leading: 10 },
+    );
+  }
 
   return await pdf.save();
 }

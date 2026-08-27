@@ -19,8 +19,16 @@
 /**
  * Bumped on any change to the text below. Stored on every signature, which is
  * what makes "which wording did they agree to" answerable a year later.
+ *
+ * A full date rather than a month, because the payment terms changed twice
+ * within August 2026 and "2026-08" could no longer tell the two apart. Two
+ * revisions on one day would need a letter after it.
+ *
+ * Bumping this is half the job. Whatever the old text said has to be written
+ * into SUPERSEDED below at the same time, or every copy already signed under
+ * the old version re-renders under the new one.
  */
-export const AGREEMENT_VERSION = '2026-08';
+export const AGREEMENT_VERSION = '2026-08-27';
 
 /* ------------------------------------------------------------------------- */
 /* The blanks the company owns                                               */
@@ -77,7 +85,7 @@ export const SUMMARY: { term: string; details: string }[] = [
   {
     term: 'Payment Terms',
     details:
-      'Net 30 — paid 30 calendar days after the referral is approved, by ACH, contingent on a signed ' +
+      'Net 45 — paid 45 calendar days after the referral is approved, by ACH, contingent on a signed ' +
       'W-9 and valid banking information on file.',
   },
   {
@@ -139,7 +147,7 @@ export const CLAUSES: Clause[] = [
     title: 'Compensation',
     paras: [
       'Affiliate will be paid a flat amount per approved referral, as set forth in Company’s payout schedule provided to Affiliate separately. Company may update the payout schedule from time to time on notice to Affiliate.',
-      'Payment terms are net thirty (30) days ("Net 30"), meaning payment is due thirty (30) calendar days after the referral is approved by the applicable card issuer/program, subject to Company’s receipt of its own payment from its upstream partner.',
+      'Payment terms are net forty-five (45) days ("Net 45"), meaning payment is due forty-five (45) calendar days after the referral is approved by the applicable card issuer/program, subject to Company’s receipt of its own payment from its upstream partner.',
       'All payments will be made by ACH to the bank account Affiliate provides in writing. Company is not obligated to pay by any other method.',
       'Company may withhold, offset, or reverse any payment associated with a referral that is later reversed, charged back, found fraudulent, or found to violate this Agreement or any card issuer/program terms.',
       'No compensation is owed for referrals submitted through any link, method, or channel other than the Link issued directly by Company to Affiliate.',
@@ -219,6 +227,99 @@ export const CLAUSES: Clause[] = [
   },
 ];
 
+/* ------------------------------------------------------------------------- */
+/* What the earlier versions said                                            */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Wording that has been replaced, kept under the version it was replaced from.
+ *
+ * A signed row records which version somebody agreed to, and nothing else: the
+ * text itself is read from this file every time a copy is drawn. So without
+ * this archive, revising a sentence would silently redraw every agreement ever
+ * signed under today's wording while still stamping it with the version of the
+ * one they actually signed. That is not a formatting problem. It is showing
+ * somebody a contract they never agreed to, over their own signature.
+ *
+ * Only the paragraphs that changed are kept. A second full copy of a document
+ * that differs in two sentences is a copy nobody can diff, and what the next
+ * reader needs to see is what moved.
+ *
+ * scripts/agreement-checks.ts holds every entry here to a paragraph that still
+ * exists and to text that still differs from the current wording, so a later
+ * edit that renumbers a clause fails loudly rather than archiving nothing.
+ */
+export type Revision = {
+  version: string;
+  /** What changed, for somebody reading this file rather than the diff. */
+  note: string;
+  /** Summary rows this version worded differently, keyed by term. */
+  summary: Record<string, string>;
+  /** Clause paragraphs it worded differently, by clause number and position. */
+  paras: { clause: number; at: number; text: string }[];
+};
+
+export const SUPERSEDED: Revision[] = [
+  {
+    version: '2026-08',
+    note: 'Payment was Net 30 until 27 August 2026.',
+    summary: {
+      'Payment Terms':
+        'Net 30 — paid 30 calendar days after the referral is approved, by ACH, contingent on a signed ' +
+        'W-9 and valid banking information on file.',
+    },
+    paras: [
+      {
+        clause: 4,
+        at: 1,
+        text: 'Payment terms are net thirty (30) days ("Net 30"), meaning payment is due thirty (30) calendar days after the referral is approved by the applicable card issuer/program, subject to Company’s receipt of its own payment from its upstream partner.',
+      },
+    ],
+  },
+];
+
+function revisionFor(version: string): Revision | null {
+  if (!version || version === AGREEMENT_VERSION) return null;
+  return SUPERSEDED.find((entry) => entry.version === version) ?? null;
+}
+
+/**
+ * Whether the exact wording of a signed version is still on file.
+ *
+ * False for a version this file has never heard of, which is what a row from a
+ * future revision looks like to an older deployment. The copy is still drawn,
+ * because refusing to produce somebody's own signed agreement is worse, but it
+ * says on its face that the text is today's rather than theirs.
+ */
+export function wordingKnown(version: string): boolean {
+  return version === AGREEMENT_VERSION || revisionFor(version) !== null;
+}
+
+/** The summary table as one version worded it. */
+export function summaryFor(version: string = AGREEMENT_VERSION): { term: string; details: string }[] {
+  const revision = revisionFor(version);
+  if (!revision) return SUMMARY;
+  return SUMMARY.map((row) => {
+    const was = revision.summary[row.term];
+    return was ? { ...row, details: was } : row;
+  });
+}
+
+/** The numbered sections as one version worded them. */
+export function clausesFor(version: string = AGREEMENT_VERSION): Clause[] {
+  const revision = revisionFor(version);
+  if (!revision) return CLAUSES;
+  return CLAUSES.map((clause) => {
+    const changed = revision.paras.filter((entry) => entry.clause === clause.n);
+    if (changed.length === 0) return clause;
+    const paras = [...clause.paras];
+    for (const entry of changed) {
+      if (entry.at >= 0 && entry.at < paras.length) paras[entry.at] = entry.text;
+    }
+    return { ...clause, paras };
+  });
+}
+
 /** The governing-state placeholder filled in, or left as a rule to write on. */
 export function clauseText(paragraph: string): string {
   if (!paragraph.includes('{{STATE}}')) return paragraph;
@@ -226,11 +327,16 @@ export function clauseText(paragraph: string): string {
 }
 
 /** Every paragraph of the agreement, in order, with placeholders resolved.
- *  Used by the PDF, which has no notion of clauses — only lines. */
-export function allParagraphs(): { heading: string | null; text: string }[] {
+ *  Used by the PDF, which has no notion of clauses — only lines.
+ *
+ *  Takes a version so that a copy of somebody's signed agreement is drawn from
+ *  the wording they signed rather than from whatever the file says today. */
+export function allParagraphs(
+  version: string = AGREEMENT_VERSION,
+): { heading: string | null; text: string }[] {
   const out: { heading: string | null; text: string }[] = [];
   out.push({ heading: null, text: PREAMBLE });
-  for (const clause of CLAUSES) {
+  for (const clause of clausesFor(version)) {
     out.push({ heading: `${clause.n}. ${clause.title}`, text: '' });
     for (const para of clause.paras) out.push({ heading: null, text: clauseText(para) });
   }

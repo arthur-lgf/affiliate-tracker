@@ -14,10 +14,24 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
+import { AGREEMENT_VERSION } from '../src/lib/agreement';
 import { renderAgreementPdf } from '../src/lib/pdf/agreement-pdf';
 import { renderW9Pdf } from '../src/lib/pdf/w9-pdf';
 import { inspectPngDataUrl } from '../src/lib/pdf/png';
 import type { AgreementRecord, W9Record } from '../src/lib/onboarding-store';
+import { pdfContent } from './read-pdf';
+
+/**
+ * The words drawn on the page, reassembled into one string.
+ *
+ * A paragraph is drawn one wrapped line at a time, so a sentence is spread
+ * across several draw calls with operators between them. Joining the operands
+ * with a space puts it back together, because the wrapper only ever breaks on
+ * a space.
+ */
+function drawn(content: string): string {
+  return [...content.matchAll(/\n([^\n]*?) Tj/g)].map((m) => m[1]).join(' ');
+}
 
 let pass = 0;
 let fail = 0;
@@ -213,6 +227,37 @@ async function main() {
   // The wrapper takes a word wider than the column as a special case; a name
   // with no spaces in it is that case.
   check('a very long unbroken name does not hang it', longName.length > 1000);
+
+  console.log('\n— the version somebody actually signed —');
+  /*
+   * The fixture is signed under 2026-08, which is Net 30. Payment terms moved
+   * to Net 45 on 27 August 2026, and four people had already signed by then.
+   * Every copy of a signed agreement is drawn on demand out of lib/agreement,
+   * so unless the old wording is read back for an old row, those four
+   * downloads quietly become a contract nobody signed, over their signature.
+   */
+  const signedText = drawn(await pdfContent(agBytes));
+  check('a copy signed under 2026-08 still says net thirty', signedText.includes('net thirty (30) days'));
+  check('and its summary row still says Net 30', signedText.includes('Net 30'));
+  check('with none of the new term anywhere on it', !signedText.includes('Net 45') && !signedText.includes('forty-five'));
+  check('and it is stamped with the version it was signed under', signedText.includes('Agreement version 2026-08'));
+
+  const today = drawn(await pdfContent(await renderAgreementPdf({ ...agreement, agreementVersion: AGREEMENT_VERSION })));
+  check('a copy signed today says net forty-five', today.includes('net forty-five (45) days'));
+  check('and its summary row says Net 45', today.includes('Net 45'));
+  check('with none of the old term anywhere on it', !today.includes('Net 30') && !today.includes('net thirty'));
+  check('the rest of the document is the same either way', today.includes('12. General') && signedText.includes('12. General'));
+  check('and so is the signature block', today.includes('SIGNATURES') && signedText.includes('SIGNATURES'));
+
+  /*
+   * A row signed under a revision this build has never heard of, which is what
+   * an older deployment sees after the text moves on. It still draws the
+   * agreement, and says on its face that the wording is today's.
+   */
+  const stranger = drawn(await pdfContent(await renderAgreementPdf({ ...agreement, agreementVersion: '2099-01' })));
+  check('an unknown version still produces a document', stranger.includes('AFFILIATE AGREEMENT'));
+  check('which says the wording may not be theirs', stranger.includes('is not on file'));
+  check('a known version says no such thing', !signedText.includes('is not on file') && !today.includes('is not on file'));
 
   const out = process.argv[2];
   if (out) {
