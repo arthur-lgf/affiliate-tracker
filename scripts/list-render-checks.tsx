@@ -28,7 +28,7 @@ import {
   tierCount,
   tiersOf,
 } from '../src/lib/cpa-groups';
-import { problemsIn } from '../src/components/CampaignSettings';
+import { listShowing, problemsIn } from '../src/components/CampaignSettings';
 import { ratesForViewer } from '../src/lib/cpa';
 import { sortRows } from '../src/lib/report-table';
 import { EarnersTable } from '../src/components/EarnersTable';
@@ -594,6 +594,19 @@ check(
   'surrounding space does not make a name blank',
   Object.keys(problemsIn([settingsRow(0, '  Best Cards  ', '  https://example.com  ')])).length === 0,
 );
+
+/*
+ * Whether two dozen rows of inputs are on the screen. Folded away is the
+ * resting state, because the commission and the rate card sit above this list
+ * and were being pushed off the page by it. The override is the part worth
+ * holding: unsaved work is never folded away, whatever the toggle says.
+ */
+check('the list starts folded away', listShowing(false, false, 0) === false);
+check('the toggle opens it', listShowing(true, false, 0) === true);
+check('unsaved changes hold it open', listShowing(false, true, 0) === true);
+check('so does a row that needs fixing', listShowing(false, false, 1) === true);
+check('an open list with a broken row stays open', listShowing(true, false, 2) === true);
+check('and once it is saved it can fold away again', listShowing(false, false, 0) === false);
 
 console.log('\n— accounts —');
 /*
