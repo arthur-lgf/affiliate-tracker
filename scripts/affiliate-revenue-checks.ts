@@ -8,7 +8,16 @@
 // the reader can check against the column above it.
 //
 //   npx tsx scripts/affiliate-revenue-checks.ts
-import { AFFILIATE_SHARE, affiliateRevenueOf, formatMoney, revenueFrom } from '../src/lib/analytics';
+import {
+  AFFILIATE_SHARE,
+  affiliateRevenueOf,
+  buildEarnings,
+  describeConversions,
+  formatMoney,
+  revenueFrom,
+} from '../src/lib/analytics';
+import type { ShareRate } from '../src/lib/settings';
+import type { AffiliateLink, Conversion, Visit } from '../src/lib/types';
 
 let pass = 0;
 let fail = 0;
@@ -55,6 +64,94 @@ check('a figure that is already the share is left alone', revenueFrom(105, false
 check('halving twice is what this exists to prevent', revenueFrom(revenueFrom(210, true), false) === 105);
 check('zero is zero either way', revenueFrom(0, true) === 0 && revenueFrom(0, false) === 0);
 check('and the cents rule still applies', revenueFrom(12.35, true) === 6.18);
+
+console.log('\n— a rate that changed halfway through —');
+/*
+ * The promise this whole feature turns on, checked where it actually has to
+ * hold: not on one number, but on a table that adds up. Two approvals for the
+ * same person, one banked in August under a half and one in September under
+ * sixty percent, land in one row. The row's gross is 400; a share of that total
+ * is 200 whichever rate you pick, and the honest answer is 220, because that is
+ * what the two approvals were each worth on the day each was approved.
+ */
+const shares: ShareRate[] = [
+  { from: '', rate: 0.5 },
+  { from: '2026-09-01', rate: 0.6 },
+];
+const link: AffiliateLink = {
+  id: 'l1',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  slug: 'best-cards',
+  usr: 'arthur',
+  assignee: 'Arthur Reyes',
+  assigneeEmail: '',
+  campaign: 'Best Cards',
+  destination: 'https://example.com',
+  headline: '',
+  subheadline: '',
+  ctaLabel: '',
+  requirePhone: false,
+  passUsrParam: 'usr',
+  active: true,
+  notes: '',
+};
+const paid = (approvedOn: string, amount: number): Conversion => ({
+  id: 'c' + approvedOn + amount,
+  createdAt: '2026-09-05T00:00:00.000Z',
+  approvedOn,
+  slug: 'best-cards',
+  usr: 'arthur',
+  amount,
+  notes: '',
+});
+const visits: Visit[] = [];
+const both = [paid('2026-08-20', 200), paid('2026-09-02', 200)];
+
+const mixed = buildEarnings([link], visits, both, { period: 'all', shares, gross: true });
+check('the row holds both approvals', mixed.rows[0]!.approved === 2);
+check('and the gross is the gross', mixed.rows[0]!.earnings === 400);
+check('the share is each approval at its own rate', mixed.rows[0]!.affiliate === 220);
+check('which is not a share of the total', mixed.rows[0]!.affiliate !== affiliateRevenueOf(400));
+check('and the total is the sum of the rows', mixed.totals.affiliate === 220);
+
+/*
+ * The same two approvals with no history at all, which is every deployment
+ * before anybody opens the settings page. Nothing changes: half of everything,
+ * exactly as before.
+ */
+const untouched = buildEarnings([link], visits, both, { period: 'all', gross: true });
+check('with no rate ever set, it is still half', untouched.rows[0]!.affiliate === 200);
+check('and half of the total agrees, because there is only one rate', untouched.rows[0]!.affiliate === affiliateRevenueOf(400));
+
+/*
+ * Raising the rate again, later, must not move either of them. This is the
+ * check that would fail if the share were ever read as "the rate now".
+ */
+const raisedAgain = buildEarnings([link], visits, both, {
+  period: 'all',
+  shares: [...shares, { from: '2027-01-01', rate: 0.9 }],
+  gross: true,
+});
+check('a later rise leaves both approvals where they were', raisedAgain.rows[0]!.affiliate === 220);
+
+// The affiliate's own copy: the amounts arrive already shared, so the share
+// column is the amount and halving it again would pay them a quarter.
+const theirs = buildEarnings([link], visits, both.map((row) => ({ ...row, amount: row.amount / 2 })), {
+  period: 'all',
+  shares,
+  gross: false,
+});
+check('an affiliate is not shared a second time', theirs.rows[0]!.affiliate === theirs.rows[0]!.earnings);
+
+console.log('\n— one approval at a time —');
+const listed = describeConversions([link], both, [], { shares, gross: true });
+check('the August one paid half', listed.find((row) => row.approvedOn === '2026-08-20')!.affiliate === 100);
+check('the September one paid sixty percent', listed.find((row) => row.approvedOn === '2026-09-02')!.affiliate === 120);
+const listedTheirs = describeConversions([link], both.map((row) => ({ ...row, amount: 100 })), [], {
+  shares,
+  gross: false,
+});
+check('and a reader shown their own share sees it unchanged', listedTheirs.every((row) => row.affiliate === 100));
 
 console.log(`\naffiliate-revenue: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

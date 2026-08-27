@@ -80,7 +80,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // fact about who else works here and what their key is.
   if (!ownsKey(viewer, usr)) notFound();
 
-  const { links, submissions, visits, conversions, gross, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, gross, settings, error } = await loadAll(viewer);
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
   }
@@ -89,10 +89,15 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // selected window, so a person with no activity *this month* still gets their
   // page (showing an empty window) rather than a 404 that reads as "no such
   // person" — only a key that has never been seen at all is a 404.
+  // As on the dashboard: each approval at the rate in force the day it was
+  // approved, so a change to the percentage never restates this page.
+  const money = { shares: settings.shares, gross };
+
   const everView = buildEarnings(links, visits, conversions, {
     period: 'all',
     usr: personKey,
     groupBy: 'card',
+    ...money,
   });
   if (everView.rows.length === 0) notFound();
 
@@ -100,6 +105,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
     period,
     usr: personKey,
     groupBy: 'card',
+    ...money,
   });
 
   const person = everView.people.find((p) => p.usr === personKey);
@@ -113,6 +119,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
     links,
     conversions.filter((row) => (row.usr || HOUSE_KEY) === personKey).slice(0, RECENT_APPROVALS),
     submissions,
+    money,
   );
 
   const theirLinks = links.filter((link) => (link.usr || HOUSE_KEY) === personKey);

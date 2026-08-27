@@ -7,6 +7,7 @@
 //
 //   npx tsx scripts/scope-checks.ts
 import { asAffiliateShare } from '../src/lib/load';
+import { defaultSettings } from '../src/lib/settings';
 import { ownerForNewLink, ownsKey, scopeData, seesEverything } from '../src/lib/scope';
 import type { Viewer } from '../src/lib/viewer-core';
 import type { AffiliateLink, Conversion, Submission, Visit } from '../src/lib/types';
@@ -258,16 +259,36 @@ function main() {
     notes: 'Chase · lead:abc',
   });
 
-  const halved = asAffiliateShare([paid(210), paid(270), paid(0)]);
+  const halved = asAffiliateShare([paid(210), paid(270), paid(0)], defaultSettings());
   check('a payout is halved', halved[0]!.amount === 105);
   check('and so is the next one', halved[1]!.amount === 135);
   check('nothing paid is nothing owed', halved[2]!.amount === 0);
+
+  /*
+   * The share is a dated history now, so the cut a row takes is the one that
+   * was in force on the day it was approved. A row banked in August under a
+   * half keeps its half after the rate goes to sixty percent in September,
+   * which is the whole point of dating it.
+   */
+  const raised = {
+    ...defaultSettings(),
+    shares: [{ from: '', rate: 0.5 }, { from: '2026-09-01', rate: 0.6 }],
+  };
+  const august = asAffiliateShare([paid(210)], raised);
+  check('an approval before a rise keeps the old rate', august[0]!.amount === 105);
+  const september = asAffiliateShare(
+    [{ ...paid(210), approvedOn: '2026-09-02' }],
+    raised,
+  );
+  check('and one after it gets the new one', september[0]!.amount === 126);
+  const undated = asAffiliateShare([{ ...paid(210), approvedOn: '' }], raised);
+  check('a row with no date falls to the opening rate', undated[0]!.amount === 105);
   check('everything else on the row survives', halved[0]!.notes === 'Chase · lead:abc' && halved[0]!.slug === 'best-cards');
 
   // The store adapters cache rows, so halving in place would change what the
   // next reader sees — including an admin, who would then be shown half.
   const original = [paid(210)];
-  asAffiliateShare(original);
+  asAffiliateShare(original, defaultSettings());
   check('the rows it was given are not touched', original[0]!.amount === 210);
 
   console.log(`\nscope: ${pass} passed, ${fail} failed`);

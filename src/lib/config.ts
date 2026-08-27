@@ -37,6 +37,7 @@ export const SHEET_TABS = {
   conversions: 'Conversions',
   cpa: 'CPA',
   campaigns: 'Campaigns',
+  settings: 'Settings',
 } as const;
 
 /** Column order for each tab. Changing this changes the sheet layout. */
@@ -50,6 +51,11 @@ export const SHEET_HEADERS = {
   /* Two columns and no stamps: unlike the rate card this is a short list a
      person maintains by hand, and the order of the rows is its only state. */
   campaigns: ['name', 'destination'],
+  /* One row, holding JSON. A sheet is a poor place for a nested value and this
+     one is nested: the commission share is a list of rates with dates on them,
+     not a number. Written as a blob rather than spread over columns so that a
+     spreadsheet cannot end up holding half a rate history. */
+  settings: ['key', 'value'],
   cpa: [
     'report_date',
     'updated_at',

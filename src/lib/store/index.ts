@@ -52,6 +52,8 @@ function createUnavailableStore(message: string): Store {
     writeCpaReport: fail,
     listCampaigns: fail,
     writeCampaigns: fail,
+    readSettings: fail,
+    writeSettings: fail,
   };
 }
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { google, type sheets_v4 } from 'googleapis';
 import { SHEET_HEADERS, SHEET_TABS } from '../config';
+import { parseSettings, type Settings } from '../settings';
 import { resolveGoogleCredentials } from '../google-credentials';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import { campaignToCells, campaignsFromCells } from './campaign-row';
@@ -34,6 +35,9 @@ import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './erro
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
 type TabName = keyof typeof SHEET_TABS;
+
+/** The one row the settings live in, matching the Supabase adapter. */
+const SETTINGS_KEY = 'ledger';
 
 let clientPromise: Promise<sheets_v4.Sheets> | null = null;
 let ensurePromise: Promise<void> | null = null;
@@ -678,6 +682,29 @@ export function createSheetsStore(): Store {
 
     async listCampaigns() {
       return campaignsFromCells(await readRows('campaigns'));
+    },
+
+    /**
+     * The settings row, read as JSON.
+     *
+     * A cell somebody could have typed into, so a value that will not parse is
+     * treated as no value rather than as an error: the alternative is a
+     * settings page that cannot load because of the setting somebody needs the
+     * page to fix.
+     */
+    async readSettings() {
+      const rows = await readRows('settings');
+      const row = rows.find((cells) => (cells[0] ?? '').trim() === SETTINGS_KEY) ?? rows[0];
+      if (!row) return parseSettings(null);
+      try {
+        return parseSettings(JSON.parse(row[1] ?? ''));
+      } catch {
+        return parseSettings(null);
+      }
+    },
+
+    async writeSettings(settings: Settings) {
+      await replaceRows('settings', [[SETTINGS_KEY, JSON.stringify(settings)]]);
     },
 
     async writeCampaigns(campaigns: Campaign[]) {

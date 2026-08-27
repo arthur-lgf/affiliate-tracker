@@ -1,5 +1,6 @@
 import { affiliateRevenueOf } from './analytics';
 import { scopeData, seesEverything } from './scope';
+import { defaultSettings, shareOn, type Settings } from './settings';
 import { getStore } from './store';
 import type { AffiliateLink, Conversion, Submission, Visit } from './types';
 import type { Viewer } from './viewer';
@@ -17,6 +18,15 @@ export type LoadResult = {
    * between a page of gross payouts and a page of somebody's own revenue.
    */
   gross: boolean;
+  /**
+   * The shared settings, chiefly the commission history.
+   *
+   * Handed back rather than read again by each page, so every figure on a
+   * screen is priced off one read of one history. Two reads a few milliseconds
+   * apart either side of somebody pressing Save would be two pages of numbers
+   * that do not add up.
+   */
+  settings: Settings;
   error: string | null;
 };
 
@@ -34,8 +44,15 @@ const EMPTY = { links: [], submissions: [], visits: [], conversions: [] };
  * what gets grouped, charted and listed — and because the sum of what they are
  * actually paid per approval is the figure they can check against a payment.
  */
-export function asAffiliateShare(conversions: Conversion[]): Conversion[] {
-  return conversions.map((row) => ({ ...row, amount: affiliateRevenueOf(row.amount) }));
+export function asAffiliateShare(conversions: Conversion[], settings: Settings): Conversion[] {
+  return conversions.map((row) => ({
+    // At the rate in force on the day it was approved, not the rate in force
+    // now. Raising the commission tomorrow must leave every figure an affiliate
+    // has already been shown, and already been paid against, exactly where it
+    // is.
+    ...row,
+    amount: affiliateRevenueOf(row.amount, shareOn(row.approvedOn, settings.shares)),
+  }));
 }
 
 /**
@@ -57,11 +74,12 @@ export function asAffiliateShare(conversions: Conversion[]): Conversion[] {
 export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
   const store = getStore();
   try {
-    const [links, submissions, visits, conversions] = await Promise.all([
+    const [links, submissions, visits, conversions, settings] = await Promise.all([
       store.listLinks(),
       store.listSubmissions(),
       store.listVisits(),
       store.listConversions(),
+      store.readSettings(),
     ]);
 
     const scoped = scopeData({ links, submissions, visits, conversions }, viewer);
@@ -72,7 +90,7 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
      * disagree about who is an admin.
      */
     const gross = seesEverything(viewer);
-    const money = gross ? scoped.conversions : asAffiliateShare(scoped.conversions);
+    const money = gross ? scoped.conversions : asAffiliateShare(scoped.conversions, settings);
 
     // Newest first for display. Sorted into new arrays: a store adapter may be
     // handing back rows it also caches, and sorting those in place would change
@@ -83,12 +101,17 @@ export async function loadAll(viewer: Viewer | null): Promise<LoadResult> {
       visits: scoped.visits,
       conversions: [...money].sort((a, b) => b.approvedOn.localeCompare(a.approvedOn)),
       gross,
+      settings,
       error: null,
     };
   } catch (error) {
     return {
       ...EMPTY,
       gross: seesEverything(viewer),
+      // The defaults rather than nothing: a page that could not reach the store
+      // has no rows to price anyway, and a missing commission history would
+      // turn a storage message into a crash.
+      settings: defaultSettings(),
       error: error instanceof Error ? error.message : 'Unknown storage error',
     };
   }

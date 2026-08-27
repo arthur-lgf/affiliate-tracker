@@ -16,6 +16,7 @@ import type {
   Visit,
 } from '../types';
 import { sortRates } from '../cpa';
+import { parseSettings, type Settings } from '../settings';
 import { DEFAULT_LEAD_STATUS, normalizeLeadStatus } from '../status';
 import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './errors';
 
@@ -45,6 +46,10 @@ const PAGE_SIZE = 1000;
  * PostgREST refuses on size.
  */
 const INSERT_CHUNK = 500;
+
+/** The one row the settings live in. Named rather than numbered so a
+ *  second set of settings, if there is ever one, is a second key. */
+const SETTINGS_KEY = 'ledger';
 const MAX_ROWS = 500_000;
 
 export function isSupabaseConfigured(): boolean {
@@ -485,6 +490,41 @@ export function createSupabaseStore(): Store {
       // steps over anyway — it only ever reads the newest.
       const { error } = await supabase.from('campaigns').delete().neq('batch_id', batchId);
       if (error) fail('clearing the previous campaigns', error);
+    },
+
+    /**
+     * One row, one blob.
+     *
+     * A table rather than an environment variable because the commission share
+     * is edited by a person on a page, and because it has to be the same for
+     * every instance serving the app the moment it changes. A jsonb column
+     * rather than a column per setting, so that adding the next setting is not
+     * a migration on a table that already holds the answer to "what were we
+     * paying in September".
+     */
+    async readSettings() {
+      const { data, error } = await getSupabaseClient()
+        .from('settings')
+        .select('value')
+        .eq('key', SETTINGS_KEY)
+        .maybeSingle();
+      if (error) fail('reading the settings', error);
+      return parseSettings(data?.value ?? null);
+    },
+
+    async writeSettings(settings: Settings) {
+      const { error } = await getSupabaseClient()
+        .from('settings')
+        .upsert(
+          {
+            key: SETTINGS_KEY,
+            value: settings,
+            updated_at: settings.updatedAt || new Date().toISOString(),
+            updated_by: settings.updatedBy,
+          },
+          { onConflict: 'key' },
+        );
+      if (error) fail('saving the settings', error);
     },
 
     async readCpaReport() {

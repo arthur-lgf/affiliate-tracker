@@ -5,6 +5,10 @@
  * of truth without any transformation layer: one type === one tab.
  */
 
+// The one exception to "flat rows": the settings are two values rather than a
+// table, and their own module owns what they mean. See lib/settings.
+import type { Settings } from './settings';
+
 export type AffiliateLink = {
   id: string;
   /** URL path segment, e.g. "cashback" in localhost:3000/cashback?usr=arthur */
@@ -211,4 +215,15 @@ export interface Store {
   listCampaigns(): Promise<Campaign[]>;
   /** Replaces the list whole. The later of two concurrent saves wins entire. */
   writeCampaigns(campaigns: Campaign[]): Promise<void>;
+
+  /**
+   * The commission share and the rate-card floor.
+   *
+   * Never null: an adapter with nothing saved answers with the defaults, so no
+   * caller has to decide what a missing commission rate means. Getting that
+   * wrong once would mean a page quietly paying nothing, or everything.
+   */
+  readSettings(): Promise<Settings>;
+  /** Replaces both settings whole, the same way campaigns are replaced. */
+  writeSettings(settings: Settings): Promise<void>;
 }

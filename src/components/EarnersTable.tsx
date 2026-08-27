@@ -9,7 +9,6 @@ import {
   formatMoney,
   formatPercent,
   initialsOf,
-  revenueFrom,
   type EarningsRow,
   type EarningsView,
   type Period,
@@ -45,12 +44,15 @@ export function EarnersTable({
   const visible = pageSlice(rows, page, perPage);
 
   /*
-   * Every row's own half added up, rather than half of the total. The two can
-   * differ by a cent, and of the two answers this is the one the reader can
-   * check: it is the sum of the column printed above it.
+   * Every row's own share added up, rather than a share of the total. The two
+   * can differ by a cent, and once the commission percentage has been changed
+   * once they differ by more than that: a row here can hold approvals earned
+   * under two rates, and there is no single percentage of the total that is
+   * the right answer. This is the sum of the column printed above it, which is
+   * also the one a reader can check.
    */
   const affiliateRevenue =
-    Math.round(rows.reduce((sum, row) => sum + revenueFrom(row.earnings, gross), 0) * 100) / 100;
+    Math.round(rows.reduce((sum, row) => sum + row.affiliate, 0) * 100) / 100;
 
   return (
     <>
@@ -103,7 +105,7 @@ export function EarnersTable({
                   </td>
                 ) : null}
                 <td className="tnum px-5 py-3.5 text-right text-[16px] font-semibold">
-                  {formatMoney(revenueFrom(row.earnings, gross))}
+                  {formatMoney(row.affiliate)}
                 </td>
                 <td className="px-5 py-3.5 text-right">
                   {/* One link per row rather than a whole-row target: the

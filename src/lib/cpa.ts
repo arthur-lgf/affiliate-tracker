@@ -22,6 +22,7 @@
  */
 
 import { affiliateRevenueOf } from './analytics';
+import { clearsFloor } from './settings';
 import type { CpaRate, CpaReport } from './types';
 
 /** What the parser could not make sense of, for showing to whoever uploaded. */
@@ -365,6 +366,45 @@ export function ratesForViewer(rates: CpaRate[], gross: boolean): CpaRateView[] 
     change: gross ? rate.change : null,
     changedOn: rate.changedOn,
   }));
+}
+
+/**
+ * The rate card with the cards that pay too little taken out of it.
+ *
+ * Card level, not row level, and judged on the best tier: a tiered card that
+ * clears the floor at tier 3 keeps every one of its tiers, including the ones
+ * under it. Stripping those would leave a rate card that misquotes what the
+ * first approvals on that card actually pay, which is worse than listing a card
+ * somebody has decided is marginal.
+ *
+ * Applied to the merchant's own rates, before anybody is cut out of them, so
+ * that every reader is looking at the same list of cards. A floor read against
+ * each viewer's own share would hide different cards from different people and
+ * have two of them quoting from two different price lists.
+ */
+export function ratesAboveFloor(rates: CpaRate[], floor: number | null): CpaRate[] {
+  if (floor === null) return rates;
+
+  const best = new Map<string, number | null>();
+  for (const rate of rates) {
+    const key = `${rate.issuer}|${rate.card}`;
+    const seen = best.get(key) ?? null;
+    if (rate.current !== null && (seen === null || rate.current > seen)) {
+      best.set(key, rate.current);
+    } else if (!best.has(key)) {
+      best.set(key, null);
+    }
+  }
+
+  return rates.filter((rate) => clearsFloor(best.get(`${rate.issuer}|${rate.card}`) ?? null, floor));
+}
+
+/** How many cards a floor is keeping off the page, for saying so. */
+export function cardsBelowFloor(rates: CpaRate[], floor: number | null): number {
+  if (floor === null) return 0;
+  const all = new Set(rates.map((rate) => `${rate.issuer}|${rate.card}`));
+  const kept = new Set(ratesAboveFloor(rates, floor).map((rate) => `${rate.issuer}|${rate.card}`));
+  return all.size - kept.size;
 }
 
 /** An empty report, so a page with nothing uploaded yet has something to render. */

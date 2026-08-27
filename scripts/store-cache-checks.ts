@@ -20,6 +20,7 @@ import type {
   Submission,
   Visit,
 } from '../src/lib/types';
+import { defaultSettings } from '../src/lib/settings';
 
 let pass = 0;
 let fail = 0;
@@ -99,6 +100,10 @@ function countingStore(options: { delayMs?: number; failReads?: boolean } = {}) 
     listCampaigns: () => answer('listCampaigns', []),
     writeCampaigns: async () => {
       bump('writeCampaigns');
+    },
+    readSettings: () => answer('readSettings', defaultSettings()),
+    writeSettings: async () => {
+      bump('writeSettings');
     },
   };
 
@@ -216,6 +221,31 @@ async function main() {
     await cached.listCampaigns();
     await cached.listLinks();
     check('saving campaigns refreshes them', calls.listCampaigns === campaignsAt + 1);
+
+    /*
+     * The settings are cached like everything else, but saving them has to
+     * clear more than itself. The commission share is not stored on the
+     * approvals it prices and the floor is not stored on the rate card it
+     * hides cards from, so a copy of either taken before the change would go
+     * on answering with the old rate for the rest of the TTL.
+     */
+    await cached.readSettings();
+    await cached.readSettings();
+    const settingsAt = calls.readSettings;
+    check('settings are read once, not twice', settingsAt === 1);
+
+    await cached.listConversions();
+    await cached.readCpaReport();
+    const conversionsBefore = calls.listConversions;
+    const cpaBefore = calls.readCpaReport;
+
+    await cached.writeSettings(defaultSettings());
+    await cached.readSettings();
+    check('saving settings refreshes them', calls.readSettings === settingsAt + 1);
+    await cached.listConversions();
+    check('and the approvals they price', calls.listConversions === conversionsBefore + 1);
+    await cached.readCpaReport();
+    check('and the rate card they filter', calls.readCpaReport === cpaBefore + 1);
     // A campaign decides where a link points, so a link read through a stale
     // campaign is a link pointing at the old destination.
     check('and the links that read through them', calls.listLinks === linksAt + 1);

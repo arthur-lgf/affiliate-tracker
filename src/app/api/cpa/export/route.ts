@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { unauthorized, viewerFromRequest } from '@/lib/api-auth';
-import { ratesForViewer } from '@/lib/cpa';
+import { ratesAboveFloor, ratesForViewer } from '@/lib/cpa';
 import { cpaCsv, cpaWorkbook, exportName, type CpaExportMeta } from '@/lib/cpa-export';
 import { filterGroups, groupRates, readFilter, readSort, sortGroups } from '@/lib/cpa-groups';
 import { buildCpaPdf } from '@/lib/pdf/cpa-pdf';
@@ -54,8 +54,12 @@ export async function GET(request: Request) {
   const gross = viewer.role === 'admin';
 
   let report: CpaReport | null = null;
+  let floor: number | null = null;
   try {
-    report = await getStore().readCpaReport();
+    const store = getStore();
+    const [read, settings] = await Promise.all([store.readCpaReport(), store.readSettings()]);
+    report = read;
+    floor = settings.cpaFloor;
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Could not read the rate card.' },
@@ -63,7 +67,13 @@ export async function GET(request: Request) {
     );
   }
 
-  const everything = groupRates(ratesForViewer(report?.rows ?? [], gross));
+  /*
+   * The admin's standing floor first, then whatever this reader asked for. A
+   * download that carried the cards the page is holding back would be a file
+   * that disagrees with the screen it was taken from.
+   */
+  const listed = ratesAboveFloor(report?.rows ?? [], floor);
+  const everything = groupRates(ratesForViewer(listed, gross));
   const filter = readFilter(url.searchParams);
   const sort = readSort(url.searchParams, gross);
   const groups = sortGroups(filterGroups(everything, filter, gross), sort, gross);

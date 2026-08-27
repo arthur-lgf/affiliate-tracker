@@ -168,12 +168,19 @@ const earners: EarningsRow[] = Array.from({ length: 23 }, (_, i) => ({
   visits: 100 + i,
   approved: i,
   earnings: 12.35 + i,
+  /*
+   * The affiliate's cut, worked out on the server one approval at a time and
+   * handed over. Not derived from `earnings` here, and not derivable: a row can
+   * hold approvals earned under two different commission rates.
+   */
+  affiliate: affiliateRevenueOf(12.35 + i),
   approvalRate: 0.1,
 }));
 const earnerTotals = {
   visits: 1,
   approved: 1,
   earnings: earners.reduce((s, r) => s + r.earnings, 0),
+  affiliate: earners.reduce((s, r) => s + r.affiliate, 0),
   approvalRate: 0.1,
 };
 const table = renderToStaticMarkup(
@@ -195,10 +202,21 @@ check('and the people page through', table.includes('Showing 1–10 of 23'));
  * halved, so the Amount column is dropped rather than blanked — and the halving
  * must not happen a second time here, which would quietly pay them a quarter.
  */
+const ownRows = earners.map((row) => ({
+  ...row,
+  earnings: affiliateRevenueOf(row.earnings),
+  // Already their share, so the two columns hold the same figure. That is what
+  // buildEarnings produces for a reader who is not shown the gross.
+  affiliate: affiliateRevenueOf(row.earnings),
+}));
 const ownTable = renderToStaticMarkup(
   <EarnersTable
-    rows={earners.map((row) => ({ ...row, earnings: affiliateRevenueOf(row.earnings) }))}
-    totals={{ ...earnerTotals, earnings: affiliateRevenueOf(earnerTotals.earnings) }}
+    rows={ownRows}
+    totals={{
+      ...earnerTotals,
+      earnings: affiliateRevenueOf(earnerTotals.earnings),
+      affiliate: Math.round(ownRows.reduce((s, r) => s + r.affiliate, 0) * 100) / 100,
+    }}
     period="month"
     gross={false}
   />,
@@ -224,6 +242,9 @@ const approvals: ConversionView[] = Array.from({ length: 23 }, (_, i) => ({
   notes: '',
   person: 'Person ' + i,
   card: 'Card',
+  // What this one approval paid the affiliate, at the rate in force the day it
+  // was approved. Worked out on the server, like every other figure here.
+  affiliate: affiliateRevenueOf(100 + i),
   client: '-',
   note: '',
 }));
@@ -252,14 +273,21 @@ check('nothing to press without the right to press it', !list.includes('>Actions
  * what it was given: halving an already-halved figure would quarter it, and a
  * column called "affiliate share" would name a split they are not shown.
  */
+const theirOwn = approvals.map((row) => ({
+  ...row,
+  amount: affiliateRevenueOf(row.amount),
+  affiliate: affiliateRevenueOf(row.amount),
+}));
 const theirs = renderToStaticMarkup(
-  <ApprovalsList rows={approvals} canEdit={false} gross={false} empty="none" />,
+  <ApprovalsList rows={theirOwn} canEdit={false} gross={false} empty="none" />,
 );
 check('an affiliate gets one money column', theirs.includes('>Amount</th>'));
 check('not the merchant payout', !theirs.includes('>Payout</th>'));
 check('and nothing calling it a share', !theirs.includes('>Affiliate share</th>'));
-check('their figure is printed as it arrived', theirs.includes(formatMoney(100)));
-check('not halved a second time', !theirs.includes(formatMoney(affiliateRevenueOf(100))));
+check('their figure is printed as it arrived', theirs.includes(formatMoney(affiliateRevenueOf(100))));
+// 100 is a merchant payout and nobody's share, so finding it would mean the
+// gross had reached a page it was halved before ever leaving the server.
+check('and the merchant payout it came from is nowhere on the page', !theirs.includes(formatMoney(100)));
 
 // One person's own page: the heading names them, so the column would be that
 // name repeated down the side of it.

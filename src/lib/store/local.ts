@@ -26,6 +26,7 @@ import type {
   SubmissionPatch,
   Visit,
 } from '../types';
+import { parseSettings, type Settings } from '../settings';
 import { StoreConfigError, StoreConflictError, StoreNotFoundError } from './errors';
 
 /**
@@ -46,6 +47,9 @@ const FILES = {
   // spreadsheet written out — same as every other file here.
   cpa: path.join(DATA_DIR, 'cpa.json'),
   campaigns: path.join(DATA_DIR, 'campaigns.json'),
+  // Two values rather than a table, so this one file holds an object
+  // rather than the usual array of rows.
+  settings: path.join(DATA_DIR, 'settings.json'),
 } as const;
 
 /**
@@ -251,6 +255,21 @@ export function createLocalStore(): Store {
 
     async listCampaigns() {
       return campaignsFromCells(await readFile<string[]>(FILES.campaigns));
+    },
+
+    async readSettings() {
+      // readFile answers with [] for a file that is not there yet, which
+      // parseSettings reads as "nothing saved" and turns into the defaults.
+      const saved = await readFile<unknown>(FILES.settings);
+      return parseSettings(Array.isArray(saved) ? saved[0] : saved);
+    },
+
+    async writeSettings(settings: Settings) {
+      // Wrapped in an array so the file has the same shape as every other one
+      // here, which is what readFile and the checks both expect.
+      return withLock(async () => {
+        await writeFile(FILES.settings, [settings]);
+      });
     },
 
     async writeCampaigns(campaigns: Campaign[]) {

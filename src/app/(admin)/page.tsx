@@ -60,7 +60,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // Already cut to this viewer's tracking key. Everything below counts, sums
   // and charts whatever came back, so scoping once here is what makes every
   // figure on the page theirs.
-  const { links, submissions, visits, conversions, gross, error } = await loadAll(viewer);
+  const { links, submissions, visits, conversions, gross, settings, error } = await loadAll(viewer);
 
   if (error) {
     return <ErrorPanel title="Could not read your data" message={error} />;
@@ -69,9 +69,18 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // Only honour a person filter that exists, so a stale bookmark shows the whole
   // table rather than a convincing but empty one.
   const requestedUsr = firstValue(query.usr);
-  const earningsAll = buildEarnings(links, visits, conversions, { period });
+  /*
+   * The commission history travels with the rows. Every approval is valued at
+   * the rate that was in force on the day it was approved, so changing the
+   * percentage on the settings page moves what new work is worth and leaves
+   * this page's history alone.
+   */
+  const money = { shares: settings.shares, gross };
+  const earningsAll = buildEarnings(links, visits, conversions, { period, ...money });
   const usr = earningsAll.people.some((p) => p.usr === requestedUsr) ? requestedUsr : '';
-  const view = usr ? buildEarnings(links, visits, conversions, { period, usr }) : earningsAll;
+  const view = usr
+    ? buildEarnings(links, visits, conversions, { period, usr, ...money })
+    : earningsAll;
 
   const hasAnything = links.length > 0 || visits.length > 0 || conversions.length > 0;
   if (!hasAnything) {
@@ -117,6 +126,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     links,
     conversions.slice(0, RECENT_LIMIT),
     submissions,
+    money,
   );
 
   // Who the approvals below name. Worked out once for the whole list rather

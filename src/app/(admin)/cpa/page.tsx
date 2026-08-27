@@ -3,8 +3,10 @@ import { CpaBrowser } from '@/components/CpaBrowser';
 import { CpaUpload } from '@/components/CpaUpload';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorPanel } from '@/components/ErrorPanel';
-import { formatDateTime } from '@/lib/analytics';
-import { ratesForViewer } from '@/lib/cpa';
+import Link from 'next/link';
+import { formatDateTime, formatMoney } from '@/lib/analytics';
+import { cardsBelowFloor, ratesAboveFloor, ratesForViewer } from '@/lib/cpa';
+import { currentShare, defaultSettings, formatShare, type Settings } from '@/lib/settings';
 import { getStore } from '@/lib/store';
 import { requireViewer } from '@/lib/viewer';
 import type { CpaReport } from '@/lib/types';
@@ -27,15 +29,30 @@ export default async function CpaPage() {
   const isAdmin = viewer.role === 'admin';
 
   let report: CpaReport | null = null;
+  let settings: Settings = defaultSettings();
   let error: string | null = null;
   try {
-    report = await getStore().readCpaReport();
+    [report, settings] = await Promise.all([
+      getStore().readCpaReport(),
+      getStore().readSettings(),
+    ]);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : 'Unknown storage error';
   }
 
-  const rates = report?.rows ?? [];
+  /*
+   * The floor an admin set on the settings page, applied to the merchant's own
+   * rates before anybody is cut out of them, so every reader is looking at the
+   * same list of cards. A tiered card that clears it at any tier keeps all of
+   * its tiers: see ratesAboveFloor.
+   */
+  const uploaded = report?.rows ?? [];
+  const rates = ratesAboveFloor(uploaded, settings.cpaFloor);
+  const hidden = cardsBelowFloor(uploaded, settings.cpaFloor);
   const cards = new Set(rates.map((rate) => `${rate.issuer}|${rate.card}`)).size;
+  // What an approval today would pay, which is what the Potential revenue
+  // column on this page is worked out at.
+  const share = currentShare(settings.shares, new Date().toISOString().slice(0, 10));
   // Only what the table draws crosses to the browser, and for an affiliate that
   // is their half alone — the merchant's rates never reach the page at all.
   const rows = ratesForViewer(rates, isAdmin);
@@ -47,8 +64,10 @@ export default async function CpaPage() {
           Commission per Approvals Reports
         </h1>
         <p className="mt-3 max-w-[720px] text-[13px] leading-relaxed text-ink-soft">
+          {/* The share is a setting now, so the sentence reads it rather than
+              saying "half" whatever it has been changed to. */}
           {isAdmin
-            ? 'What each card pays for an approval, and half of it beside, which is what the affiliate keeps.'
+            ? `What each card pays for an approval, and ${formatShare(share)} of it beside, which is what the affiliate keeps.`
             : 'What you earn for an approval on each card.'}{' '}
           Where a card is tiered, every tier is listed separately, because the tier is what decides
           the payout.
@@ -95,6 +114,19 @@ export default async function CpaPage() {
               : 'Never updated'}
           </span>
         </div>
+
+        {/*
+          Said only to the admin, and only when it is true. Without it, an
+          upload of 73 cards that lists 42 reads as an upload that lost half its
+          rows rather than as the floor doing what it was set to do.
+        */}
+        {isAdmin && hidden > 0 ? (
+          <p className="mt-4 text-[12px] text-ink-soft">
+            {hidden.toLocaleString()} card{hidden === 1 ? '' : 's'} paying under{' '}
+            {formatMoney(settings.cpaFloor ?? 0)} {hidden === 1 ? 'is' : 'are'} not listed. Change
+            that on the <Link href="/settings" className="link">settings page</Link>.
+          </p>
+        ) : null}
 
         {isAdmin ? <CpaUpload /> : null}
 

@@ -46,7 +46,7 @@ type Entry<T> = {
   value: T;
 };
 
-type Key = 'links' | 'submissions' | 'visits' | 'conversions' | 'cpa' | 'campaigns';
+type Key = 'links' | 'submissions' | 'visits' | 'conversions' | 'cpa' | 'campaigns' | 'settings';
 
 /**
  * One box per table, holding either a settled value or the promise that is
@@ -175,6 +175,18 @@ export function withCache(store: Store): Store {
     writeCpaReport: async (report) => {
       await store.writeCpaReport(report);
       invalidate('cpa');
+    },
+
+    readSettings: () => read('settings', () => store.readSettings()),
+    writeSettings: async (settings) => {
+      await store.writeSettings(settings);
+      /*
+       * The commission share decides what every money figure on every page
+       * says, and the rate-card floor decides which cards are on it. Neither
+       * is stored on the rows they change, so both of those have to be read
+       * again rather than served from a copy taken before the change.
+       */
+      invalidate('settings', 'conversions', 'cpa');
     },
 
     listCampaigns: () => read('campaigns', () => store.listCampaigns()),

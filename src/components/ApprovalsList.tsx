@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { DeleteApproval } from '@/components/DeleteApproval';
 import { Pager } from '@/components/Pager';
 import { TableScroller } from '@/components/TableScroller';
-import { formatDay, formatMoney, revenueFrom, type ConversionView } from '@/lib/analytics';
+import { formatDay, formatMoney, type ConversionView } from '@/lib/analytics';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 
 /**
@@ -102,8 +102,12 @@ export function ApprovalsList({
                   </td>
                 ) : null}
 
+                {/* Worked out on the server, at the commission rate in force on
+                    the day this one was approved. Not a share of the figure to
+                    its left: two rows in this table can have been earned under
+                    two different rates. */}
                 <td className="tnum px-5 py-3.5 text-right text-[14px] font-medium">
-                  {formatMoney(revenueFrom(row.amount, gross))}
+                  {formatMoney(row.affiliate)}
                 </td>
 
                 {/* py-2.5: the button is 30px and brings its own height, so the

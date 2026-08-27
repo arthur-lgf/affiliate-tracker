@@ -175,6 +175,10 @@ export const config = {
     // the route behind it are gated like account administration is.
     '/settings',
     '/settings/:path*',
+    // The commission percentage and the rate-card floor. Gated like account
+    // administration, because the first of them decides what everybody is paid.
+    '/api/settings',
+    '/api/settings/:path*',
     '/api/campaigns',
     '/api/campaigns/:path*',
     '/api/links',

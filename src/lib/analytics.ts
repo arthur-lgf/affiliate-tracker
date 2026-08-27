@@ -1,4 +1,5 @@
 import { leadRefIn, visibleNotes } from './qmp-sync';
+import { DEFAULT_SHARE, shareOn, type ShareRate } from './settings';
 import type { AffiliateLink, Conversion, Submission, Visit } from './types';
 
 export type DayBucket = { date: string; label: string; submissions: number; visits: number };
@@ -326,6 +327,16 @@ export type EarningsRow = {
   visits: number;
   approved: number;
   earnings: number;
+  /**
+   * The affiliate's share of `earnings`, worked out one approval at a time.
+   *
+   * Kept beside the gross rather than derived from it, because it cannot be
+   * derived from it any more: two approvals in the same row can have been
+   * earned under two different commission rates, and half of the total is then
+   * not the total of the halves. For a reader who is already being shown their
+   * own share this is the same number as `earnings`.
+   */
+  affiliate: number;
   /** Approvals per visit, clamped — approvals can be logged without a tracked click. */
   approvalRate: number;
 };
@@ -387,7 +398,7 @@ export type EarningsSeries = {
 
 export type EarningsView = {
   rows: EarningsRow[];
-  totals: { visits: number; approved: number; earnings: number; approvalRate: number };
+  totals: { visits: number; approved: number; earnings: number; affiliate: number; approvalRate: number };
   /** Everyone who has a link, a visit or an approval — the filter's options. */
   people: { usr: string; name: string }[];
   series: EarningsSeries;
@@ -477,6 +488,12 @@ export function clientIndex(submissions: Submission[]): Map<string, string> {
 export type ConversionView = Conversion & {
   person: string;
   card: string;
+  /**
+   * The affiliate's share of this one approval, at the rate in force on the day
+   * it was approved. Already the amount itself for a reader who is being shown
+   * their own share rather than the merchant's.
+   */
+  affiliate: number;
   /** The lead this approval came from, or a dash when it names nobody. */
   client: string;
   /** The notes with the machine tags stripped out. */
@@ -501,6 +518,7 @@ export function describeConversions(
   links: AffiliateLink[],
   conversions: Conversion[],
   submissions: Submission[] = [],
+  { shares = [], gross = true }: { shares?: ShareRate[]; gross?: boolean } = {},
 ): ConversionView[] {
   const names = nameIndex(links);
   const cards = cardIndex(links);
@@ -509,6 +527,7 @@ export function describeConversions(
     const notes = row.notes ?? '';
     return {
       ...row,
+      affiliate: revenueFrom(row.amount, gross, shareOn(row.approvedOn, shares)),
       person: row.usr ? names.get(row.usr) ?? row.usr : 'House',
       card: cardFor(cards, row),
       client: clients.get(leadRefIn(notes)) ?? UNKNOWN_CLIENT,
@@ -534,7 +553,26 @@ export function buildEarnings(
     period = 'month',
     usr = '',
     groupBy = 'person',
-  }: { period?: Period; usr?: string; groupBy?: GroupBy } = {},
+    shares = [],
+    gross = true,
+  }: {
+    period?: Period;
+    usr?: string;
+    groupBy?: GroupBy;
+    /**
+     * The commission history. Each approval is valued at the rate in force on
+     * the day it was approved, so a rate set today leaves last month's rows
+     * exactly where they were.
+     */
+    shares?: ShareRate[];
+    /**
+     * Whether `conversions` carry the merchant's gross payouts. False means
+     * they are already this viewer's share (lib/load halves them on the way
+     * out), in which case the share column is the amount itself and halving it
+     * again would pay them a quarter.
+     */
+    gross?: boolean;
+  } = {},
 ): EarningsView {
   const names = nameIndex(links);
   const cards = cardIndex(links);
@@ -560,6 +598,7 @@ export function buildEarnings(
         visits: 0,
         approved: 0,
         earnings: 0,
+        affiliate: 0,
         approvalRate: 0,
       };
       rows.set(key, row);
@@ -589,10 +628,22 @@ export function buildEarnings(
     const row = rowFor(conversion.usr, card);
     row.approved += 1;
     row.earnings += conversion.amount;
+    /*
+     * Row by row, at that row's own rate. Adding the gross up and taking a
+     * share of the total would be the same answer only while there has never
+     * been more than one rate; the first time the percentage changes it starts
+     * quietly repricing every approval banked before it.
+     */
+    row.affiliate += revenueFrom(conversion.amount, gross, shareOn(day, shares));
   }
 
   const list = [...rows.values()];
-  for (const row of list) row.approvalRate = safeRate(row.approved, row.visits);
+  for (const row of list) {
+    row.approvalRate = safeRate(row.approved, row.visits);
+    // Rounded once, at the end of the row, so the column and the total under it
+    // are the same arithmetic rather than two accumulations of the same cents.
+    row.affiliate = Math.round(row.affiliate * 100) / 100;
+  }
   // Earnings first — the column the table is read for.
   list.sort(
     (a, b) =>
@@ -607,11 +658,13 @@ export function buildEarnings(
       visits: acc.visits + row.visits,
       approved: acc.approved + row.approved,
       earnings: acc.earnings + row.earnings,
+      affiliate: acc.affiliate + row.affiliate,
       approvalRate: 0,
     }),
-    { visits: 0, approved: 0, earnings: 0, approvalRate: 0 },
+    { visits: 0, approved: 0, earnings: 0, affiliate: 0, approvalRate: 0 },
   );
   totals.approvalRate = safeRate(totals.approved, totals.visits);
+  totals.affiliate = Math.round(totals.affiliate * 100) / 100;
 
   // Everyone selectable, independent of the period — a filter whose options
   // vanish when you narrow the dates is worse than useless.
@@ -873,8 +926,17 @@ function monthSeries(
   };
 }
 
-/** The affiliate's share of an approval: half of what the merchant paid. */
-export const AFFILIATE_SHARE = 0.5;
+/**
+ * The affiliate's share of an approval before anybody sets one.
+ *
+ * Half, which is what this app paid for its whole life before the share became
+ * a setting. It is the fallback, not the rule: what an approval is actually
+ * worth is whatever rate was in force on the day it was approved, which is
+ * `shareOn` in lib/settings. Everything here takes a rate and defaults to this
+ * one, so a caller that has not been given the history still produces the
+ * number the app has always produced.
+ */
+export const AFFILIATE_SHARE = DEFAULT_SHARE;
 
 /**
  * The affiliate's revenue on one approval, rounded to the cent.
@@ -884,8 +946,8 @@ export const AFFILIATE_SHARE = 0.5;
  * would be a cent out from the sum of the rows above it often enough to be
  * noticed, and the reader can only check the version that adds up.
  */
-export function affiliateRevenueOf(amount: number): number {
-  return Math.round(amount * AFFILIATE_SHARE * 100) / 100;
+export function affiliateRevenueOf(amount: number, rate: number = DEFAULT_SHARE): number {
+  return Math.round(amount * rate * 100) / 100;
 }
 
 /**
@@ -900,8 +962,12 @@ export function affiliateRevenueOf(amount: number): number {
  * One function so that question is answered the same way everywhere. `gross`
  * is the answer to "is this the merchant's number?", not "may I see it".
  */
-export function revenueFrom(earnings: number, gross: boolean): number {
-  return gross ? affiliateRevenueOf(earnings) : earnings;
+export function revenueFrom(
+  earnings: number,
+  gross: boolean,
+  rate: number = DEFAULT_SHARE,
+): number {
+  return gross ? affiliateRevenueOf(earnings, rate) : earnings;
 }
 
 /** Whole-unit currency for dense table cells: 1250 → "$1,250". */
