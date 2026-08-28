@@ -184,14 +184,35 @@ const inked = 'data:image/png;base64,' + 'A'.repeat(900);
 const goodAgreement = {
   affiliateName: 'Arthur Reyes',
   affiliateEmail: 'arthur@example.com',
-  affiliateAddress: '1 Example Street, Austin TX 78701',
+  address: { line1: '1 Example Street', line2: '', city: 'Austin', state: 'TX', postalCode: '78701' },
   effectiveDate: '2026-08-24',
   signaturePng: inked,
   affirmed: true,
 };
 check('a signed agreement has no problems', Object.keys(agreementProblems(goodAgreement)).length === 0);
 check('an unticked box is caught', Boolean(agreementProblems({ ...goodAgreement, affirmed: false }).affirmed));
-check('a missing address is caught', Boolean(agreementProblems({ ...goodAgreement, affiliateAddress: '' }).affiliateAddress));
+check(
+  'a missing street is caught',
+  Boolean(agreementProblems({ ...goodAgreement, address: { ...goodAgreement.address, line1: '' } }).addressLine1),
+);
+check(
+  'an unpicked state is caught',
+  Boolean(agreementProblems({ ...goodAgreement, address: { ...goodAgreement.address, state: '' } }).addressState),
+);
+check(
+  'and a state that is not one is caught',
+  Boolean(agreementProblems({ ...goodAgreement, address: { ...goodAgreement.address, state: 'XX' } }).addressState),
+);
+check(
+  'a four-digit ZIP is caught',
+  Boolean(agreementProblems({ ...goodAgreement, address: { ...goodAgreement.address, postalCode: '7870' } }).addressPostalCode),
+);
+// Most addresses have no second line, and requiring one would be requiring
+// people to invent an apartment number.
+check(
+  'no apartment is not a problem',
+  Object.keys(agreementProblems({ ...goodAgreement, address: { ...goodAgreement.address, line2: '' } })).length === 0,
+);
 check('a half-typed date is caught', Boolean(agreementProblems({ ...goodAgreement, effectiveDate: '2026-08' }).effectiveDate));
 // An untouched signature pad still exports a PNG, so a short one is a blank one.
 check('an untouched pad is not a signature', Boolean(agreementProblems({ ...goodAgreement, signaturePng: 'data:image/png;base64,AAAA' }).signaturePng));

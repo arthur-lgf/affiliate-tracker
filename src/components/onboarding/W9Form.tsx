@@ -64,6 +64,7 @@ function startingValues(
   existing: W9Prefill | null,
   initialName: string,
   initialAddress: string,
+  initialCityStateZip: string,
 ): W9Input {
   if (existing) {
     const { tinLast4: _tinLast4, signaturePng: _signaturePng, ...rest } = existing;
@@ -88,7 +89,7 @@ function startingValues(
     exemptPayeeCode: '',
     fatcaCode: '',
     address: initialAddress,
-    cityStateZip: '',
+    cityStateZip: initialCityStateZip,
     accountNumbers: '',
     tinType: 'ssn',
     tin: '',
@@ -110,6 +111,7 @@ const useCaretEffect = typeof window === 'undefined' ? useEffect : useLayoutEffe
 export function W9Form({
   initialName,
   initialAddress,
+  initialCityStateZip = '',
   today,
   existing = null,
   revisiting = false,
@@ -118,7 +120,12 @@ export function W9Form({
   continueLabel = 'Continue',
 }: {
   initialName: string;
+  /** Line 5: the street, and the apartment if there is one. */
   initialAddress: string;
+  /** Line 6, already assembled. The agreement collects the city, the state and
+   *  the ZIP separately, so this no longer has to be worked out from a string
+   *  somebody typed. */
+  initialCityStateZip?: string;
   today: string;
   /** What was filed before, when this is a second look at the step. */
   existing?: W9Prefill | null;
@@ -128,7 +135,7 @@ export function W9Form({
   continueLabel?: string;
 }) {
   const [values, setValues] = useState<W9Input>(() =>
-    startingValues(existing, initialName, initialAddress),
+    startingValues(existing, initialName, initialAddress, initialCityStateZip),
   );
   const tinOnFile = existing?.tinType ?? null;
   const [errors, setErrors] = useState<Record<string, string>>({});

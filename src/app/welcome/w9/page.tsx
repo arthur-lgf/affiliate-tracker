@@ -1,3 +1,4 @@
+import { cityStateZip } from '@/lib/address';
 import type { Metadata } from 'next';
 import { OnboardingRail } from '@/components/OnboardingRail';
 import { W9Form, type W9Prefill } from '@/components/onboarding/W9Form';
@@ -58,6 +59,15 @@ export default async function W9Page() {
   const today = new Date().toISOString().slice(0, 10);
   const back = previousStep('w9', { bypassed: waived });
   const onward = nextStep(state, { bypassed: waived });
+
+  /*
+   * Line 5 of the W-9 is the street and line 6 is the city, state and ZIP,
+   * which is exactly the split the agreement now collects. It used to arrive
+   * as one string that had to go somewhere, so all of it went on line 5.
+   */
+  const street = agreement
+    ? [agreement.address.line1, agreement.address.line2].filter(Boolean).join(', ')
+    : '';
 
   // Settled. See the same branch on the agreement page for why this replaces
   // the form rather than disabling it.
@@ -140,7 +150,8 @@ export default async function W9Page() {
 
       <W9Form
         initialName={agreement?.affiliateName || account?.fullName || ''}
-        initialAddress={agreement?.affiliateAddress ?? ''}
+        initialAddress={street}
+        initialCityStateZip={agreement ? cityStateZip(agreement.address) : ''}
         today={today}
         existing={existing}
         revisiting={revisiting}

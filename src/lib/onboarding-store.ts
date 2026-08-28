@@ -12,6 +12,7 @@
  * act rather than a side effect of listing a table.
  */
 
+import { addressFrom, formatAddress, tidyAddress, type Address } from './address';
 import { hashPassword } from './password';
 import { digitsOf, last4 } from './mask';
 import {
@@ -420,7 +421,10 @@ export type SigningMeta = { ip: string; userAgent: string };
 export type AgreementWrite = {
   affiliateName: string;
   affiliateEmail: string;
-  affiliateAddress: string;
+  /* Street, city, state and ZIP as the form asks for them. The one line the
+     document prints is composed from these on the way in, so the two can never
+     drift apart: see formatAddress in lib/address. */
+  address: Address;
   effectiveDate: string;
   signaturePng: string;
 };
@@ -428,6 +432,9 @@ export type AgreementWrite = {
 export type AgreementRecord = AgreementWrite & {
   userId: string;
   signedAt: string;
+  /** The address as the signed copy prints it. On a row signed before the parts
+   *  existed it is the only address there is. */
+  affiliateAddress: string;
   affirmed: boolean;
   signedIp: string;
   signedUserAgent: string;
@@ -441,6 +448,9 @@ export async function saveAgreement(
   version: string,
 ): Promise<void> {
   requireStore();
+  // Composed once, from the tidied parts, so the line the document prints and
+  // the columns it was built from can never disagree.
+  const address = tidyAddress(input.address);
   const { error } = await getSupabaseClient()
     .from('affiliate_agreements')
     .upsert(
@@ -449,7 +459,12 @@ export async function saveAgreement(
         signed_at: new Date().toISOString(),
         affiliate_name: input.affiliateName.trim(),
         affiliate_email: input.affiliateEmail.trim(),
-        affiliate_address: input.affiliateAddress.trim(),
+        affiliate_address: formatAddress(address),
+        affiliate_address_line1: address.line1,
+        affiliate_address_line2: address.line2,
+        affiliate_city: address.city,
+        affiliate_state: address.state,
+        affiliate_postal_code: address.postalCode,
         effective_date: input.effectiveDate,
         signature_png: input.signaturePng,
         affirmed: true,
@@ -478,6 +493,16 @@ export async function readAgreement(userId: string): Promise<AgreementRecord | n
     affiliateName: String(row.affiliate_name ?? ''),
     affiliateEmail: String(row.affiliate_email ?? ''),
     affiliateAddress: String(row.affiliate_address ?? ''),
+    address: addressFrom(
+      {
+        line1: String(row.affiliate_address_line1 ?? ''),
+        line2: String(row.affiliate_address_line2 ?? ''),
+        city: String(row.affiliate_city ?? ''),
+        state: String(row.affiliate_state ?? ''),
+        postalCode: String(row.affiliate_postal_code ?? ''),
+      },
+      String(row.affiliate_address ?? ''),
+    ),
     effectiveDate: String(row.effective_date ?? ''),
     signaturePng: String(row.signature_png ?? ''),
     affirmed: row.affirmed === true,

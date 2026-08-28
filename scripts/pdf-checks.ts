@@ -139,6 +139,7 @@ const agreement: AgreementRecord = {
   affiliateName: 'Arthur Reyes',
   affiliateEmail: 'arthur@example.com',
   affiliateAddress: '1 Example Street, Apt 4, Austin, TX 78701',
+  address: { line1: '1 Example Street', line2: 'Apt 4', city: 'Austin', state: 'TX', postalCode: '78701' },
   effectiveDate: '2026-08-24',
   signaturePng: SIGNATURE,
   affirmed: true,

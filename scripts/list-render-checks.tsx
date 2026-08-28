@@ -29,6 +29,7 @@ import {
   tiersOf,
 } from '../src/lib/cpa-groups';
 import { listShowing, problemsIn } from '../src/components/CampaignSettings';
+import { US_STATES } from '../src/lib/address';
 import { ratesForViewer } from '../src/lib/cpa';
 import { sortRows } from '../src/lib/report-table';
 import { EarnersTable } from '../src/components/EarnersTable';
@@ -815,7 +816,13 @@ const agreementAgain = renderToStaticMarkup(
   <AgreementForm
     initialName="Arthur Reyes"
     initialEmail="a@example.com"
-    initialAddress="1 Example Street"
+    initialAddress={{
+      line1: '1 Example Street',
+      line2: '',
+      city: 'Austin',
+      state: 'TX',
+      postalCode: '78701',
+    }}
     today="2026-08-24"
     previousSignature={'data:image/png;base64,' + 'A'.repeat(900)}
     revisiting
@@ -829,6 +836,28 @@ check('and says which one that is', agreementAgain.includes('Your details'));
 check('there is a way out without signing again', agreementAgain.includes('href="/welcome/w9"'));
 check('the button says what saving would do', agreementAgain.includes('Sign again and save'));
 check('the address they gave comes back', agreementAgain.includes('1 Example Street'));
+check('the city comes back with it', agreementAgain.includes('value="Austin"'));
+check('and the ZIP', agreementAgain.includes('value="78701"'));
+const texas = agreementAgain.match(/<option[^>]*value="TX"[^>]*>Texas<\/option>/)?.[0] ?? '';
+check('the state they picked is the selected option', texas.includes('selected'));
+
+/*
+ * The address as a US form asks for it. It used to be one free-text box, which
+ * let a state be typed as "Tex." and a ZIP be left off entirely, on a document
+ * that then printed whatever was typed.
+ */
+check('the street has its own field', agreementHtml.includes('Street address'));
+check('so does the apartment, marked optional', agreementHtml.includes('Apartment, suite, unit') && agreementHtml.includes('(optional)'));
+check('so do the city and the ZIP', agreementHtml.includes('>City</span>') && agreementHtml.includes('ZIP code'));
+check('the state is a list, not a spelling', agreementHtml.includes('<select') && agreementHtml.includes('Select a state'));
+check('every state, the District and the territories are on it', US_STATES.every((state) => agreementHtml.includes(`value="${state.code}">${state.name}<`)));
+check('the box it replaced is gone', !agreementHtml.includes('<textarea'));
+// A browser that already knows where somebody lives should be able to fill the
+// whole block, which is what these attributes are for.
+check('the browser can autofill the block', ['address-line1', 'address-line2', 'address-level1', 'address-level2', 'postal-code'].every((token) => agreementHtml.includes(token)));
+// Nothing is pre-picked: a state field that answers for somebody who has not
+// looked at it is a state field that puts the wrong state on a contract.
+check('nothing is picked until somebody picks it', !/<option selected value="[A-Z]{2}"/.test(agreementHtml));
 check('the signature on file is shown', agreementAgain.includes('The signature currently on file'));
 // Read-to-the-end gating is for a document nobody has read yet; making somebody
 // scroll a contract they have already signed to get the button back is not a

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { AGREEMENT_VERSION } from '@/lib/agreement';
 import { actorFor, bool, invalid, jsonBody, nextPath, noteSubmission, storeResponse, str } from '@/lib/onboarding-api';
 import { agreementProblems } from '@/lib/onboarding';
+import { tidyAddress } from '@/lib/address';
 import { saveAgreement } from '@/lib/onboarding-store';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,17 @@ export async function POST(request: Request) {
   const input = {
     affiliateName: str(body, 'affiliateName'),
     affiliateEmail: str(body, 'affiliateEmail'),
-    affiliateAddress: str(body, 'affiliateAddress'),
+    /* The parts, tidied on arrival. The one line the document prints is
+       composed from them when the row is written, never sent by the browser:
+       a body that could supply both could supply an address that disagrees
+       with itself. */
+    address: tidyAddress({
+      line1: str(body, 'addressLine1'),
+      line2: str(body, 'addressLine2'),
+      city: str(body, 'addressCity'),
+      state: str(body, 'addressState'),
+      postalCode: str(body, 'addressPostalCode'),
+    }),
     effectiveDate: str(body, 'effectiveDate'),
     signaturePng: str(body, 'signaturePng'),
     affirmed: bool(body, 'affirmed'),

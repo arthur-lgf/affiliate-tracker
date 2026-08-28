@@ -11,6 +11,7 @@
  * and on the server (because the browser is not a place to enforce anything).
  */
 
+import { addressProblems, type Address } from './address';
 import { digitsOf, validTin } from './mask';
 
 export type StepKey = 'profile' | 'agreement' | 'w9' | 'bank';
@@ -352,7 +353,10 @@ export function keepsPassword(
 export type AgreementInput = {
   affiliateName: string;
   affiliateEmail: string;
-  affiliateAddress: string;
+  /* Asked for in parts, so that a state is picked from a list rather than
+     spelled, and the W-9 after it can fill its own two address lines without
+     guessing where one ends. */
+  address: Address;
   effectiveDate: string;
   signaturePng: string;
   affirmed: boolean;
@@ -371,7 +375,7 @@ export function agreementProblems(input: AgreementInput): Record<string, string>
   const problems: Record<string, string> = {};
   if (!input.affiliateName?.trim()) problems.affiliateName = 'Your full legal name.';
   if (!looksLikeEmail(input.affiliateEmail ?? '')) problems.affiliateEmail = 'An email address.';
-  if (!input.affiliateAddress?.trim()) problems.affiliateAddress = 'Your address.';
+  Object.assign(problems, addressProblems(input.address));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.effectiveDate ?? '')) {
     problems.effectiveDate = 'Pick a date.';
   }

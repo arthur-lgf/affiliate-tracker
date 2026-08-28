@@ -15,6 +15,7 @@ import {
   SUMMARY_INTRO,
 } from '@/lib/agreement';
 import { agreementProblems, type AgreementInput } from '@/lib/onboarding';
+import { emptyAddress, US_STATES, type Address } from '@/lib/address';
 
 /**
  * One `Label: ______` line of the execution block.
@@ -52,7 +53,7 @@ function ExecutionLine({ label, value }: { label: string; value: string }) {
 export function AgreementForm({
   initialName,
   initialEmail,
-  initialAddress = '',
+  initialAddress,
   today,
   previousSignature = '',
   revisiting = false,
@@ -62,7 +63,9 @@ export function AgreementForm({
 }: {
   initialName: string;
   initialEmail: string;
-  initialAddress?: string;
+  /** The address as last given, in parts. An agreement signed before this
+   *  page had separate fields arrives here already split by lib/address. */
+  initialAddress?: Address;
   /** Yesterday's date on a server in another timezone is not today's date here,
    *  so the default comes from the server that will store it. */
   today: string;
@@ -78,7 +81,7 @@ export function AgreementForm({
   const [values, setValues] = useState<AgreementInput>({
     affiliateName: initialName,
     affiliateEmail: initialEmail,
-    affiliateAddress: initialAddress,
+    address: initialAddress ?? emptyAddress(),
     effectiveDate: today,
     signaturePng: '',
     affirmed: false,
@@ -88,6 +91,29 @@ export function AgreementForm({
   const [busy, setBusy] = useState(false);
   const [read, setRead] = useState(revisiting);
   const scroller = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Which error belongs to which part, so that typing in a field clears the
+   * message under it rather than leaving a red line beside a fixed answer.
+   */
+  const ADDRESS_ERROR: Record<keyof Address, string> = {
+    line1: 'addressLine1',
+    line2: 'addressLine2',
+    city: 'addressCity',
+    state: 'addressState',
+    postalCode: 'addressPostalCode',
+  };
+
+  function setPart(key: keyof Address, value: string) {
+    setValues((current) => ({ ...current, address: { ...current.address, [key]: value } }));
+    setErrors((current) => {
+      const field = ADDRESS_ERROR[key];
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
 
   function set<K extends keyof AgreementInput>(key: K, value: AgreementInput[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -121,7 +147,21 @@ export function AgreementForm({
       const response = await fetch('/api/onboarding/agreement', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(values),
+        /* Flat on the wire, and the one composed line is not sent at all: the
+           server builds it from these so a body cannot hand over an address
+           that disagrees with itself. */
+        body: JSON.stringify({
+          affiliateName: values.affiliateName,
+          affiliateEmail: values.affiliateEmail,
+          addressLine1: values.address.line1,
+          addressLine2: values.address.line2,
+          addressCity: values.address.city,
+          addressState: values.address.state,
+          addressPostalCode: values.address.postalCode,
+          effectiveDate: values.effectiveDate,
+          signaturePng: values.signaturePng,
+          affirmed: values.affirmed,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -181,19 +221,102 @@ export function AgreementForm({
             ) : null}
           </label>
 
+          {/*
+            The address in the parts a US form asks for, rather than one box.
+            A box lets a state arrive as "Tex." and a ZIP not arrive at all, on
+            a document that then prints whatever was typed. The state is a list
+            for the same reason. autoComplete is set on each one so a browser
+            can fill the whole block from what it already knows.
+
+            The agreement still prints one line, composed from these.
+          */}
           <label className="block sm:col-span-2">
-            <span className="field-label">Address</span>
-            <textarea
-              className="field mt-1.5 min-h-[64px] py-2"
-              rows={2}
-              value={values.affiliateAddress}
-              onChange={(e) => set('affiliateAddress', e.target.value)}
-              aria-invalid={errors.affiliateAddress ? true : undefined}
+            <span className="field-label">Street address</span>
+            <input
+              className="field mt-1.5"
+              value={values.address.line1}
+              onChange={(e) => setPart('line1', e.target.value)}
+              autoComplete="address-line1"
+              placeholder="123 Main Street"
+              maxLength={120}
+              aria-invalid={errors.addressLine1 ? true : undefined}
             />
-            {errors.affiliateAddress ? (
-              <span className="field-error">{errors.affiliateAddress}</span>
+            {errors.addressLine1 ? (
+              <span className="field-error">{errors.addressLine1}</span>
             ) : null}
           </label>
+
+          <label className="block sm:col-span-2">
+            <span className="field-label">
+              Apartment, suite, unit <span className="font-normal text-ink-dim">(optional)</span>
+            </span>
+            <input
+              className="field mt-1.5"
+              value={values.address.line2}
+              onChange={(e) => setPart('line2', e.target.value)}
+              autoComplete="address-line2"
+              placeholder="Apt 4"
+              maxLength={120}
+            />
+          </label>
+
+          <div className="grid gap-5 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,190px)_minmax(0,140px)]">
+            <label className="block min-w-0">
+              <span className="field-label">City</span>
+              <input
+                className="field mt-1.5"
+                value={values.address.city}
+                onChange={(e) => setPart('city', e.target.value)}
+                autoComplete="address-level2"
+                placeholder="Austin"
+                maxLength={80}
+                aria-invalid={errors.addressCity ? true : undefined}
+              />
+              {errors.addressCity ? (
+                <span className="field-error">{errors.addressCity}</span>
+              ) : null}
+            </label>
+
+            <label className="block min-w-0">
+              <span className="field-label">State</span>
+              <select
+                className="field mt-1.5"
+                value={values.address.state}
+                onChange={(e) => setPart('state', e.target.value)}
+                autoComplete="address-level1"
+                aria-invalid={errors.addressState ? true : undefined}
+              >
+                {/* An empty first option, so the field cannot answer for
+                    somebody who has not picked yet. */}
+                <option value="">Select a state</option>
+                {US_STATES.map((state) => (
+                  <option key={state.code} value={state.code}>
+                    {state.name}
+                  </option>
+                ))}
+              </select>
+              {errors.addressState ? (
+                <span className="field-error">{errors.addressState}</span>
+              ) : null}
+            </label>
+
+            <label className="block min-w-0">
+              <span className="field-label">ZIP code</span>
+              <input
+                className="field tnum mt-1.5"
+                value={values.address.postalCode}
+                onChange={(e) => setPart('postalCode', e.target.value)}
+                autoComplete="postal-code"
+                inputMode="numeric"
+                placeholder="78701"
+                maxLength={10}
+                aria-invalid={errors.addressPostalCode ? true : undefined}
+              />
+              {errors.addressPostalCode ? (
+                <span className="field-error">{errors.addressPostalCode}</span>
+              ) : null}
+            </label>
+          </div>
 
           <label className="block">
             <span className="field-label">Effective date</span>

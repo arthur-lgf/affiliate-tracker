@@ -110,7 +110,7 @@ export default async function AgreementPage() {
       <AgreementForm
         initialName={existing?.affiliateName || account?.fullName || ''}
         initialEmail={existing?.affiliateEmail || account?.email || ''}
-        initialAddress={existing?.affiliateAddress ?? ''}
+        initialAddress={existing?.address}
         today={existing?.effectiveDate || today}
         previousSignature={existing?.signaturePng ?? ''}
         revisiting={revisiting}
