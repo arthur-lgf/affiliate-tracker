@@ -11,6 +11,7 @@ import {
   nextStep,
   previousStep,
   W9_CLASSIFICATIONS,
+  WAIVED_HOME,
   type W9Classification,
 } from '@/lib/onboarding';
 import { requireStep } from '@/lib/onboarding-guard';
@@ -24,10 +25,9 @@ export const metadata: Metadata = { title: 'Form W-9' };
 export default async function W9Page() {
   const { viewer, state, revisiting, bypass, locked } = await requireStep('w9');
   /*
-   * Only ever true here for somebody who signed this before the waiver was
-   * granted: canOpen refuses a waived account any document it has not already
-   * signed. So this page is a record to read, not a step in a flow, and the
-   * rail and the step number would both be describing a queue they are not in.
+   * Waived: nobody is waiting on this one. The page still works, because a
+   * waiver removes the obligation rather than the form, but the rail and the
+   * step number would both be describing a queue this person is not in.
    */
   const waived = isBypassed(bypass);
   const account = await findUserById(viewer.id).catch(() => null);
@@ -57,7 +57,14 @@ export default async function W9Page() {
     : null;
 
   const today = new Date().toISOString().slice(0, 10);
-  const back = previousStep('w9', { bypassed: waived });
+  /*
+   * Back goes where they came from. A waived account is not walking the queue,
+   * so there is no step behind this one; what there is, is the list on their
+   * profile that sent them here, and a page with no way back is a dead end.
+   */
+  const back = waived
+    ? { path: WAIVED_HOME, label: 'Your profile' }
+    : previousStep('w9');
   const onward = nextStep(state, { bypassed: waived });
 
   /*
@@ -115,12 +122,18 @@ export default async function W9Page() {
   return (
     <div>
       <div className="rise">
-        <p className="label-cap">{waived ? 'On file' : 'Step 3 of 4'}</p>
+        {/* Not a step in their queue, so not numbered like one. "On file" once
+            there is something on file; before that it is simply optional. */}
+        <p className="label-cap">
+          {waived ? (revisiting ? 'On file' : 'Not required') : 'Step 3 of 4'}
+        </p>
         <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">Form W-9</h1>
         <p className="plain mt-2.5">
           The IRS form every US contractor files with whoever pays them. It is what lets us issue a
-          1099 at the end of the year, and section 2 of the agreement you just signed makes it a
-          condition of being paid at all.
+          1099 at the end of the year
+          {waived
+            ? '.'
+            : ', and section 2 of the agreement you just signed makes it a condition of being paid at all.'}
         </p>
         <p className="plain-note mt-4">
           Your taxpayer number is encrypted before it is stored and is never shown back to anyone
@@ -131,8 +144,9 @@ export default async function W9Page() {
 
       {waived ? (
         <p className="plain-note mt-6">
-          This is waived for your account, so nothing here is being asked of you. It is kept because
-          you signed it, and you can read it back whenever you like.
+          {revisiting
+            ? 'This is waived for your account, so nothing here is being asked of you. It is kept because you filed it, and you can read it back whenever you like.'
+            : 'This is waived for your account, so nobody is waiting on it and nothing is held up by it. You are welcome to file it anyway if you would rather have it on record.'}
         </p>
       ) : (
         <div className="mt-6">

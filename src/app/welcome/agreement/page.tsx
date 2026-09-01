@@ -5,7 +5,7 @@ import { LockedDocument } from '@/components/onboarding/LockedDocument';
 import { RevisitNotice } from '@/components/onboarding/StepControls';
 import { formatDateTime } from '@/lib/analytics';
 import { isBypassed } from '@/lib/approval';
-import { nextStep, previousStep } from '@/lib/onboarding';
+import { nextStep, previousStep, WAIVED_HOME } from '@/lib/onboarding';
 import { requireStep } from '@/lib/onboarding-guard';
 import { readAgreement } from '@/lib/onboarding-store';
 import { findUserById } from '@/lib/users';
@@ -17,10 +17,9 @@ export const metadata: Metadata = { title: 'Affiliate agreement' };
 export default async function AgreementPage() {
   const { viewer, state, revisiting, bypass, locked } = await requireStep('agreement');
   /*
-   * Only ever true here for somebody who signed this before the waiver was
-   * granted: canOpen refuses a waived account any document it has not already
-   * signed. So this page is a record to read, not a step in a flow, and the
-   * rail and the step number would both be describing a queue they are not in.
+   * Waived: nobody is waiting on this one. The page still works, because a
+   * waiver removes the obligation rather than the form, but the rail and the
+   * step number would both be describing a queue this person is not in.
    */
   const waived = isBypassed(bypass);
   const account = await findUserById(viewer.id).catch(() => null);
@@ -35,7 +34,14 @@ export default async function AgreementPage() {
   // lands in is stamped by the server's.
   const today = new Date().toISOString().slice(0, 10);
 
-  const back = previousStep('agreement', { bypassed: waived });
+  /*
+   * Back goes where they came from. A waived account is not walking the queue,
+   * so there is no step behind this one; what there is, is the list on their
+   * profile that sent them here, and a page with no way back is a dead end.
+   */
+  const back = waived
+    ? { path: WAIVED_HOME, label: 'Your profile' }
+    : previousStep('agreement');
   const onward = nextStep(state, { bypassed: waived });
 
   /*
@@ -79,7 +85,11 @@ export default async function AgreementPage() {
   return (
     <div>
       <div className="rise">
-        <p className="label-cap">{waived ? 'On file' : 'Step 2 of 4'}</p>
+        {/* Not a step in their queue, so not numbered like one. "On file" once
+            there is something on file; before that it is simply optional. */}
+        <p className="label-cap">
+          {waived ? (revisiting ? 'On file' : 'Not required') : 'Step 2 of 4'}
+        </p>
         <h1 className="mt-1.5 font-display text-[26px] leading-[1.15]">The affiliate agreement</h1>
         <p className="plain mt-2.5">
           {revisiting
@@ -90,8 +100,9 @@ export default async function AgreementPage() {
 
       {waived ? (
         <p className="plain-note mt-6">
-          This is waived for your account, so nothing here is being asked of you. It is kept because
-          you signed it, and you can read it back whenever you like.
+          {revisiting
+            ? 'This is waived for your account, so nothing here is being asked of you. It is kept because you signed it, and you can read it back whenever you like.'
+            : 'This is waived for your account, so nobody is waiting on it and nothing is held up by it. You are welcome to sign it anyway if you would rather have it on file.'}
         </p>
       ) : (
         <div className="mt-6">

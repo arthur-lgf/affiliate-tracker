@@ -11,9 +11,11 @@ import { stepsFor, waivedSteps, type OnboardingState } from '@/lib/onboarding';
  *
  * The wording is doing real work here. "Bypass onboarding" sounds like a
  * setting; what it actually does is hand somebody the dashboard on this
- * admin's say-so and drop the two documents they would have signed. So the
- * button says what happens, the panel names what is dropped and what is still
- * to come, and turning it off says plainly that it will shut them out again.
+ * admin's say-so and stop asking them for the two documents they would have
+ * signed. Stop asking, not take away: both forms stay on their profile for
+ * them to fill in if they want to. So the button says what happens, the panel
+ * names what is no longer required and what is still to come, and turning it
+ * off says plainly that it will shut them out again.
  */
 export function BypassSwitch({
   userId,
@@ -32,9 +34,10 @@ export function BypassSwitch({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const on = isBypassed(bypass);
-  // What a waiver drops is fixed. What is left to fill in depends on whether
-  // one is in force, which is exactly the difference the panel has to show.
-  const dropped = waivedSteps({ bypassed: true }).map((step) => step.label);
+  // Which steps a waiver stops requiring is fixed. What is left outstanding
+  // depends on whether one is in force, which is exactly the difference the
+  // panel has to show.
+  const optional = waivedSteps({ bypassed: true }).map((step) => step.label);
   const outstanding = stepsFor({ bypassed: on })
     .filter((step) => !state[step.key])
     .map((step) => step.label);
@@ -74,8 +77,8 @@ export function BypassSwitch({
 
       <p className="text-[13px] leading-relaxed text-ink-soft">
         {on
-          ? `This account is not gated. The ${dropped.join(' and the ')} are waived, so there is nothing left for them to sign. Their own details and their bank details are on their profile, to fill in whenever they need to.`
-          : `Lets this person use the dashboard now, without waiting to be approved. The ${dropped.join(' and the ')} are skipped outright, so they are never asked to sign either one. Their own details and their bank details stay on their profile, to fill in in any order.`}
+          ? `This account is not gated. The ${optional.join(' and the ')} are waived, so nobody is waiting on either one, though they stay on their profile to fill in if this person wants them on file. Their own details and their bank details are there too.`
+          : `Lets this person use the dashboard now, without waiting to be approved. The ${optional.join(' and the ')} stop being asked for, so nothing is held up by them; both stay on this person’s profile, to fill in if they want to. Their own details and their bank details stay there too, in any order.`}
       </p>
 
       {outstanding.length > 0 ? (

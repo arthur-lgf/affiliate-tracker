@@ -138,7 +138,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         ) : (
           <p className="plain mt-2">
             {isBypassed(bypass)
-              ? 'Waived for this account, so they are not being asked to sign it.'
+              ? 'Waived for this account, so they are not being asked to sign it. They can still sign it themselves if they want it on file.'
               : 'Not signed yet.'}
           </p>
         )}
@@ -194,7 +194,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         ) : (
           <p className="plain mt-2">
             {isBypassed(bypass)
-              ? 'Waived for this account, so they are not being asked to file one.'
+              ? 'Waived for this account, so they are not being asked to file one. They can still file one themselves if they want it on record.'
               : 'Not filed yet. Nothing can be paid until it is.'}
           </p>
         )}

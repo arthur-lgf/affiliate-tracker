@@ -85,23 +85,14 @@ export async function actorFor(
   } catch (error) {
     return { response: storeResponse(error) };
   }
-  const { state, approval, bypass } = progress;
+  const { state, approval, bypass, signedAt } = progress;
 
   const waived = isBypassed(bypass);
   if (!canOpen(state, step, { bypassed: waived })) {
+    // Only ever the queue. A waived account is not in one: it may fill in any
+    // of these, in any order, including the two nobody is asking it for.
     return {
-      response: NextResponse.json(
-        {
-          // Two refusals that would otherwise wear the same wrong sentence. A
-          // waived account is not early for the W-9; it is never being asked
-          // for it, and "finish the earlier steps" describes a queue they are
-          // not in.
-          error: waived
-            ? 'The agreement and the W-9 are waived for this account.'
-            : 'Finish the earlier steps first.',
-        },
-        { status: 409 },
-      ),
+      response: NextResponse.json({ error: 'Finish the earlier steps first.' }, { status: 409 }),
     };
   }
 
@@ -111,7 +102,14 @@ export async function actorFor(
    * that stands between a hand-made POST and a signed document being quietly
    * replaced after somebody approved it.
    */
-  if (isLocked(step, state, { approved: approval.status === 'approved', bypassed: waived })) {
+  if (
+    isLocked(step, state, {
+      approved: approval.status === 'approved',
+      reviewedAt: approval.reviewedAt,
+      bypassedAt: bypass.at,
+      signedAt: step === 'agreement' || step === 'w9' ? signedAt[step] : null,
+    })
+  ) {
     return {
       response: NextResponse.json(
         {

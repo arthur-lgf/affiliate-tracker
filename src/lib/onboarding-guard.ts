@@ -31,7 +31,13 @@ import {
   type OnboardingState,
   type StepKey,
 } from './onboarding';
-import { onboardingEnabled, readProgress, type Progress } from './onboarding-store';
+import {
+  NOTHING_SIGNED,
+  onboardingEnabled,
+  readProgress,
+  type Progress,
+  type SignedAt,
+} from './onboarding-store';
 import { requireViewer, type Viewer } from './viewer';
 
 /**
@@ -74,6 +80,7 @@ const stateFor = cache(async (userId: string): Promise<Progress> => {
       state: { profile: true, agreement: true, w9: true, bank: true },
       approval: { ...NOT_APPLICABLE },
       bypass: { ...NO_BYPASS },
+      signedAt: { ...NOTHING_SIGNED },
     };
   }
 });
@@ -95,6 +102,9 @@ export type Onboarding = {
   approval: Approval;
   /** Whether an admin waived the gate for them. */
   bypass: Bypass;
+  /** When each signed document was filed. Only used to tell a document a waiver
+   *  was granted over from one filed afterwards. */
+  signedAt: SignedAt;
 };
 
 export async function onboardingFor(viewer: Viewer): Promise<Onboarding> {
@@ -107,10 +117,20 @@ export async function onboardingFor(viewer: Viewer): Promise<Onboarding> {
       locked: false,
       approval: { ...NOT_APPLICABLE },
       bypass: { ...NO_BYPASS },
+      signedAt: { ...NOTHING_SIGNED },
     };
   }
-  const { state, approval, bypass } = await stateFor(viewer.id);
-  return { viewer, state, applies: true, revisiting: false, locked: false, approval, bypass };
+  const { state, approval, bypass, signedAt } = await stateFor(viewer.id);
+  return {
+    viewer,
+    state,
+    applies: true,
+    revisiting: false,
+    locked: false,
+    approval,
+    bypass,
+    signedAt,
+  };
 }
 
 /** Where somebody waiting on an admin is sent. */
@@ -195,23 +215,24 @@ export async function requireStep(key: StepKey): Promise<Onboarding> {
   const onboarding = await onboardingFor(viewer);
   if (!onboarding.applies) redirect('/');
 
-  const { state, bypass } = onboarding;
+  const { state, bypass, signedAt } = onboarding;
   const bypassed = isBypassed(bypass);
   if (!canOpen(state, key, { bypassed })) {
     /*
-     * Two different refusals. Without a waiver this is the queue: they have not
-     * reached this step yet and are sent to the one they are on. With a waiver
-     * it is the agreement or the W-9, which are not being collected from them
-     * at all, so they go back to the list of what is.
+     * The queue: they have not reached this step yet and are sent to the one
+     * they are on. A waived account never lands here, because a waiver opens
+     * everything: what it takes away is the obligation, not the form.
      */
-    redirect(bypassed ? PROFILE_PATH : (nextStep(state) ?? { path: '/' }).path);
+    redirect((nextStep(state) ?? { path: '/' }).path);
   }
   return {
     ...onboarding,
     revisiting: state[key],
     locked: isLocked(key, state, {
       approved: onboarding.approval.status === 'approved',
-      bypassed,
+      reviewedAt: onboarding.approval.reviewedAt,
+      bypassedAt: bypass.at,
+      signedAt: key === 'agreement' || key === 'w9' ? signedAt[key] : null,
     }),
   };
 }

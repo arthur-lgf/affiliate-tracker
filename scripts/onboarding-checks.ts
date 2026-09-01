@@ -486,23 +486,29 @@ console.log('\n— what a waiver opens —');
 check('the first step, as always', canOpen(NOTHING_DONE, 'profile', OPEN));
 check('the bank step, with nothing else done', canOpen(NOTHING_DONE, 'bank', OPEN));
 /*
- * The point of the whole feature. An admin who waives onboarding has the
- * agreement on paper and the W-9 in an email; asking for both again inside an
- * app the person is already in collects a second copy of something already
- * filed. So they are not deferred, they are gone.
+ * A waiver shortens what is required, not what is available. The two documents
+ * stop being asked for and stop appearing in the queue, the count and the
+ * banner; they do not stop being forms this person may want to fill in.
+ *
+ * They used to be refused outright, which made a waiver a door locked from the
+ * outside: somebody who wanted their agreement on file had no way to put it
+ * there. Not required and not permitted are different things, and only the
+ * first one was ever meant.
  */
-check('but not the agreement', !canOpen(NOTHING_DONE, 'agreement', OPEN));
-check('nor the W-9', !canOpen(NOTHING_DONE, 'w9', OPEN));
-check('and a password of their own does not unlock either', !canOpen(state({ profile: true }), 'agreement', OPEN));
-check('nor does having done everything else', !canOpen(state({ profile: true, bank: true }), 'w9', OPEN));
-/*
- * The exception, and it only ever runs one way. Somebody who signed before the
- * waiver keeps the door to what they signed: skipping a signature is the point,
- * hiding a document somebody put their name to is not, and this app gives an
- * affiliate no other way to read it back.
- */
-check('a document already signed can still be read', canOpen(state({ profile: true, agreement: true }), 'agreement', OPEN));
+check('the agreement, which nobody is asking them for', canOpen(NOTHING_DONE, 'agreement', OPEN));
+check('and the W-9', canOpen(NOTHING_DONE, 'w9', OPEN));
+check('while without a waiver the W-9 is still behind the agreement', !canOpen(NOTHING_DONE, 'w9'));
+check('and in either order', canOpen(state({ w9: true }), 'agreement', OPEN));
+check('one already signed still opens, to be read back', canOpen(state({ profile: true, agreement: true }), 'agreement', OPEN));
 check('and a W-9 already filed', canOpen(state({ w9: true }), 'w9', OPEN));
+/*
+ * What the waiver does change is what anybody is waiting on. Filling one in
+ * must not turn it into work outstanding, or the banner and the queue would
+ * start counting a form nobody asked for.
+ */
+check('the agreement is still not something they owe', !stepsFor(OPEN).some((step) => step.key === 'agreement'));
+check('so signing it leaves the bank step next', nextStep(state({ profile: true, agreement: true, w9: true }), OPEN)?.key === 'bank');
+check('and nothing required is outstanding either way', firstMissingRequired(state({ profile: true, agreement: true }), OPEN) === null);
 // Without a waiver the corridor is unchanged.
 check('the queue still holds for everybody else', !canOpen(state({ profile: true }), 'w9'));
 check('and the default is no waiver', canOpen(state({ profile: true }), 'agreement'));
@@ -536,16 +542,18 @@ check('without one, the same request is sent to step 1', gateFor('/links', NOTHI
 check('the profile step is openable', gateFor('/welcome', NOTHING_DONE, OPEN) === null);
 check('and the bank step, out of order', gateFor('/welcome/bank', NOTHING_DONE, OPEN) === null);
 /*
- * The redirect that has to land somewhere real. Sending a waived account to
- * "the next step they owe" would send them to the very document being refused,
- * which is a loop; the list on their profile is the only honest destination.
+ * Both documents are pages a waived account can walk to now, rather than
+ * redirects. The profile list is still where an unknown path lands, because a
+ * waived account has no "next step you owe" to be marched to.
  */
 check('the waived home is their profile', WAIVED_HOME === '/profile');
-check('an unsigned agreement sends them to the list', gateFor('/welcome/agreement', NOTHING_DONE, OPEN) === WAIVED_HOME);
-check('and so does the W-9, with the password set', gateFor('/welcome/w9', state({ profile: true }), OPEN) === WAIVED_HOME);
-check('which is not the page they asked for', gateFor('/welcome/w9', state({ profile: true }), OPEN) !== '/welcome/w9');
-check('one they did sign opens', gateFor('/welcome/agreement', state({ profile: true, agreement: true }), OPEN) === null);
-check('an unknown welcome path lands on the list too', gateFor('/welcome/nope', NOTHING_DONE, OPEN) === WAIVED_HOME);
+check('the agreement opens with nothing signed', gateFor('/welcome/agreement', NOTHING_DONE, OPEN) === null);
+check('and so does the W-9', gateFor('/welcome/w9', state({ profile: true }), OPEN) === null);
+check('one they did sign opens too', gateFor('/welcome/agreement', state({ profile: true, agreement: true }), OPEN) === null);
+check('an unknown welcome path lands on the list', gateFor('/welcome/nope', NOTHING_DONE, OPEN) === WAIVED_HOME);
+// Without a waiver the corridor is unchanged: the W-9 sits behind the
+// agreement, and the agreement behind the password.
+check('the queue still holds for everybody else', gateFor('/welcome/w9', state({ profile: true })) === '/welcome/agreement');
 
 console.log('\n- when a signed document settles -');
 const SETTLED = { approved: true };
@@ -556,14 +564,138 @@ const SETTLED = { approved: true };
  */
 check('the W-9 is fixed once the account is approved', isLocked('w9', ALL_DONE, SETTLED));
 check('and the agreement with it', isLocked('agreement', ALL_DONE, SETTLED));
-check('a waiver settles them the same way', isLocked('agreement', state({ agreement: true }), { bypassed: true }));
+/*
+ * A waiver settles a document by when it arrived, not by existing.
+ *
+ * Waiving the gate is a decision taken by reading what was on file, exactly
+ * like approving, so what was on file is fixed by it. A document filed after
+ * the waiver was not read by anybody before that decision, and a waived account
+ * may now file one whenever it likes: locking it the instant it saved would
+ * mean a mistyped name needed an admin, on a form nobody asked for.
+ */
+const WAIVED_AT = '2026-08-20T12:00:00.000Z';
+const BEFORE = '2026-08-19T09:00:00.000Z';
+const AFTER = '2026-08-21T09:00:00.000Z';
+const SIGNED = state({ agreement: true, w9: true });
+check(
+  'a waiver settles what was already on file',
+  isLocked('agreement', SIGNED, { bypassedAt: WAIVED_AT, signedAt: BEFORE }),
+);
+check(
+  'but not one filed afterwards',
+  !isLocked('agreement', SIGNED, { bypassedAt: WAIVED_AT, signedAt: AFTER }),
+);
+check(
+  'so a waived account can correct what it just filed',
+  !isLocked('w9', SIGNED, { bypassedAt: WAIVED_AT, signedAt: AFTER }),
+);
+// Signed in the same second the waiver was granted: on file when it was taken.
+check(
+  'the moment of the waiver counts as before it',
+  isLocked('agreement', SIGNED, { bypassedAt: WAIVED_AT, signedAt: WAIVED_AT }),
+);
+/*
+ * The two timestamps come from different places and one of them writes
+ * "2026-08-20 12:00:00+00" where the other writes an ISO string. Compared as
+ * strings those sort the wrong way round, which would unlock every document
+ * signed on the day of its own waiver.
+ */
+check(
+  'a Postgres timestamp and an ISO one compare by instant, not by spelling',
+  isLocked('agreement', SIGNED, { bypassedAt: '2026-08-20 12:00:00+00', signedAt: BEFORE }),
+);
+check(
+  'and the same pair the other way round',
+  !isLocked('agreement', SIGNED, { bypassedAt: '2026-08-20 12:00:00+00', signedAt: AFTER }),
+);
+// The exact shape this database writes: a space, microseconds, and a bare
+// two-digit offset. Not an ISO string, so not something to hand an engine and
+// hope, since an unreadable date locks.
+check(
+  'microseconds and a bare offset are read too',
+  isLocked('agreement', SIGNED, {
+    bypassedAt: '2026-08-20 12:00:00.308994+00',
+    signedAt: BEFORE,
+  }),
+);
+check(
+  'and do not lock a later filing by failing to parse',
+  !isLocked('agreement', SIGNED, {
+    bypassedAt: '2026-08-20 12:00:00.308994+00',
+    signedAt: '2026-08-21 09:00:00.123456+00',
+  }),
+);
+// A row read without its date beside it: assume it was there, which is the
+// direction that protects the record rather than the convenience.
+check(
+  'an unknown signing date under a waiver stays locked',
+  isLocked('agreement', SIGNED, { bypassedAt: WAIVED_AT, signedAt: null }),
+);
+check(
+  'and so does an unreadable one',
+  isLocked('agreement', SIGNED, { bypassedAt: WAIVED_AT, signedAt: 'whenever' }),
+);
+/*
+ * Approval works the same way, and has to: every account waived here is also
+ * approved, so a rule that only understood waivers would settle their first
+ * filing on the spot anyway.
+ */
+check(
+  'approval settles what was on file when it was given',
+  isLocked('agreement', SIGNED, { approved: true, reviewedAt: WAIVED_AT, signedAt: BEFORE }),
+);
+check(
+  'and not a document filed after it',
+  !isLocked('agreement', SIGNED, { approved: true, reviewedAt: BEFORE, signedAt: AFTER }),
+);
+// Which is the case that matters in practice: an account approved long ago,
+// waived, and now filing an agreement nobody asked it for.
+check(
+  'so a waived and approved account can correct its own filing',
+  !isLocked('agreement', SIGNED, {
+    approved: true,
+    reviewedAt: BEFORE,
+    bypassedAt: WAIVED_AT,
+    signedAt: AFTER,
+  }),
+);
+check(
+  'while either decision alone is enough to settle an older one',
+  isLocked('agreement', SIGNED, {
+    approved: true,
+    reviewedAt: AFTER,
+    bypassedAt: BEFORE,
+    signedAt: BEFORE,
+  }),
+);
+// An older caller that says only "approved": treated as a decision with no
+// date, which locks. The behaviour this had before the dates existed.
+check(
+  'approval with no date recorded still settles it',
+  isLocked('agreement', SIGNED, { approved: true, signedAt: AFTER }),
+);
+// The normal flow, which is the whole reason approval cannot be dated-out of:
+// sign first, approve second, and it can never be swapped afterwards.
+check(
+  'a document signed before its approval is fixed for good',
+  isLocked('agreement', SIGNED, { approved: true, reviewedAt: AFTER, signedAt: BEFORE }),
+);
 // The other two are not documents and do change: people move house and banks
 // close accounts.
 check('their own details stay editable', !isLocked('profile', ALL_DONE, SETTLED));
 check('and their bank details', !isLocked('bank', ALL_DONE, SETTLED));
 // Nothing is locked before it exists, or the first submission would be refused.
 check('a W-9 that was never filed is not locked', !isLocked('w9', state({ profile: true }), SETTLED));
-check('nor an unsigned agreement under a waiver', !isLocked('agreement', state({ profile: true }), { bypassed: true }));
+check(
+  'nor an unsigned agreement under a waiver',
+  !isLocked('agreement', state({ profile: true }), { bypassedAt: WAIVED_AT, signedAt: null }),
+);
+// Which is what lets a waived account file one at all: the first save is not
+// refused by a lock on a document that does not exist yet.
+check(
+  'nor an unfiled W-9',
+  !isLocked('w9', state({ profile: true }), { bypassedAt: WAIVED_AT, signedAt: null }),
+);
 // Waiting, and turned down, are both states somebody can still act on.
 check('a pending account can still re-sign', !isLocked('agreement', ALL_DONE));
 check('and so can a declined one', !isLocked('w9', ALL_DONE, { approved: false }));

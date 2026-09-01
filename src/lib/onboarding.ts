@@ -97,8 +97,10 @@ export function stepsFor(options: { bypassed?: boolean } = {}): Step[] {
   return options.bypassed ? STEPS.filter((step) => !isSignedStep(step.key)) : STEPS;
 }
 
-/** The steps a waiver takes off the table. Pages ask for them so they can say
- *  so plainly, rather than quietly dropping two items somebody was expecting. */
+/** The steps a waiver stops requiring. Pages ask for them so they can say so
+ *  plainly, rather than quietly dropping two items somebody was expecting.
+ *  Still openable, and still fillable: see canOpen. What a waiver removes is
+ *  the obligation, not the form. */
 export function waivedSteps(options: { bypassed?: boolean } = {}): Step[] {
   return options.bypassed ? STEPS.filter((step) => isSignedStep(step.key)) : [];
 }
@@ -117,6 +119,13 @@ export const WAIVED_HOME = '/profile';
  * because what was approved and what is on file need never be the same thing
  * again.
  *
+ * Which is why a decision settles a document by *when* it arrived rather than
+ * by it existing at all. A waived account may still fill either of these in,
+ * and one filed after the decision was not read by anybody before it was taken,
+ * so it is not part of the record that decision rests on. It settles at the
+ * next one: filing anything that completes the set puts the account back in
+ * front of an admin.
+ *
  * It is not a permanent state and is not meant to read as one. An admin who
  * puts an account back in the review queue unlocks both documents, which is
  * how a genuine correction is made: somebody decides it is warranted.
@@ -127,11 +136,68 @@ export const WAIVED_HOME = '/profile';
 export function isLocked(
   key: StepKey,
   state: OnboardingState,
-  options: { approved?: boolean; bypassed?: boolean } = {},
+  options: {
+    approved?: boolean;
+    /** When the account was reviewed. Absent is treated as "before this
+     *  document", which keeps an older caller's behaviour. */
+    reviewedAt?: string | null;
+    bypassedAt?: string | null;
+    signedAt?: string | null;
+  } = {},
 ): boolean {
   if (!isSignedStep(key)) return false;
   if (!state[key]) return false;
-  return Boolean(options.approved) || Boolean(options.bypassed);
+
+  /*
+   * The two decisions that can rest on this document, each settling what was on
+   * file at the moment it was taken.
+   *
+   * Neither can settle a document filed afterwards, because there was nothing
+   * to read. That case used not to exist: an approval came after the signing,
+   * and a waived account could not file anything at all. It exists now, and
+   * locking a document the instant it saved would mean a mistyped name needed
+   * an admin on a form nobody had asked for.
+   *
+   * A resubmission puts the account back in the queue, so a document filed
+   * after a decision settles at the next one.
+   */
+  const decisions: (string | null | undefined)[] = [];
+  if (options.approved) decisions.push(options.reviewedAt);
+  if (options.bypassedAt) decisions.push(options.bypassedAt);
+  if (decisions.length === 0) return false;
+
+  const filed = instant(options.signedAt);
+  return decisions.some((taken) => {
+    const at = instant(taken);
+    // A decision with no readable date, or a document with none: assume the
+    // document was there. That is the direction that protects the record.
+    if (at === null || filed === null) return true;
+    return filed <= at;
+  });
+}
+
+/**
+ * A timestamp as a number, or null when there is nothing readable to compare.
+ *
+ * Parsed rather than string-compared: these arrive from different places and
+ * one of them writes "2026-08-24 12:00:00.308994+00" where the other writes an
+ * ISO string, and those two sort against each other in the wrong order.
+ *
+ * Normalised before parsing rather than trusting the engine with the first
+ * form. V8 happens to read it, but anything other than an ISO string is
+ * implementation-defined, and the failure here would be silent and one-way:
+ * an unreadable date is treated as a decision this document predates, so every
+ * signed document would quietly lock.
+ */
+function instant(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const iso = value
+    .trim()
+    .replace(' ', 'T')
+    // A bare "+00" is an offset Postgres writes and ISO 8601 does not.
+    .replace(/([+-]\d{2})$/, '$1:00');
+  const parsed = Date.parse(iso);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** "Step 2 of 4", counted over the steps that apply to this person. */
@@ -221,22 +287,24 @@ export function progressOf(
  * signing an agreement before you have set a password means signing it as an
  * account somebody else was handed the keys to. The order is the point.
  *
- * `bypassed` changes what the question even is. A waiver does not reorder the
- * queue, it shortens it: the agreement and the W-9 are not "later", they are
- * not being collected here at all. What is left is two items, in whatever order
- * they are wanted, and neither of them is a signature.
+ * `bypassed` changes what the question even is. A waiver shortens what is
+ * *required*, not what is available: the agreement and the W-9 stop being
+ * things anybody is waiting on, and stop appearing in the queue and the count.
+ * They do not stop being things this person may want to fill in.
  *
- * One exception, and it is about not taking things away from people. Somebody
- * who signed before the waiver was granted keeps the door to what they signed.
- * Skipping a signature is the point; hiding a document somebody has already put
- * their name to is not, and there is no other way for them to read it back.
+ * So a waived account can open all four, in whatever order it likes. It used to
+ * be refused the two documents unless it had already signed them, which made
+ * the waiver read as a door locked from the outside: somebody who wanted their
+ * agreement on file had no way to put it there, and nothing in the app said why
+ * beyond "there is nothing here for you to sign". Not required and not
+ * permitted are different things, and only the first one was ever meant.
  */
 export function canOpen(
   state: OnboardingState,
   key: StepKey,
   options: { bypassed?: boolean } = {},
 ): boolean {
-  if (options.bypassed) return isSignedStep(key) ? state[key] : true;
+  if (options.bypassed) return true;
   const index = STEP_KEYS.indexOf(key);
   if (index <= 0) return true;
   // Every earlier step done, or this is the one they are already on.

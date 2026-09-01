@@ -91,6 +91,20 @@ function embedded(value: unknown): boolean {
   return value !== null && value !== undefined;
 }
 
+/**
+ * When an embedded document was signed, or null if there is none.
+ *
+ * Read alongside the mere existence of the row because a waiver settles a
+ * document by when it arrived: one filed before the waiver was granted is part
+ * of what the admin decided on, and one filed after it is not. See isLocked.
+ */
+function embeddedAt(value: unknown): string | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== 'object') return null;
+  const at = (row as Record<string, unknown>).signed_at;
+  return typeof at === 'string' && at ? at : null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Where somebody is up to                                              */
 /* ------------------------------------------------------------------ */
@@ -121,10 +135,21 @@ function bypassFrom(row: Record<string, unknown>): Bypass {
 const PROGRESS_COLUMNS =
   'id, profile_completed_at, approval_status, submitted_at, reviewed_at, reviewed_by, ' +
   'review_note, approval_emailed_at, onboarding_bypassed_at, onboarding_bypassed_by, ' +
-  'onboarding_bypass_note, affiliate_agreements(user_id), w9_forms(user_id), ' +
-  'bank_details(user_id)';
+  'onboarding_bypass_note, affiliate_agreements(user_id, signed_at), ' +
+  'w9_forms(user_id, signed_at), bank_details(user_id)';
 
-export type Progress = { state: OnboardingState; approval: Approval; bypass: Bypass };
+/** When each signed document was filed, for the two steps that have one. Null
+ *  where there is no document. Nothing else is read from those rows here. */
+export type SignedAt = { agreement: string | null; w9: string | null };
+
+export const NOTHING_SIGNED: SignedAt = { agreement: null, w9: null };
+
+export type Progress = {
+  state: OnboardingState;
+  approval: Approval;
+  bypass: Bypass;
+  signedAt: SignedAt;
+};
 
 /**
  * Where somebody is up to, and whether anybody has let them in yet.
@@ -144,7 +169,12 @@ export async function readProgress(userId: string): Promise<Progress> {
     .maybeSingle();
   if (error) fail('reading onboarding progress', error);
   if (!data) {
-    return { state: { ...NOTHING_DONE }, approval: { ...UNREVIEWED }, bypass: { ...NO_BYPASS } };
+    return {
+      state: { ...NOTHING_DONE },
+      approval: { ...UNREVIEWED },
+      bypass: { ...NO_BYPASS },
+      signedAt: { ...NOTHING_SIGNED },
+    };
   }
 
   const row = data as unknown as Record<string, unknown>;
@@ -157,6 +187,10 @@ export async function readProgress(userId: string): Promise<Progress> {
     },
     approval: approvalFrom(row),
     bypass: bypassFrom(row),
+    signedAt: {
+      agreement: embeddedAt(row.affiliate_agreements),
+      w9: embeddedAt(row.w9_forms),
+    },
   };
 }
 

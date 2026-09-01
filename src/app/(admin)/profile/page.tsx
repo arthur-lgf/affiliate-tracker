@@ -4,7 +4,7 @@ import { ApprovalPill } from '@/components/ApprovalPill';
 import { formatDateTime } from '@/lib/analytics';
 import { isBypassed } from '@/lib/approval';
 import { maskAccount, maskTin } from '@/lib/mask';
-import { canOpen, isLocked, stepsFor, waivedSteps, type StepKey } from '@/lib/onboarding';
+import { canOpen, isLocked, stepsFor, waivedSteps, type Step, type StepKey } from '@/lib/onboarding';
 import { onboardingFor } from '@/lib/onboarding-guard';
 import { readAgreement, readBank, readW9 } from '@/lib/onboarding-store';
 import { findUserById } from '@/lib/users';
@@ -32,13 +32,13 @@ export default async function ProfilePage() {
   const { state, applies, approval, bypass } = await onboardingFor(viewer);
   const waived = isBypassed(bypass);
   /*
-   * Two lists, because a waiver produces two different kinds of item. The
-   * agreement and the W-9 are not late, they are not being collected; showing
-   * them in the same list with a disabled button would read as a form that has
-   * broken rather than a decision somebody made.
+   * Two lists, because a waiver produces two different kinds of item: things
+   * somebody is waiting on, and things nobody is. Both are fillable. Keeping
+   * them apart is what stops the second kind reading as work outstanding, and
+   * putting the same controls on both is what stops it reading as a door.
    */
   const mine = stepsFor({ bypassed: waived });
-  const skipped = waivedSteps({ bypassed: waived });
+  const spare = waivedSteps({ bypassed: waived });
   const approved = approval.status === 'approved';
 
   /** The two steps that produce a file. The other two produce rows. */
@@ -68,6 +68,65 @@ export default async function ProfilePage() {
       ? `${bank.bankName}, ${maskAccount(bank.accountLast4)}`
       : 'Where the ACH payment goes.',
   };
+
+  /* When each document was filed. A waiver settles what was on file when it was
+     granted and nothing after it, so the lock needs the date and not just the
+     fact that a row exists. */
+  const signedOn: Partial<Record<StepKey, string | null>> = {
+    agreement: agreement?.signedAt ?? null,
+    w9: w9?.signedAt ?? null,
+  };
+
+  /*
+   * One row, drawn the same way in both lists. Required and merely available
+   * differ in what the heading above them says, not in what you can do with
+   * them: an item you may fill in gets a button that fills it in.
+   */
+  function paperworkRow(step: Step) {
+    const done = state[step.key];
+    const open = canOpen(state, step.key, { bypassed: waived });
+    const settled = isLocked(step.key, state, {
+      approved,
+      reviewedAt: approval.reviewedAt,
+      bypassedAt: bypass.at,
+      signedAt: signedOn[step.key] ?? null,
+    });
+    const pdf = done ? pdfFor[step.key] : undefined;
+    return (
+      <li
+        key={step.key}
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-edge-faint px-5 py-4 last:border-b-0"
+      >
+        <span
+          aria-hidden
+          className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[2px] text-[11px] font-semibold ${
+            done ? 'bg-leaf-wash text-leaf-text' : 'bg-paper-sunk text-ink-dim'
+          }`}
+        >
+          {done ? '✓' : ''}
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold text-ink">{step.label}</span>
+          <span className="block text-[12px] text-ink-dim">{detail[step.key]}</span>
+        </span>
+
+        {pdf ? (
+          <a href={pdf} className="link-text flex-none text-[12px] font-medium">
+            Download PDF
+          </a>
+        ) : null}
+
+        {open ? (
+          <Link href={step.path} className="btn-outline btn-sm flex-none">
+            {settled ? 'View' : done ? 'Change' : 'Fill it in'}
+          </Link>
+        ) : (
+          <span className="flex-none text-[12px] text-ink-dim">Earlier steps come first</span>
+        )}
+      </li>
+    );
+  }
 
   /*
    * Centred, like the welcome pages this is the sequel to. A 900px column
@@ -104,9 +163,9 @@ export default async function ProfilePage() {
                 need, in any order.
               </p>
               <p className="plain mt-1.5">
-                The agreement and the W-9 have been waived, so there is nothing for you to sign.
-                Your bank details are the one thing a payment still needs, so they are worth doing
-                before your first one is due.
+                The agreement and the W-9 are waived, so nobody is waiting on them. You can still
+                fill either one in if you would rather have it on file. Your bank details are the
+                one thing a payment needs, so they are worth doing before your first one is due.
                 {bypass.by ? ` Waived by ${bypass.by}` : ''}
                 {bypass.at ? ` on ${formatDateTime(bypass.at)}` : ''}
                 {bypass.by || bypass.at ? '.' : ''}
@@ -134,84 +193,23 @@ export default async function ProfilePage() {
               </p>
             </div>
 
-            <ul>
-              {mine.map((step) => {
-                const done = state[step.key];
-                const open = canOpen(state, step.key, { bypassed: waived });
-                const settled = isLocked(step.key, state, { approved, bypassed: waived });
-                const pdf = done ? pdfFor[step.key] : undefined;
-                return (
-                  <li
-                    key={step.key}
-                    className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-edge-faint px-5 py-4 last:border-b-0"
-                  >
-                    <span
-                      aria-hidden
-                      className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-[2px] text-[11px] font-semibold ${
-                        done ? 'bg-leaf-wash text-leaf-text' : 'bg-paper-sunk text-ink-dim'
-                      }`}
-                    >
-                      {done ? '✓' : ''}
-                    </span>
+            <ul>{mine.map(paperworkRow)}</ul>
 
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-semibold text-ink">{step.label}</span>
-                      <span className="block text-[12px] text-ink-dim">{detail[step.key]}</span>
-                    </span>
-
-                    {pdf ? (
-                      <a href={pdf} className="link-text flex-none text-[12px] font-medium">
-                        Download PDF
-                      </a>
-                    ) : null}
-
-                    {open ? (
-                      <Link href={step.path} className="btn-outline btn-sm flex-none">
-                        {settled ? 'View' : done ? 'Change' : 'Fill it in'}
-                      </Link>
-                    ) : (
-                      <span className="flex-none text-[12px] text-ink-dim">
-                        Earlier steps come first
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-
-            {skipped.length > 0 ? (
-              <div className="border-t border-edge bg-paper-card px-5 py-4">
-                <p className="text-[13px] font-semibold text-ink">Not needed for your account</p>
-              <ul className="mt-2 flex flex-col gap-1.5">
-                {skipped.map((step) => (
-                  <li
-                    key={step.key}
-                    className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-ink-dim"
-                  >
-                    <span className="font-medium text-ink-soft">{step.label}</span>
-                    <span>
-                      {state[step.key]
-                        ? `${detail[step.key]}. Kept on file.`
-                        : 'Waived by an admin. There is nothing here for you to sign.'}
-                    </span>
-                    {/* Signed before the waiver was granted. Not being asked
-                        for it again is one thing; being unable to read back
-                        what you put your name to is another. */}
-                    {state[step.key] ? (
-                      <>
-                        <Link href={step.path} className="link-text">
-                          Read it
-                        </Link>
-                        {pdfFor[step.key] ? (
-                          <a href={pdfFor[step.key]} className="link-text">
-                            Download PDF
-                          </a>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+            {spare.length > 0 ? (
+              <div className="border-t border-edge bg-paper-card">
+                <div className="px-5 py-3.5">
+                  <p className="text-[13px] font-semibold text-ink">
+                    Not required for your account
+                  </p>
+                  {/* These used to end here, as two greyed lines saying there
+                      was nothing to sign. Not required is not the same as not
+                      allowed, and only the first was ever meant. */}
+                  <p className="plain mt-1">
+                    An admin waived these, so nobody is waiting on either one. Fill one in anyway
+                    if you would rather have it on file.
+                  </p>
+                </div>
+                <ul className="border-t border-edge-faint">{spare.map(paperworkRow)}</ul>
               </div>
             ) : null}
           </section>
