@@ -202,6 +202,9 @@ export async function readOnboarding(userId: string): Promise<OnboardingState> {
 /** One row per affiliate for the admin table: who has done what. */
 export type OnboardingSummary = {
   userId: string;
+  /** When the account was opened. The payout schedule falls back to this for
+   *  somebody waved through without signing: see anchorFor in lib/payout. */
+  createdAt: string;
   username: string;
   fullName: string;
   email: string;
@@ -221,7 +224,7 @@ export async function listOnboarding(): Promise<OnboardingSummary[]> {
   const { data, error } = await getSupabaseClient()
     .from('users')
     .select(
-      'id, username, full_name, email, position, mobile, usr, role, profile_completed_at, ' +
+      'id, created_at, username, full_name, email, position, mobile, usr, role, profile_completed_at, ' +
         'approval_status, submitted_at, reviewed_at, reviewed_by, review_note, ' +
         'approval_emailed_at, onboarding_bypassed_at, onboarding_bypassed_by, ' +
         'onboarding_bypass_note, affiliate_agreements(signed_at), w9_forms(signed_at), ' +
@@ -248,6 +251,7 @@ export async function listOnboarding(): Promise<OnboardingSummary[]> {
     const bankSavedAt = stamp(row.bank_details, 'saved_at');
     return {
       userId: String(row.id ?? ''),
+      createdAt: String(row.created_at ?? ''),
       username: String(row.username ?? ''),
       fullName: String(row.full_name ?? ''),
       email: String(row.email ?? ''),

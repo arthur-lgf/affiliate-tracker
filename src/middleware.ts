@@ -171,6 +171,18 @@ export const config = {
     // a taxpayer number. Gated exactly like /welcome, and for the same reason.
     '/profile',
     '/profile/:path*',
+    // Money. The schedule is everybody's pay on one page and the payslip is
+    // somebody's own, so neither may be reached without a session deciding
+    // which of those two things the reader is allowed to be looking at. The
+    // receipt route is here as well: it hands back a bank document.
+    '/payouts',
+    '/payouts/:path*',
+    '/payslips',
+    '/payslips/:path*',
+    '/api/payouts',
+    '/api/payouts/:path*',
+    '/api/payslips',
+    '/api/payslips/:path*',
     // Settings. A campaign decides where a link sends people, so the page and
     // the route behind it are gated like account administration is.
     '/settings',

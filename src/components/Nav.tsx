@@ -18,7 +18,14 @@ const ITEMS: Item[] = [
   { href: '/cpa', label: 'Cards' },
   { href: '/reports', label: 'Reports', adminOnly: true },
   { href: '/users', label: 'People', adminOnly: true },
+  // Who is owed what, and by when. Admin-only: it is everybody's money on one
+  // page, and the affiliate's half of the same records is their payslip below.
+  { href: '/payouts', label: 'Payouts', adminOnly: true },
   { href: '/settings', label: 'Settings', adminOnly: true },
+  // Their own pay history. Affiliates only, for the same reason Profile is:
+  // an admin has no payslips of their own, and reaches everybody's through
+  // Payouts.
+  { href: '/payslips', label: 'Payslip', affiliateOnly: true },
   // Their own paperwork. Affiliates only: an admin reaches anybody's, including
   // their own, through People, and a tab that duplicates a page they already
   // have is a tab that makes the row longer for nothing.
@@ -42,6 +49,8 @@ function isActive(href: string, pathname: string): boolean {
   if (href === '/cpa') return pathname.startsWith('/cpa');
   if (href === '/reports') return pathname.startsWith('/reports');
   if (href === '/users') return pathname.startsWith('/users');
+  if (href === '/payouts') return pathname.startsWith('/payouts');
+  if (href === '/payslips') return pathname.startsWith('/payslips');
   if (href === '/settings') return pathname.startsWith('/settings');
   if (href === '/profile') return pathname.startsWith('/profile');
   return pathname.startsWith('/links/new');

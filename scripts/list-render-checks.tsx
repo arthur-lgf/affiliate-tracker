@@ -46,6 +46,7 @@ import { AGREEMENT_VERSION, COMPANY } from '../src/lib/agreement';
 import { NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '../src/lib/approval';
 import { ApprovalPill } from '../src/components/ApprovalPill';
 import { visibleItems } from '../src/components/Nav';
+import { matchesQuery, type PayoutRow } from '../src/components/PayoutSchedule';
 import { NOTHING_DONE, STEPS } from '../src/lib/onboarding';
 import { affiliateRevenueOf, formatMoney, type ConversionView, type EarningsRow } from '../src/lib/analytics';
 import type { CpaRate } from '../src/lib/types';
@@ -608,6 +609,26 @@ check('unsaved changes hold it open', listShowing(false, true, 0) === true);
 check('so does a row that needs fixing', listShowing(false, false, 1) === true);
 check('an open list with a broken row stays open', listShowing(true, false, 2) === true);
 check('and once it is saved it can fold away again', listShowing(false, false, 0) === false);
+
+/*
+ * Two sides of the same records, and neither side sees the other's door. The
+ * schedule is everybody's pay on one page; a payslip is one person's own.
+ */
+check('an admin gets the payout schedule', visibleItems(true).some((item) => item.href === '/payouts'));
+check('and not a payslip tab, having no payslips', !visibleItems(true).some((item) => item.href === '/payslips'));
+check('an affiliate gets their payslip', visibleItems(false).some((item) => item.href === '/payslips'));
+check('and never the schedule', !visibleItems(false).some((item) => item.href === '/payouts'));
+
+/*
+ * The schedule's search box finds a person, not a period: somebody looking for
+ * "arthur" wants both of his cycles, not the one whose dates happen to match.
+ */
+const payoutRow = (name: string, usr: string) => ({ name, usr }) as PayoutRow;
+check('a name matches', matchesQuery(payoutRow('Arthur Reyes', 'arthur'), 'reyes'));
+check('whatever the case', matchesQuery(payoutRow('Arthur Reyes', 'arthur'), 'ARTHUR'));
+check('a tracking key matches', matchesQuery(payoutRow('Arthur Reyes', 'arthur'), 'arth'));
+check('an empty box matches everybody', matchesQuery(payoutRow('Arthur Reyes', 'arthur'), '   '));
+check('and somebody else does not', !matchesQuery(payoutRow('Arthur Reyes', 'arthur'), 'dana'));
 
 console.log('\n— accounts —');
 /*

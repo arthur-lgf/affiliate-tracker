@@ -843,3 +843,48 @@
     }
   }
 }
+
+/* ------------------------------------------------------------------
+   Printing.
+
+   One page in this app is a document rather than a screen: a payslip,
+   which people send to landlords and accountants. Saving it is the
+   browser's own print dialogue, so what comes out has to be the
+   statement and nothing else. Everything that belongs to the app
+   rather than to the document is marked .no-print and goes.
+
+   The panel loses its fill and its shadow-free edge stays, because a
+   grey card printed on white paper is a grey rectangle nobody asked
+   for; the rules inside it are what carry the structure on paper.
+   ------------------------------------------------------------------ */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff;
+    font-size: 11pt;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .panel {
+    border: none;
+    background: #ffffff;
+  }
+
+  /* Table rules have to survive the printer's default of dropping
+     backgrounds, so the header row keeps a border rather than a fill. */
+  thead tr {
+    background: #ffffff !important;
+    border-bottom: 1px solid #333333 !important;
+  }
+
+  a[href]::after {
+    content: '';
+  }
+}

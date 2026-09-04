@@ -15,6 +15,7 @@
 //   npx tsx scripts/agreement-checks.ts
 import {
   AGREEMENT_VERSION,
+  PAYMENT_DAYS,
   allParagraphs,
   CLAUSES,
   clausesFor,
@@ -47,6 +48,15 @@ check('and it is 45 calendar days', payment(AGREEMENT_VERSION).includes('45 cale
 check('section 4 says the same', clause4(AGREEMENT_VERSION).includes('net forty-five (45) days'), clause4(AGREEMENT_VERSION).slice(0, 60));
 check('and names the term the same way', clause4(AGREEMENT_VERSION).includes('"Net 45"'));
 check('and gives the same number of days', clause4(AGREEMENT_VERSION).includes('forty-five (45) calendar days'));
+/*
+ * The payment term is written here in words and counted in days by the payout
+ * schedule, which reads PAYMENT_DAYS. If the two ever disagree, somebody is
+ * paid on a date their own contract does not describe, so the number is read
+ * back out of the clause that promises it.
+ */
+check('the schedule counts the days this clause promises', clause4(AGREEMENT_VERSION).includes(`(${PAYMENT_DAYS}) calendar days`));
+check('and the summary names the same term', SUMMARY.find((row) => row.term === 'Payment Terms')!.details.startsWith(`Net ${PAYMENT_DAYS}`));
+check('which is 45', PAYMENT_DAYS === 45);
 /*
  * The half-update this is really guarding: a summary table that says one thing
  * and the clause underneath it that says another. Both are in the same
