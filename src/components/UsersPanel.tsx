@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { stepsFor, waivedSteps, type OnboardingState } from '@/lib/onboarding';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
 import { Pager } from './Pager';
+import { RowMenu, RowMenuItem } from './RowMenu';
 import { TableScroller } from './TableScroller';
 import { BusyLabel } from './Spinner';
 import { ApprovalPill } from './ApprovalPill';
@@ -651,71 +652,6 @@ export function UsersPanel({
                           <Link href={`/users/${encodeURIComponent(row.id)}`} className="btn-quiet btn-sm">
                             Details
                           </Link>
-                          {/*
-                            Affiliates only, and only live ones. An admin has no
-                            separate view to look at, and a disabled account has
-                            no view at all — the API refuses both, so this is
-                            about not offering a button that cannot work.
-                          */}
-                          {row.role === 'affiliate' && row.active && row.usr ? (
-                            <button
-                              type="button"
-                              className="btn-quiet btn-sm"
-                              disabled={working}
-                              aria-busy={working && running === 'view-as'}
-                              title={`See the app as ${row.username} sees it`}
-                              onClick={() => viewAs(row)}
-                            >
-                              <BusyLabel
-                                busy={working && running === 'view-as'}
-                                idle="Client View"
-                                busyLabel="Switching…"
-                              />
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="btn-quiet btn-sm"
-                            disabled={working}
-                            aria-busy={working && running === 'reset-password'}
-                            onClick={() => act(row, 'reset-password')}
-                          >
-                            <BusyLabel
-                              busy={working && running === 'reset-password'}
-                              idle="Reset password"
-                              busyLabel="Resetting…"
-                            />
-                          </button>
-                          {row.active ? (
-                            <button
-                              type="button"
-                              className="btn-quiet btn-sm"
-                              disabled={working || isSelf}
-                              aria-busy={working && running === 'disable'}
-                              title={isSelf ? 'You cannot disable your own account' : undefined}
-                              onClick={() => act(row, 'disable')}
-                            >
-                              <BusyLabel
-                                busy={working && running === 'disable'}
-                                idle="Disable"
-                                busyLabel="Disabling…"
-                              />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn-quiet btn-sm"
-                              disabled={working}
-                              aria-busy={working && running === 'enable'}
-                              onClick={() => act(row, 'enable')}
-                            >
-                              <BusyLabel
-                                busy={working && running === 'enable'}
-                                idle="Enable"
-                                busyLabel="Enabling…"
-                              />
-                            </button>
-                          )}
                           <button
                             type="button"
                             className="btn-danger btn-sm"
@@ -730,6 +666,79 @@ export function UsersPanel({
                               busyLabel="Deleting…"
                             />
                           </button>
+                          {/*
+                            Everything else. These are the once-in-a-while
+                            actions, and four of them spread across the row made
+                            every line something to read rather than scan.
+                          */}
+                          <RowMenu
+                            label={`More actions for ${row.username}`}
+                            disabled={working && running === 'delete'}
+                            busy={working && running !== 'delete'}
+                            busyLabel={
+                              running === 'view-as'
+                                ? 'Switching'
+                                : running === 'reset-password'
+                                  ? 'Resetting the password'
+                                  : running === 'disable'
+                                    ? 'Disabling'
+                                    : 'Enabling'
+                            }
+                          >
+                            {(close) => (
+                              <>
+                                {/*
+                                  Affiliates only, and only live ones. An admin
+                                  has no separate view to look at, and a disabled
+                                  account has no view at all: the API refuses
+                                  both, so this is about not offering something
+                                  that cannot work.
+                                */}
+                                {row.role === 'affiliate' && row.active && row.usr ? (
+                                  <RowMenuItem
+                                    title={`See the app as ${row.username} sees it`}
+                                    onClick={() => {
+                                      close();
+                                      viewAs(row);
+                                    }}
+                                  >
+                                    Client View
+                                  </RowMenuItem>
+                                ) : null}
+                                <RowMenuItem
+                                  onClick={() => {
+                                    close();
+                                    act(row, 'reset-password');
+                                  }}
+                                >
+                                  Reset password
+                                </RowMenuItem>
+                                {row.active ? (
+                                  <RowMenuItem
+                                    disabled={isSelf}
+                                    title={
+                                      isSelf ? 'You cannot disable your own account' : undefined
+                                    }
+                                    onClick={() => {
+                                      close();
+                                      act(row, 'disable');
+                                    }}
+                                  >
+                                    Disable
+                                  </RowMenuItem>
+                                ) : (
+                                  <RowMenuItem
+                                    onClick={() => {
+                                      close();
+                                      act(row, 'enable');
+                                    }}
+                                  >
+                                    Enable
+                                  </RowMenuItem>
+                                )}
+                              </>
+                            )}
+                          </RowMenu>
                         </span>
                       </td>
                     </tr>

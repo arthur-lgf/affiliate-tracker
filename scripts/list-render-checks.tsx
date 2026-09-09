@@ -16,6 +16,7 @@
 //
 //   npx tsx --tsconfig scripts/render.tsconfig.json scripts/list-render-checks.tsx
 import { renderToStaticMarkup } from 'react-dom/server';
+import { RowMenu, RowMenuItem } from '../src/components/RowMenu';
 import { ApprovalsList } from '../src/components/ApprovalsList';
 import { CpaBrowser } from '../src/components/CpaBrowser';
 // The grouping, the columns and the sort moved out of the component once the
@@ -1082,5 +1083,26 @@ console.log('\n— who a new link belongs to —');
   check('and never reads as blank', personLabel({ usr: 'ddd555', assignee: '', email: '' }).startsWith('ddd555'));
 }
 
+
+// The row overflow menu, shut.
+//
+// Only the trigger renders until somebody opens it, and that trigger is the
+// whole of this control's accessibility: with no label it is three dots with
+// no name, and with no aria-expanded a screen reader cannot tell an open menu
+// from a closed one. Both are one careless edit from vanishing, and neither
+// shows up in a type check.
+{
+  const shut = renderToStaticMarkup(
+    <RowMenu label="More actions for marvin">
+      {() => <RowMenuItem onClick={() => {}}>Client View</RowMenuItem>}
+    </RowMenu>,
+  );
+  check('the trigger is named for the person it acts on', shut.includes('aria-label="More actions for marvin"'));
+  check('it says that it opens a menu', shut.includes('aria-haspopup="menu"'));
+  check('and that the menu is currently shut', shut.includes('aria-expanded="false"'));
+  check('the three dots are decoration, not content', shut.includes('aria-hidden'));
+  check('nothing inside it is rendered until it opens', !shut.includes('Client View'));
+  check('and there is no menu in the markup either', !shut.includes('role="menu"'));
+}
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;
