@@ -30,3 +30,11 @@ credentials/
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Throwaway probe scripts.
+#
+# tsconfig includes **/*.ts, so next build typechecks scripts/ as well as
+# src/. A stale one-off probe is therefore enough to fail a production
+# deploy, which it once did: a Viewer literal here went out of date when the
+# type gained a field. They are kept on disk and out of the repository.
+scripts/_tmp-*
