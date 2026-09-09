@@ -649,7 +649,7 @@ export function UsersPanel({
                             a link nobody reads as "open this person".
                           */}
                           <Link href={`/users/${encodeURIComponent(row.id)}`} className="btn-quiet btn-sm">
-                            View
+                            Details
                           </Link>
                           {/*
                             Affiliates only, and only live ones. An admin has no
@@ -668,7 +668,7 @@ export function UsersPanel({
                             >
                               <BusyLabel
                                 busy={working && running === 'view-as'}
-                                idle="View as"
+                                idle="Client View"
                                 busyLabel="Switching…"
                               />
                             </button>
