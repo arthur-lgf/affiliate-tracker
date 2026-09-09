@@ -19,6 +19,7 @@ const admin: Viewer = {
   usr: '',
   isEnvAdmin: true,
   open: false,
+  actingAs: null,
 };
 
 const affiliate = (usr: string): Viewer => ({
@@ -28,6 +29,7 @@ const affiliate = (usr: string): Viewer => ({
   usr,
   isEnvAdmin: false,
   open: false,
+  actingAs: null,
 });
 
 (async () => {
