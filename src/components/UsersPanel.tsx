@@ -143,7 +143,7 @@ export function UsersPanel({
    * and a row has Reset password, Disable/Enable and Delete side by side — so
    * without this the spinner would have to go on all three or none.
    */
-  const [running, setRunning] = useState<null | 'reset-password' | 'enable' | 'disable' | 'delete'>(
+  const [running, setRunning] = useState<null | 'reset-password' | 'enable' | 'disable' | 'delete' | 'view-as'>(
     null,
   );
   const [issued, setIssued] = useState<Issued | null>(null);
@@ -269,6 +269,51 @@ export function UsersPanel({
         setIssued({ username: row.username, password: data.password, reason: 'reset' });
       }
       router.refresh();
+    } catch {
+      setError('Could not reach the server.');
+    } finally {
+      setBusy(null);
+      setRunning(null);
+    }
+  }
+
+  /**
+   * Become this affiliate, then land on the dashboard they see at sign-in.
+   *
+   * Confirmed first, because it is not a read: while it is active, anything
+   * submitted is stored as that person's own action, and an admin who clicked
+   * by accident should find that out here rather than three forms later.
+   */
+  async function viewAs(row: AccountRow) {
+    if (
+      !confirm(
+        `View the app as ${row.username}?
+
+` +
+          'You will see exactly what they see, including their onboarding if it is unfinished. ' +
+          'Anything you submit while looking is recorded as theirs.',
+      )
+    ) {
+      return;
+    }
+    setBusy(row.id);
+    setRunning('view-as');
+    setError(null);
+    try {
+      const response = await fetch('/api/view-as', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userId: row.id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || 'That did not work.');
+        return;
+      }
+      // A whole-document navigation, not router.push: the ticket is a cookie,
+      // and every server component has to re-render behind it rather than the
+      // client reusing a tree built as the admin.
+      window.location.assign('/');
     } catch {
       setError('Could not reach the server.');
     } finally {
@@ -606,6 +651,28 @@ export function UsersPanel({
                           <Link href={`/users/${encodeURIComponent(row.id)}`} className="btn-quiet btn-sm">
                             View
                           </Link>
+                          {/*
+                            Affiliates only, and only live ones. An admin has no
+                            separate view to look at, and a disabled account has
+                            no view at all — the API refuses both, so this is
+                            about not offering a button that cannot work.
+                          */}
+                          {row.role === 'affiliate' && row.active && row.usr ? (
+                            <button
+                              type="button"
+                              className="btn-quiet btn-sm"
+                              disabled={working}
+                              aria-busy={working && running === 'view-as'}
+                              title={`See the app as ${row.username} sees it`}
+                              onClick={() => viewAs(row)}
+                            >
+                              <BusyLabel
+                                busy={working && running === 'view-as'}
+                                idle="View as"
+                                busyLabel="Switching…"
+                              />
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="btn-quiet btn-sm"

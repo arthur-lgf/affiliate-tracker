@@ -67,7 +67,7 @@ export function adminPassword(): string {
  * accounts in play, changing the env password logs out every affiliate too.
  * Setting SESSION_SECRET explicitly is what decouples the two.
  */
-function signingSecret(): string | null {
+export function signingSecret(): string | null {
   const explicit = process.env.SESSION_SECRET?.trim();
   if (explicit) return `v2:${explicit}`;
   const password = adminPassword();
@@ -155,6 +155,16 @@ const encoder = new TextEncoder();
 const keyCache = new Map<string, Promise<CryptoKey>>();
 
 /**
+ * The HKDF info string for session cookies.
+ *
+ * Anything else signed with the same secret passes its own, so the two keys are
+ * genuinely different keys. Without that, a cookie minted for one purpose
+ * carries a valid signature for the other, and all that refuses it is whether
+ * the payload happens to fail validation.
+ */
+const SESSION_HMAC_INFO = 'session-cookie-hmac';
+
+/**
  * The HMAC key, derived from the secret rather than being the secret.
  *
  * This matters because the secret is usually ADMIN_PASSWORD — something a
@@ -169,8 +179,11 @@ const keyCache = new Map<string, Promise<CryptoKey>>();
  * is also typed into the sign-in form. Rotating ADMIN_PASSWORD still changes
  * the derived key, so it still signs everyone out.
  */
-async function hmacKey(secret: string): Promise<CryptoKey> {
-  const cached = keyCache.get(secret);
+async function hmacKey(secret: string, info = SESSION_HMAC_INFO): Promise<CryptoKey> {
+  // Keyed by both, or the second token type would be handed the session key and
+  // the domain separation below would be decorative.
+  const cacheKey = `${info}:${secret}`;
+  const cached = keyCache.get(cacheKey);
   if (cached) return cached;
 
   const derived = (async () => {
@@ -186,7 +199,7 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
         // would agree on, and its job is only to stop this key colliding with
         // some other use of the same input.
         salt: encoder.encode('ledger.session.v2'),
-        info: encoder.encode('session-cookie-hmac'),
+        info: encoder.encode(info),
       },
       ikm,
       256,
@@ -194,12 +207,20 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
     return crypto.subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   })();
 
-  keyCache.set(secret, derived);
+  keyCache.set(cacheKey, derived);
   return derived;
 }
 
-async function sign(payload: string, secret: string): Promise<string> {
-  const signature = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(payload));
+export async function signPayload(
+  payload: string,
+  secret: string,
+  info = SESSION_HMAC_INFO,
+): Promise<string> {
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await hmacKey(secret, info),
+    encoder.encode(payload),
+  );
   return base64UrlEncode(new Uint8Array(signature));
 }
 
@@ -232,7 +253,7 @@ export async function createSessionToken(
     expiresAt: now + sessionHours() * 3600 * 1000,
   };
   const payload = base64UrlEncode(encoder.encode(JSON.stringify(session)));
-  return `${payload}.${await sign(payload, secret)}`;
+  return `${payload}.${await signPayload(payload, secret)}`;
 }
 
 /**
@@ -256,7 +277,7 @@ export async function readSessionToken(
 
   let expected: string;
   try {
-    expected = await sign(payload, secret);
+    expected = await signPayload(payload, secret);
   } catch {
     return null;
   }

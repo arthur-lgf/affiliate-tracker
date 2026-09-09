@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { MobileTabs, Nav } from '@/components/Nav';
 import { SignOutButton } from '@/components/SignOutButton';
+import { ViewAsBanner } from '@/components/ViewAsBanner';
 import { authConfigured } from '@/lib/auth';
 import { initialsOf } from '@/lib/analytics';
 import { storageStatus, type StorageStatus } from '@/lib/store';
@@ -56,6 +57,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-screen bg-paper">
+      {/* Above everything, including the identity bar, because it is the one
+          thing that reframes what the identity bar is telling you. */}
+      {viewer.actingAs ? (
+        <ViewAsBanner
+          username={viewer.username}
+          usr={viewer.usr}
+          adminName={viewer.actingAs.adminName}
+        />
+      ) : null}
+
       {/*
         Two bars, and they do different jobs. The navy one is identity — which
         product, which account — and never changes as you move around. The white

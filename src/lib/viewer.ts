@@ -11,6 +11,7 @@ import { cache } from 'react';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { authConfigured, readSessionToken, SESSION_COOKIE } from './auth';
+import { resolveViewAs, VIEW_AS_COOKIE } from './impersonation';
 import { openViewer, readBasic, resolveSession, type Viewer } from './viewer-core';
 
 export type { Viewer } from './viewer-core';
@@ -22,6 +23,18 @@ export { isAdmin } from './viewer-core';
  * a second round trip to Postgres asking the same question.
  */
 export const currentViewer = cache(async (): Promise<Viewer | null> => {
+  const real = await realViewer();
+  if (!real) return null;
+
+  // Applied on top, never instead. A ticket that is missing, expired, forged or
+  // held by someone who is not an admin leaves `real` untouched, so the failure
+  // direction is always "you are yourself".
+  const jar = await cookies();
+  return (await resolveViewAs(real, jar.get(VIEW_AS_COOKIE)?.value)) ?? real;
+});
+
+/** The session as signed in, before any view-as ticket is considered. */
+async function realViewer(): Promise<Viewer | null> {
   if (!authConfigured()) return openViewer();
 
   const headerBag = await headers();
@@ -32,7 +45,7 @@ export const currentViewer = cache(async (): Promise<Viewer | null> => {
   const session = await readSessionToken(jar.get(SESSION_COOKIE)?.value);
   if (!session) return null;
   return resolveSession(session);
-});
+}
 
 /** For a page that any signed-in person may open. */
 export async function requireViewer(): Promise<Viewer> {

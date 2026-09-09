@@ -11,6 +11,7 @@
 
 import { NextResponse } from 'next/server';
 import { authConfigured, readSessionToken, SESSION_COOKIE } from './auth';
+import { resolveViewAs, VIEW_AS_COOKIE } from './impersonation';
 import { cookieValue, openViewer, readBasic, resolveSession, type Viewer } from './viewer-core';
 
 export type { Viewer } from './viewer-core';
@@ -24,6 +25,23 @@ export type { Viewer } from './viewer-core';
  * still bound to the tracking key the cookie claims.
  */
 export async function viewerFromRequest(request: Request): Promise<Viewer | null> {
+  const real = await realViewer(request);
+  if (!real) return null;
+
+  // The same application as the page side, and it has to be: a page rendering as
+  // the affiliate while its own fetches answered as the admin would show one
+  // person's screen filled with another person's numbers.
+  const cookie = cookieValue(request.headers.get('cookie'), VIEW_AS_COOKIE);
+  return (await resolveViewAs(real, cookie)) ?? real;
+}
+
+/**
+ * The caller as signed in, ignoring any view-as ticket.
+ *
+ * Separate because starting and ending an impersonation are the two things that
+ * must reason about the real admin rather than the borrowed identity.
+ */
+export async function realViewer(request: Request): Promise<Viewer | null> {
   if (!authConfigured()) return openViewer();
 
   const basic = readBasic(request.headers.get('authorization'));

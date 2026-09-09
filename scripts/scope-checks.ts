@@ -30,6 +30,7 @@ function viewer(over: Partial<Viewer>): Viewer {
     usr: 'arthur',
     isEnvAdmin: false,
     open: false,
+    actingAs: null,
     ...over,
   };
 }

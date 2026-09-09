@@ -9,6 +9,7 @@ import {
   safeNextPath,
   sessionCookieOptions,
 } from '@/lib/auth';
+import { clearedViewAsCookieOptions, VIEW_AS_COOKIE } from '@/lib/impersonation';
 import { rateLimit } from '@/lib/ratelimit';
 import { clientIp, isSecureRequest } from '@/lib/request';
 import { normalizeUsername, usersEnabled, verifyLogin } from '@/lib/users';
@@ -126,5 +127,10 @@ export async function POST(request: Request) {
     // is exactly the deployment where it matters most.
     sessionCookieOptions(isSecureRequest(request)),
   );
+  // Any view-as ticket belongs to whoever was here before. It is already inert
+  // for a different admin — the ticket names the one who minted it — but leaving
+  // it would silently resume the SAME admin's impersonation on their next
+  // sign-in, which is not what signing in looks like.
+  response.cookies.set(VIEW_AS_COOKIE, '', clearedViewAsCookieOptions(isSecureRequest(request)));
   return response;
 }

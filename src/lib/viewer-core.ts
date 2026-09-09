@@ -25,12 +25,23 @@ import {
 } from './auth';
 import { findUserById, usersEnabled } from './users';
 
+/**
+ * Set only while an admin is viewing the app as one of their affiliates.
+ *
+ * The viewer around it IS the affiliate — same role, same tracking key, same
+ * everything the pages read — so this is the one field remembering that an admin
+ * is behind it. Null on every ordinary session.
+ */
+export type ActingAs = { adminId: string; adminName: string };
+
 export type Viewer = {
   id: string;
   username: string;
   role: Role;
   /** The tracking key this viewer is confined to. Always '' for an admin. */
   usr: string;
+  /** Who is really looking, when it is not the person this viewer describes. */
+  actingAs: ActingAs | null;
   /** The ADMIN_USER/ADMIN_PASSWORD account, which has no database row. */
   isEnvAdmin: boolean;
   /**
@@ -50,6 +61,7 @@ export function envAdminViewer(): Viewer {
     usr: '',
     isEnvAdmin: true,
     open: false,
+    actingAs: null,
   };
 }
 
@@ -61,6 +73,7 @@ export function openViewer(): Viewer {
     usr: '',
     isEnvAdmin: false,
     open: true,
+    actingAs: null,
   };
 }
 
@@ -106,6 +119,7 @@ export async function resolveSession(session: Session): Promise<Viewer | null> {
     usr: account.role === 'admin' ? '' : account.usr,
     isEnvAdmin: false,
     open: false,
+    actingAs: null,
   };
 }
 

@@ -137,6 +137,13 @@ export const config = {
     '/',
     '/links',
     '/links/:path*',
+    // Starting and ending an impersonation. Listed for the throttle rather than
+    // for the auth: the route checks the session itself, but checkBasicAuth here
+    // is the ONLY thing rate-limiting Basic credentials, and a gated route left
+    // out of this list is an unthrottled password oracle whenever
+    // ALLOW_BASIC_AUTH is on.
+    '/api/view-as',
+    '/api/view-as/:path*',
     // Per-person earnings. Missing from this list, it would be a public page
     // listing what every affiliate is paid.
     '/affiliate',
