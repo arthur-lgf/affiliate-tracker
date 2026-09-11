@@ -192,6 +192,11 @@ check('the span is spelled out', oldAccount.span === 'last 102 days');
 // A history that happens to be six weeks wide gets weeks, and says weeks.
 const sevens = buildEarningsSeries([visit(41), visit(0)], [], { period: 'all' });
 check('a six-week history is drawn in weeks', sevens.title === 'Week by week');
+// A range between two days is written with "to", never a dash. It is shown as
+// a table heading, and no dash appears anywhere in this app's visible copy.
+check('a week-wide range reads "to"', sevens.buckets.every((b) => b.range.includes(' to ')));
+check('a seventeen-day range reads "to"', oldAccount.buckets.every((b) => b.range.includes(' to ')));
+check('and no range carries a dash', [...sevens.buckets, ...oldAccount.buckets].every((b) => !/[\u2013\u2014]/.test(b.range)));
 
 const nothing = buildEarningsSeries([], [], { period: 'all' });
 check('an empty account still draws a chart', nothing.buckets.length === 6);

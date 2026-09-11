@@ -42,7 +42,7 @@ export function Pager({
     total === 0
       ? 'Nothing to show'
       : paged
-        ? `Showing ${bounds.from.toLocaleString()}–${bounds.to.toLocaleString()} of ${total.toLocaleString()}`
+        ? `Showing ${bounds.from.toLocaleString()} to ${bounds.to.toLocaleString()} of ${total.toLocaleString()}`
         : `Showing all ${total.toLocaleString()}`;
 
   return (

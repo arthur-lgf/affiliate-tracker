@@ -816,7 +816,7 @@ export function buildEarningsSeries(
       start,
       end,
       label: bucketLabel(size, index, start),
-      range: size === 1 ? longDay(start) : `${shortDay(start)} – ${shortDay(end)}`,
+      range: size === 1 ? longDay(start) : `${shortDay(start)} to ${shortDay(end)}`,
       current: index === 0,
       visits: visitCount,
       approved: approvedCount,

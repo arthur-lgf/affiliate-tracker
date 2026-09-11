@@ -110,7 +110,7 @@ console.log('— links —');
 const html = renderToStaticMarkup(<LinksBrowser rows={rows} capture canEdit={false} />);
 const linkRows = (html.match(/<tr class="divider-row/g) || []).length;
 check('the first page holds ten rows, not all twenty-three', linkRows === 10);
-check('the count is of the whole matched list', html.includes('Showing 1–10 of 23'));
+check('the count is of the whole matched list', html.includes('Showing 1 to 10 of 23'));
 check('and the page count follows from it', html.includes('Page 1 of 3'));
 check('the size picker is offered', html.includes('>250</option>'));
 check('the person filter is drawn', html.includes('id="link-person"'));
@@ -164,7 +164,7 @@ const noop = () => {};
 const accounts = renderToStaticMarkup(
   <Pager total={23} page={3} perPage={10} onPage={noop} onPerPage={noop} label="Accounts" />,
 );
-check('the last page stops at the last row', accounts.includes('Showing 21–23 of 23'));
+check('the last page stops at the last row', accounts.includes('Showing 21 to 23 of 23'));
 check('it is named for what it holds', accounts.includes('Accounts'));
 const empty = renderToStaticMarkup(
   <Pager total={0} page={1} perPage={10} onPage={noop} onPerPage={noop} />,
@@ -213,7 +213,7 @@ check('a row shows half of its own amount', table.includes(formatMoney(affiliate
 const total = Math.round(earners.reduce((s, r) => s + affiliateRevenueOf(r.earnings), 0) * 100) / 100;
 check('the total is the sum of the rows', table.includes(formatMoney(total)));
 check('the footer admits it counts more than the page', table.includes('everyone, not just this page'));
-check('and the people page through', table.includes('Showing 1–10 of 23'));
+check('and the people page through', table.includes('Showing 1 to 10 of 23'));
 
 /*
  * The same table read by the affiliate it belongs to. Their rows arrive already
@@ -247,7 +247,7 @@ check(
   !ownTable.includes(formatMoney(12.35)) && !ownTable.includes(formatMoney(earnerTotals.earnings)),
 );
 check('the total is still the sum of the column above it', ownTable.includes(formatMoney(total)));
-check('they still page through', ownTable.includes('Showing 1–10 of 23'));
+check('they still page through', ownTable.includes('Showing 1 to 10 of 23'));
 
 console.log('\n— approvals —');
 const approvals: ConversionView[] = Array.from({ length: 23 }, (_, i) => ({
@@ -275,7 +275,7 @@ const list = renderToStaticMarkup(
   <ApprovalsList rows={approvals} canEdit={false} gross empty="none" />,
 );
 check('ten approvals to a page', (list.match(/<tr class="divider-row/g) || []).length === 10);
-check('with the rest a page away', list.includes('Showing 1–10 of 23'));
+check('with the rest a page away', list.includes('Showing 1 to 10 of 23'));
 for (const heading of ['Date', 'Person', 'Card']) {
   check(`the ${heading} column is drawn`, list.includes(`>${heading}</th>`));
 }
@@ -356,7 +356,7 @@ const card = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(rates, true)}
 
 // Fifteen cards out of twenty-one rates: the page counts cards.
 check('a page is ten cards, not ten rates', (card.match(/aria-expanded|Flat Card/g) || []).length >= 10);
-check('the pager counts cards', card.includes('Showing 1–10 of 15'));
+check('the pager counts cards', card.includes('Showing 1 to 10 of 15'));
 check('and names them', card.includes('Cards'));
 check('there is a search box', card.includes('id="cpa-search"'));
 check('the columns are sortable', card.includes('aria-sort'));
@@ -409,7 +409,7 @@ check('there is a way to fold them all', card.includes('Fold every card'));
 const flatOnly = renderToStaticMarkup(<CpaBrowser rows={ratesForViewer(flat, true)} gross />);
 check('a card with one rate has nothing to fold', !flatOnly.includes('aria-expanded'));
 check('and no fold-everything button', !flatOnly.includes('Fold every card'));
-check('twelve flat cards is twelve cards', flatOnly.includes('Showing 1–10 of 12'));
+check('twelve flat cards is twelve cards', flatOnly.includes('Showing 1 to 10 of 12'));
 
 const noRates = renderToStaticMarkup(<CpaBrowser rows={[]} gross />);
 check('an empty card says nothing is uploaded', noRates.includes('No rates uploaded yet'));
