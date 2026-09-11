@@ -1,20 +1,24 @@
 import type { LeadStatus } from './types';
 
 /**
- * Where a lead is in the funnel.
+ * Where a lead is in the funnel, in order.
  *
  * `pending` is stamped automatically the first time someone submits the form —
- * nobody has to set it. The other state is set by hand, either from the
- * dashboard or by editing the Status column in the spreadsheet, and is also
- * read off the approvals: see `displayStatus` below.
+ * nobody has to set it. `applied` is the step after: the merchant's report shows
+ * an application from this lead and no approval yet, and the report sync writes
+ * it. The last state is approved. It is set by hand, either from the dashboard
+ * or by editing the Status column in the spreadsheet, written by the sync when
+ * an approval names the lead, and also read off the approvals: see
+ * `displayStatus` below.
  *
- * The stored word is `registered`, which is what every row already written and
- * every cell already typed says. On screen it reads "Approved", which is what
- * the team calls it. Renaming the value as well would mean rewriting history in
- * a database and a spreadsheet to change a caption, so the two meet in exactly
- * one place — `statusLabel` — and nowhere else.
+ * The stored word for approved is `registered`, which is what every row already
+ * written and every cell already typed says. On screen it reads "Approved",
+ * which is what the team calls it. Renaming the value as well would mean
+ * rewriting history in a database and a spreadsheet to change a caption, so the
+ * two meet in exactly one place — `statusLabel` — and nowhere else. `applied`
+ * goes through the same place, so its caption can change the same way.
  */
-export const LEAD_STATUSES = ['pending', 'registered'] as const;
+export const LEAD_STATUSES = ['pending', 'applied', 'registered'] as const;
 
 export const DEFAULT_LEAD_STATUS: LeadStatus = 'pending';
 
@@ -28,10 +32,6 @@ export const DEFAULT_LEAD_STATUS: LeadStatus = 'pending';
  * for months with "registered", and the screen now says "Approved", so somebody
  * typing what they read has to land in the same place as somebody typing what
  * they have always typed.
- *
- * Anything unrecognised (including an empty cell, which is what every row
- * written before this column existed has) counts as pending. A lead is only
- * through when someone has said so.
  */
 const REGISTERED_SPELLINGS = new Set([
   'registered',
@@ -58,24 +58,96 @@ const REGISTERED_SPELLINGS = new Set([
   '✔',
 ]);
 
-/** Coerce anything — a sheet cell, a legacy JSON row, an API body — to a status. */
+/**
+ * Values that mean the lead has applied and is waiting on the merchant. Matched
+ * whole, like the list above and for the same reason: "not applied" has to stay
+ * pending.
+ *
+ * No word may appear in both lists. One that did would read as whichever list
+ * happens to be checked first, which is a decision nobody made.
+ */
+const APPLIED_SPELLINGS = new Set([
+  'applied',
+  'apply',
+  'application',
+  'application submitted',
+  'aplicado',
+  'aplicada',
+  'solicitado',
+  'solicitada',
+  'solicitud',
+]);
+
+/**
+ * Coerce anything — a sheet cell, a legacy JSON row, an API body — to a status.
+ *
+ * Anything unrecognised (including an empty cell, which is what every row
+ * written before this column existed has) counts as pending. A lead is only
+ * further along when someone, or the merchant's report, has said so.
+ */
 export function normalizeLeadStatus(raw: unknown): LeadStatus {
   if (typeof raw !== 'string') return DEFAULT_LEAD_STATUS;
   const value = raw.trim().toLowerCase().replace(/\s+/g, ' ');
-  return REGISTERED_SPELLINGS.has(value) ? 'registered' : DEFAULT_LEAD_STATUS;
+  if (REGISTERED_SPELLINGS.has(value)) return 'registered';
+  if (APPLIED_SPELLINGS.has(value)) return 'applied';
+  return DEFAULT_LEAD_STATUS;
 }
 
+/**
+ * The caption for each stored word. A record rather than a conditional so that
+ * a status added later cannot reach the screen without one: the compiler asks.
+ */
+const LABELS: Record<LeadStatus, string> = {
+  pending: 'Pending',
+  applied: 'Applied',
+  registered: 'Approved',
+};
+
 export function statusLabel(status: LeadStatus): string {
-  return status === 'registered' ? 'Approved' : 'Pending';
+  // Something that is not a status at all, from an untyped row, reads as
+  // Pending, the way anything that was not "registered" always has.
+  return LABELS[status] ?? LABELS.pending;
+}
+
+const RANKS: Record<LeadStatus, number> = { pending: 0, applied: 1, registered: 2 };
+
+/**
+ * How far along the funnel a status is, for moves that may only go forward.
+ *
+ * The report sync compares ranks before it writes, so a report showing an
+ * application can never pull an approved lead back to applied. A report can
+ * show a lead's application without the approval that followed it, because the
+ * two are counted on different days and an approval may have been recorded by
+ * hand; that is a narrower view of the same lead, not news that it was
+ * un-approved. Only a person, with the toggle, moves a lead backwards.
+ */
+export function statusRank(status: LeadStatus): number {
+  return RANKS[status] ?? 0;
+}
+
+/**
+ * Where the admin's one-click toggle takes a lead.
+ *
+ * Marking a lead approved is always one click, from either earlier state.
+ * Taking an approval back returns the lead to where the evidence leaves it:
+ * applied when a card is on record, since the merchant did see an application,
+ * and pending when nothing is. Sending a lead with a card back to pending would
+ * contradict the card shown beside it.
+ */
+export function nextManualStatus(row: { status: LeadStatus; card: string }): LeadStatus {
+  if (row.status !== 'registered') return 'registered';
+  return row.card.trim() === '' ? 'pending' : 'applied';
 }
 
 /**
  * What a lead reads as once the approvals are taken into account.
  *
- * An approval outranks the stored status. The merchant has agreed to pay for
- * this person, which is stronger evidence that they went through than anybody's
- * memory of ticking a box — and a lead left at pending underneath one is not a
- * state somebody chose, it is one nothing got round to updating.
+ * An approval outranks the stored status, pending or applied. The merchant has
+ * agreed to pay for this person, which is stronger evidence that they went
+ * through than anybody's memory of ticking a box — and a lead left below
+ * approved underneath one is not a state somebody chose, it is one nothing got
+ * round to updating. Without an approval the stored status stands as it is,
+ * applied included.
  *
  * Deriving it rather than only writing it is what keeps the two panels honest:
  * the approvals list and the leads list are reading the same fact, so they

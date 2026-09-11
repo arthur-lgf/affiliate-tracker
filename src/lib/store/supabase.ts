@@ -120,6 +120,20 @@ function fail(context: string, error: PostgrestErrorish): never {
       'Supabase refused the request. SUPABASE_SERVICE_ROLE_KEY must be the service role key, not the publishable one.',
     );
   }
+  // PGRST204 is PostgREST saying a write named a column the table does not
+  // have. Ledger only names columns its own migrations create, so this is a
+  // database whose migrations are behind the code (card, before
+  // 20260910120000) rather than a bad request, with one fix for every write
+  // that hits it. The column and table are read out of PostgREST's wording
+  // when it has the usual shape; the wording itself is not passed on.
+  if (code === 'PGRST204') {
+    const named = /'([A-Za-z0-9_]+)' column of '([A-Za-z0-9_.]+)'/.exec(message);
+    throw new StoreConfigError(
+      named
+        ? `The ${named[2]} table in this Supabase project has no "${named[1]}" column yet, so its migrations are behind this version of Ledger. Run: npx supabase db push`
+        : 'A column this version of Ledger writes is missing from this Supabase project, so its migrations are behind. Run: npx supabase db push',
+    );
+  }
 
   throw new Error(`${context}: ${message}${code ? ` (${code})` : ''}`);
 }
@@ -251,6 +265,40 @@ function submissionFromRow(row: Record<string, unknown>): Submission {
     userAgent: text(row.user_agent),
     ip: text(row.ip),
     status: normalizeLeadStatus(row.status),
+    // text() rather than a straight read: a database the card migration has
+    // not reached yet has no such column, and every lead in it has no card.
+    card: text(row.card),
+  };
+}
+
+/**
+ * A lead as a submissions row, with every column the table has.
+ *
+ * The inverse of submissionFromRow and kept beside it, so a column added to
+ * one is added to the other. scripts/migrate-to-supabase.ts copies leads in
+ * with it. Lead capture does not use it: capture must not name the card
+ * column, for the reason given in addSubmission.
+ */
+export function submissionToRow(row: Submission): Record<string, unknown> {
+  return {
+    id: row.id,
+    created_at: row.createdAt,
+    slug: row.slug,
+    usr: row.usr,
+    assignee: row.assignee,
+    campaign: row.campaign,
+    full_name: row.fullName,
+    email: row.email,
+    phone: row.phone,
+    destination: row.destination,
+    referrer: row.referrer,
+    user_agent: row.userAgent,
+    ip: row.ip,
+    status: row.status,
+    // Every column, card included, unlike addSubmission. A copy that names the
+    // card fails loudly on a database without the column, where leaving it out
+    // would lose every card in the move without a word.
+    card: row.card,
   };
 }
 
@@ -362,6 +410,10 @@ export function createSupabaseStore(): Store {
         user_agent: input.userAgent,
         ip: input.ip,
         status: DEFAULT_LEAD_STATUS,
+        // No card: the column default gives every new lead ''. Naming the
+        // column here would fail every capture on a database the card
+        // migration has not reached yet, and capture is the one write a
+        // visitor makes.
       };
       const { data, error } = await supabase().from('submissions').insert(row).select().single();
       if (error) fail('saving a lead', error);
@@ -369,9 +421,29 @@ export function createSupabaseStore(): Store {
     },
 
     async updateSubmission(id: string, patch: SubmissionPatch) {
+      // Only the fields the patch carries. The admin toggle sends a status on
+      // its own, and must neither blank the card a sync recorded nor name a
+      // column that a database without the card migration does not have.
+      const row: Record<string, unknown> = {};
+      if (patch.status !== undefined) row.status = patch.status;
+      if (patch.card !== undefined) row.card = patch.card;
+
+      // As in updateLink: an UPDATE with no SET clause is refused, and asking
+      // to change nothing is not an error, so read the row back instead.
+      if (Object.keys(row).length === 0) {
+        const { data, error } = await supabase()
+          .from('submissions')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+        if (error) fail('reading a lead', error);
+        if (!data) throw new StoreNotFoundError('Lead not found');
+        return submissionFromRow(data as Record<string, unknown>);
+      }
+
       const { data, error } = await supabase()
         .from('submissions')
-        .update({ status: patch.status })
+        .update(row)
         .eq('id', id)
         .select()
         .maybeSingle();

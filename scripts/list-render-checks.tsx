@@ -32,7 +32,7 @@ import {
 import { listShowing, problemsIn } from '../src/components/CampaignSettings';
 import { US_STATES } from '../src/lib/address';
 import { ratesForViewer } from '../src/lib/cpa';
-import { sortRows } from '../src/lib/report-table';
+import { BLANK, sortRows } from '../src/lib/report-table';
 import { EarnersTable } from '../src/components/EarnersTable';
 import { LinksBrowser, type LinkRow } from '../src/components/LinksBrowser';
 import { Pager } from '../src/components/Pager';
@@ -48,9 +48,24 @@ import { NO_BYPASS, UNREVIEWED, type Approval, type Bypass } from '../src/lib/ap
 import { ApprovalPill } from '../src/components/ApprovalPill';
 import { visibleItems } from '../src/components/Nav';
 import { matchesQuery, type PayoutRow } from '../src/components/PayoutSchedule';
+import { appliedSummary, applyLabel, leadPlanNote } from '../src/components/ReportRunner';
+import {
+  CardName,
+  LEAD_FILTERS,
+  StatusNote,
+  StatusPill,
+  StatusToggle,
+  filterLabel,
+  leadCounts,
+  matchesFilter,
+  noLeadsText,
+  withShownStatus,
+  type LeadRow,
+} from '../src/components/LeadsPanel';
+import { statusLabel } from '../src/lib/status';
 import { NOTHING_DONE, STEPS } from '../src/lib/onboarding';
 import { affiliateRevenueOf, formatMoney, type ConversionView, type EarningsRow } from '../src/lib/analytics';
-import type { CpaRate } from '../src/lib/types';
+import type { CpaRate, LeadStatus } from '../src/lib/types';
 
 let pass = 0;
 let fail = 0;
@@ -1103,6 +1118,249 @@ console.log('\n— who a new link belongs to —');
   check('the three dots are decoration, not content', shut.includes('aria-hidden'));
   check('nothing inside it is rendered until it opens', !shut.includes('Client View'));
   check('and there is no menu in the markup either', !shut.includes('role="menu"'));
+}
+
+// The sync's words.
+//
+// The one button that writes money says what it is about to write, and now
+// that the sync moves leads as well, what it is about to do to them. The words
+// for a lead's state have to be the captions the leads list shows, or the
+// button promises a state by a name nobody sees anywhere else; and none of it
+// may carry a dash. ReportRunner holds state from the first render, so the
+// sentences are exported and read directly rather than rendered.
+{
+  const approvedWord = statusLabel('registered').toLowerCase();
+  const appliedWord = statusLabel('applied').toLowerCase();
+  const plan = { toCreate: 3, amountToCreate: 412.5, leadsToMark: 2, leadsToApply: 1, cardsToRecord: 1 };
+  const nothing = { toCreate: 0, amountToCreate: 0, leadsToMark: 0, leadsToApply: 0, cardsToRecord: 0 };
+  const label = applyLabel(plan);
+  check('the money comes first', label.startsWith('Write 3 approvals ('));
+  check('with the amount', label.includes('412.50'));
+  check(
+    "then the leads, in the leads list's own words",
+    label.includes(`, mark 2 leads ${approvedWord} and 1 ${appliedWord}`),
+  );
+  check('then the cards', label.endsWith(', record a card on 1 lead'));
+  check('a plan that only moves one lead to applied says so', applyLabel({ ...nothing, leadsToApply: 1 }) === 'Mark 1 lead applied');
+  check('one that only approves', applyLabel({ ...nothing, leadsToMark: 2 }) === `Mark 2 leads ${approvedWord}`);
+  check('one that only records cards', applyLabel({ ...nothing, cardsToRecord: 3 }) === 'Record cards on 3 leads');
+  check(
+    'approvals with no lead changes say nothing about leads',
+    applyLabel({ ...nothing, toCreate: 1, amountToCreate: 10 }).startsWith('Write 1 approval (') &&
+      !applyLabel({ ...nothing, toCreate: 1, amountToCreate: 10 }).includes('lead'),
+  );
+
+  const done = { toCreate: 3, created: 3, leadsMarked: 2, leadsApplied: 1, cardsRecorded: 1 };
+  check(
+    'the result says what was written',
+    appliedSummary(done) ===
+      `3 approvals written to Ledger, 2 leads marked ${approvedWord} and 1 ${appliedWord}, and a card recorded on 1 lead.`,
+  );
+  check(
+    'a run that only moved leads does not open with no approvals',
+    appliedSummary({ toCreate: 0, created: 0, leadsMarked: 0, leadsApplied: 1, cardsRecorded: 0 }) ===
+      `1 lead marked ${appliedWord}.`,
+  );
+  check(
+    'a run that meant to write approvals says how many made it',
+    appliedSummary({ toCreate: 3, created: 0, leadsMarked: 1 }).startsWith('0 approvals written to Ledger, '),
+  );
+  check('a run with nothing in it still says so', appliedSummary({ toCreate: 0, created: 0 }) === '0 approvals written to Ledger.');
+
+  const note = leadPlanNote(plan);
+  check('the plan note names the approved leads by their caption', note.includes(`not marked ${approvedWord} yet`));
+  check('and the applied ones', note.includes(`to ${appliedWord}`));
+  check('and the cards', note.includes('gains a card'));
+  check('and leaves out a group with nobody in it', !leadPlanNote({ ...nothing, leadsToApply: 2 }).includes('not marked'));
+
+  const everything = [
+    label,
+    applyLabel({ ...nothing, leadsToApply: 1 }),
+    applyLabel({ ...nothing, cardsToRecord: 3 }),
+    appliedSummary(done),
+    appliedSummary({ toCreate: 0, created: 0, leadsApplied: 2, cardsRecorded: 1 }),
+    note,
+    leadPlanNote({ ...nothing, leadsToApply: 2 }),
+  ];
+  check('none of the sync wording carries a dash', everything.every((text) => !/[–—]/.test(text)));
+}
+
+// The leads list, in three states.
+//
+// LeadsPanel calls useRouter at the top, like UsersPanel, so it is not rendered
+// whole. What it rests on is exported and read here instead: the status each
+// row is shown with, what each filter option counts, the words for a filter
+// that finds nobody, the pill, the toggle, the card cell and the note that
+// explains the states. The toggle's accessible name is the one place a screen
+// reader hears where a click will send a lead, so it is pinned for every case,
+// and so is the click itself.
+{
+  const pendingWord = statusLabel('pending').toLowerCase();
+  const appliedWord = statusLabel('applied').toLowerCase();
+  const approvedWord = statusLabel('registered').toLowerCase();
+
+  const leadRow = (over: Partial<LeadRow>): LeadRow => ({
+    id: 'rc7czk6xa61y',
+    fullName: 'Priya Nair',
+    email: 'priya@example.test',
+    phone: '',
+    campaign: 'Best Cards',
+    slug: 'best-cards',
+    assignee: 'Mark',
+    status: 'pending',
+    card: '',
+    hasApproval: false,
+    age: '4 hrs ago',
+    capturedAt: 'Sep 1, 2026, 9:00 AM',
+    ...over,
+  });
+
+  const rows: LeadRow[] = [
+    leadRow({ id: 'p1' }),
+    leadRow({ id: 'a1', status: 'applied', card: 'Chase Sapphire Preferred' }),
+    leadRow({ id: 'a2', status: 'applied', card: 'Amex Gold' }),
+    leadRow({ id: 'r1', status: 'registered', card: 'Chase Freedom' }),
+    // Stored as applied, but an approval names it.
+    leadRow({ id: 'a3', status: 'applied', card: 'Amex Gold', hasApproval: true }),
+  ];
+  const shownAs = (list: LeadRow[], id: string) => list.find((r) => r.id === id)?.status;
+
+  const shown = withShownStatus(rows, {});
+  check('an approval outranks a stored applied', shownAs(shown, 'a3') === 'registered');
+  check('without one, applied is shown as applied', shownAs(shown, 'a1') === 'applied');
+  const clicked = withShownStatus(rows, { p1: 'registered', a3: 'pending' });
+  check('a click shows before the server answers', shownAs(clicked, 'p1') === 'registered');
+  check('but never over an approval', shownAs(clicked, 'a3') === 'registered');
+  check('and the rows it was handed are left as they were', rows[0]!.status === 'pending');
+
+  // Counted from what the pills say, so the number on an option is the number
+  // of rows choosing it shows.
+  const counts = leadCounts(shown);
+  check('All counts every lead', counts.all === 5);
+  check(
+    'each state counts the leads shown in it',
+    counts.pending === 1 && counts.applied === 2 && counts.registered === 2,
+  );
+  check('the three states add up to All', counts.pending + counts.applied + counts.registered === counts.all);
+  check(
+    'each option finds as many leads as it says',
+    LEAD_FILTERS.every((f) => shown.filter((r) => matchesFilter(r, f)).length === counts[f]),
+  );
+  check('the options run All, then the funnel in order', LEAD_FILTERS.join() === 'all,pending,applied,registered');
+  check('All is called All', filterLabel('all') === 'All');
+  check(
+    'and each state by its caption',
+    (['pending', 'applied', 'registered'] as const).every((s) => filterLabel(s) === statusLabel(s)),
+  );
+  // An untyped row reads Pending on its pill (statusLabel's fallback), so it
+  // has to count and filter as pending too, or the options stop adding up.
+  const odd = { status: 'nonsense' as LeadStatus };
+  check('a status that is not one counts as pending', leadCounts([odd]).pending === 1);
+  check('and is found under pending', matchesFilter(odd, 'pending') && !matchesFilter(odd, 'applied'));
+
+  check('a filter that finds nobody names the state', noLeadsText('applied') === `No ${appliedWord} leads in this list.`);
+  check('by its caption, not the stored word', noLeadsText('registered') === `No ${approvedWord} leads in this list.`);
+  check('pending too', noLeadsText('pending') === `No ${pendingWord} leads in this list.`);
+
+  const pill = (row: LeadRow) => renderToStaticMarkup(<StatusPill row={row} />);
+  const dotOf = (markup: string) => /style="background:([^";]+)/.exec(markup)?.[1] ?? '';
+  const pendingPill = pill(leadRow({}));
+  const appliedPill = pill(leadRow({ status: 'applied', card: 'Amex Gold' }));
+  const approvedPill = pill(leadRow({ status: 'registered' }));
+  check('an applied lead gets its own pill', appliedPill.includes('data-status="applied"'));
+  check('captioned by statusLabel', appliedPill.includes(`${statusLabel('applied')}</span>`));
+  const dots = [pendingPill, appliedPill, approvedPill].map(dotOf);
+  check('each state has a dot of its own', dots.every(Boolean) && new Set(dots).size === 3);
+  check('applied is not green, which means approved', !dots[1]!.includes('leaf'));
+  check('and no state is gold', dots.every((dot) => !dot.includes('gold')));
+
+  const toggle = (row: LeadRow) =>
+    renderToStaticMarkup(<StatusToggle row={row} onToggle={() => {}} />);
+  const nameOf = (markup: string) => /aria-label="([^"]+)"/.exec(markup)?.[1] ?? '';
+  check(
+    'a pending lead offers approved',
+    nameOf(toggle(leadRow({}))) === `${statusLabel('pending')}, mark Priya Nair as ${approvedWord}`,
+  );
+  check(
+    'so does an applied one',
+    nameOf(toggle(leadRow({ status: 'applied', card: 'Amex Gold' }))) ===
+      `${statusLabel('applied')}, mark Priya Nair as ${approvedWord}`,
+  );
+  check(
+    'an approved lead with a card goes back to applied',
+    nameOf(toggle(leadRow({ status: 'registered', card: 'Amex Gold' }))) ===
+      `${statusLabel('registered')}, mark Priya Nair as ${appliedWord}`,
+  );
+  check(
+    'one with no card goes back to pending',
+    nameOf(toggle(leadRow({ status: 'registered' }))) ===
+      `${statusLabel('registered')}, mark Priya Nair as ${pendingWord}`,
+  );
+  check(
+    'the toggle wears the same state as the pill',
+    toggle(leadRow({ status: 'applied' })).includes('data-status="applied"'),
+  );
+  // The click, not only its name. Called as a function to reach the handler,
+  // which static markup does not carry.
+  const sent: LeadStatus[] = [];
+  const element = StatusToggle({
+    row: leadRow({ status: 'registered', card: 'Amex Gold' }),
+    onToggle: (next) => sent.push(next),
+  });
+  element.props.onClick();
+  check('and a click sends the state its name promised', sent.join() === 'applied');
+
+  const card = (text: string) => renderToStaticMarkup(<CardName card={text} />);
+  check('a lead with no card shows the blank', card('').includes(`>${BLANK}</span>`));
+  check('so does a card of only spaces', card('   ').includes(`>${BLANK}</span>`));
+  const twoCards = card('Chase Sapphire Preferred, Amex Gold');
+  check('the cards show as recorded', twoCards.includes('>Chase Sapphire Preferred, Amex Gold</span>'));
+  check(
+    'and whole on hover, since the column cuts them short',
+    twoCards.includes('title="Chase Sapphire Preferred, Amex Gold"'),
+  );
+
+  const words = (markup: string) => markup.replace(/<[^>]+>/g, '');
+  const note = (canEdit: boolean, fromApprovals: number) =>
+    words(renderToStaticMarkup(<StatusNote canEdit={canEdit} fromApprovals={fromApprovals} />));
+  const adminNote = note(true, 0);
+  const affiliateNote = note(false, 0);
+  const threeWords = [pendingWord, appliedWord, approvedWord];
+  check('the admin note names all three states', threeWords.every((w) => adminNote.includes(w)));
+  check('so does the affiliate note', threeWords.every((w) => affiliateNote.includes(w)));
+  check('both say where the card is', adminNote.includes('Card column') && affiliateNote.includes('Card column'));
+  check('the admin is told the sheet sets it too', adminNote.includes('column N'));
+  check(
+    'an affiliate gets no recipe for a control they do not have',
+    !affiliateNote.includes('column N') && !affiliateNote.includes('Mark one'),
+  );
+  check(
+    'an approval on file is explained when there is one',
+    note(true, 1).includes(`One of them reads ${approvedWord} because`),
+  );
+  check('and several are counted', note(false, 3).includes(`3 of them read ${approvedWord} because`));
+  check('and it is not said when it does not apply', !adminNote.includes('approval on file'));
+
+  const everything = [
+    adminNote,
+    affiliateNote,
+    note(true, 1),
+    note(false, 3),
+    ...LEAD_FILTERS.map(filterLabel),
+    ...(['pending', 'applied', 'registered'] as const).map(noLeadsText),
+    ...(['pending', 'applied', 'registered'] as const).map((s) =>
+      nameOf(toggle(leadRow({ status: s, card: 'Amex Gold' }))),
+    ),
+    nameOf(toggle(leadRow({ status: 'registered' }))),
+    words(pendingPill),
+    words(appliedPill),
+    words(approvedPill),
+  ];
+  check('none of the leads list wording carries a dash', everything.every((text) => !/[–—]/.test(text)));
+  check(
+    'and nothing an affiliate reads is a split or a percentage',
+    !/%|split|share/i.test(affiliateNote + note(false, 3)),
+  );
 }
 console.log(`\nlist-render: ${pass} passed, ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

@@ -11,6 +11,7 @@ import {
   type SortDirection,
 } from '@/lib/report-table';
 import { PAGE_SIZES, pageBounds, pageSlice } from '@/lib/paging';
+import { statusLabel } from '@/lib/status';
 import { Pager } from './Pager';
 import { SortHeader, nextSort } from './SortHeader';
 import { BusyLabel } from './Spinner';
@@ -57,11 +58,17 @@ type SyncResult = {
   alreadyImported: number;
   issues: SyncIssue[];
   unusable: boolean;
-  /** Leads sitting at pending under an approval, waiting to be caught up. */
+  /** Leads moving to approved: an approval names them and they do not read approved yet. */
   leadsToMark: number;
+  /** Leads moving to applied: the report shows an application and no approval names them. */
+  leadsToApply: number;
+  /** Leads whose status stands and which only gain a card. */
+  cardsToRecord: number;
   created?: number;
-  /** How many of them were, on a run that applied. */
+  /** How many of each were, on a run that applied. */
   leadsMarked?: number;
+  leadsApplied?: number;
+  cardsRecorded?: number;
   failures?: string[];
   preview?: {
     approvedOn: string;
@@ -81,6 +88,127 @@ type SyncResult = {
 
 const money = (value: number) =>
   value.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+
+/** "1 lead", "3 leads". */
+const quantity = (value: number, word: string) => `${value} ${word}${value === 1 ? '' : 's'}`;
+
+function sentenceCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Every lead a plan touches, whichever way. */
+function leadChangeCount(sync: Pick<SyncResult, 'leadsToMark' | 'leadsToApply' | 'cardsToRecord'>): number {
+  return sync.leadsToMark + sync.leadsToApply + sync.cardsToRecord;
+}
+
+/**
+ * The lead half of a sync, as clauses: "mark 2 leads approved and 1 applied"
+ * and "record a card on 1 lead" before it runs, "2 leads marked approved and 1
+ * applied" and "a card recorded on 1 lead" after.
+ *
+ * The state words are statusLabel's, the captions the leads list shows, so
+ * this page cannot promise a lead a state under a name that list never uses.
+ */
+function leadClauses(
+  { approved, applied, cards }: { approved: number; applied: number; cards: number },
+  done: boolean,
+): string[] {
+  const clauses: string[] = [];
+  const approvedWord = statusLabel('registered').toLowerCase();
+  const appliedWord = statusLabel('applied').toLowerCase();
+  const moved = approved > 0 ? approved : applied;
+  if (moved > 0) {
+    const subject = done ? `${quantity(moved, 'lead')} marked` : `mark ${quantity(moved, 'lead')}`;
+    clauses.push(
+      approved > 0 && applied > 0
+        ? `${subject} ${approvedWord} and ${applied} ${appliedWord}`
+        : `${subject} ${approved > 0 ? approvedWord : appliedWord}`,
+    );
+  }
+  if (cards > 0) {
+    const what = cards === 1 ? 'a card' : 'cards';
+    clauses.push(
+      done ? `${what} recorded on ${quantity(cards, 'lead')}` : `record ${what} on ${quantity(cards, 'lead')}`,
+    );
+  }
+  return clauses;
+}
+
+/** What the apply button says it will do: the money first, then the leads. */
+export function applyLabel(
+  sync: Pick<SyncResult, 'toCreate' | 'amountToCreate' | 'leadsToMark' | 'leadsToApply' | 'cardsToRecord'>,
+): string {
+  const clauses = leadClauses(
+    { approved: sync.leadsToMark, applied: sync.leadsToApply, cards: sync.cardsToRecord },
+    false,
+  );
+  if (sync.toCreate > 0) {
+    clauses.unshift(`write ${quantity(sync.toCreate, 'approval')} (${money(sync.amountToCreate)})`);
+  }
+  return sentenceCase(clauses.join(', '));
+}
+
+/**
+ * What a sync that ran did, as one sentence.
+ *
+ * The approvals are named whenever there were any to write, including when
+ * none of them made it, because on a run that failed that is the news. A run
+ * that only moved leads opens with the leads rather than with no approvals.
+ */
+export function appliedSummary(
+  sync: Pick<SyncResult, 'toCreate' | 'created' | 'leadsMarked' | 'leadsApplied' | 'cardsRecorded'>,
+): string {
+  const clauses = leadClauses(
+    { approved: sync.leadsMarked ?? 0, applied: sync.leadsApplied ?? 0, cards: sync.cardsRecorded ?? 0 },
+    true,
+  );
+  if (sync.toCreate > 0 || clauses.length === 0) {
+    clauses.unshift(`${quantity(sync.created ?? 0, 'approval')} written to Ledger`);
+  }
+  const last = clauses.pop() ?? '';
+  return `${sentenceCase(clauses.length > 0 ? `${clauses.join(', ')}, and ${last}` : last)}.`;
+}
+
+/**
+ * The paragraph under a plan that moves leads: who is moving and where to,
+ * then why the sync is the one moving them.
+ */
+export function leadPlanNote(
+  sync: Pick<SyncResult, 'toCreate' | 'leadsToMark' | 'leadsToApply' | 'cardsToRecord'>,
+): string {
+  const approvedWord = statusLabel('registered').toLowerCase();
+  const appliedWord = statusLabel('applied').toLowerCase();
+  const sentences: string[] = [];
+  if (sync.leadsToMark > 0) {
+    sentences.push(
+      `${quantity(sync.leadsToMark, 'lead')} under an approval ${
+        sync.leadsToMark === 1 ? 'is' : 'are'
+      } not marked ${approvedWord} yet.`,
+    );
+  }
+  if (sync.leadsToApply > 0) {
+    sentences.push(
+      `${quantity(sync.leadsToApply, 'lead')} ${
+        sync.leadsToApply === 1 ? 'shows' : 'show'
+      } an application in this report and no approval, so ${
+        sync.leadsToApply === 1 ? 'it moves' : 'they move'
+      } to ${appliedWord}.`,
+    );
+  }
+  if (sync.cardsToRecord > 0) {
+    sentences.push(
+      `${quantity(sync.cardsToRecord, 'lead')} already at the right status ${
+        sync.cardsToRecord === 1 ? 'gains' : 'gain'
+      } a card.`,
+    );
+  }
+  sentences.push(
+    `${
+      sync.toCreate > 0 ? 'Writing' : 'Applying'
+    } this updates the leads list to match, with the card each lead applied for. The status says how far a lead got, and the merchant's report is the record of that.`,
+  );
+  return sentences.join(' ');
+}
 
 /** Today and 30 days back, in UTC, to match every other date in the app. */
 function utcDay(offsetDays = 0): string {
@@ -596,7 +724,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
               {result.hidden === 1 ? 'is' : 'are'} not shown: their var2 matches no link here (
               {result.hiddenKeys.slice(0, 6).join(', ')}
               {result.hiddenKeys.length > 6 ? `, and ${result.hiddenKeys.length - 6} more` : ''}).
-              The sync leaves those alone too.
+              The sync writes no approvals from them, though an application on one whose var3
+              names a lead here still marks that lead {statusLabel('applied').toLowerCase()}.
             </p>
           ) : null}
 
@@ -616,7 +745,10 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
             One row becomes that many approvals in Ledger, with the earnings split evenly between
             them so the total stays exact. <code>var2</code> is matched to a link to work out whose
             it is, and <code>var3</code> is kept on the approval so it can be traced back to the
-            client it came from.
+            client it came from. A row showing an application moves the lead behind{' '}
+            <code>var3</code> to {statusLabel('applied').toLowerCase()}, noting the card it was
+            for, and an approval moves it on to {statusLabel('registered').toLowerCase()}. A sync
+            never moves a lead back.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-4">
@@ -633,7 +765,7 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 busyLabel="Working out the plan…"
               />
             </button>
-            {sync && !sync.applied && (sync.toCreate > 0 || sync.leadsToMark > 0) ? (
+            {sync && !sync.applied && (sync.toCreate > 0 || leadChangeCount(sync) > 0) ? (
               <button
                 type="button"
                 onClick={() => runSync(true)}
@@ -646,22 +778,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                     and the spinner has to hold for both. */}
                 <BusyLabel
                   busy={syncing === 'apply'}
-                  idle={
-                    sync.toCreate > 0 ? (
-                      <>
-                        Write {sync.toCreate} approval{sync.toCreate === 1 ? '' : 's'} (
-                        {money(sync.amountToCreate)})
-                        {sync.leadsToMark > 0
-                          ? `, mark ${sync.leadsToMark} lead${sync.leadsToMark === 1 ? '' : 's'}`
-                          : ''}
-                      </>
-                    ) : (
-                      <>
-                        Mark {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} approved
-                      </>
-                    )
-                  }
-                  busyLabel={sync.toCreate > 0 ? 'Writing approvals…' : 'Marking leads…'}
+                  idle={applyLabel(sync)}
+                  busyLabel={sync.toCreate > 0 ? 'Writing approvals…' : 'Updating leads…'}
                 />
               </button>
             ) : null}
@@ -676,11 +794,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                   }`}
                   role="status"
                 >
-                  {sync.created} approval{sync.created === 1 ? '' : 's'} written to Ledger
-                  {sync.leadsMarked
-                    ? `, and ${sync.leadsMarked} lead${sync.leadsMarked === 1 ? '' : 's'} marked approved`
-                    : ''}
-                  .{sync.failures?.length ? ' Then it stopped on an error.' : ''}
+                  {appliedSummary(sync)}
+                  {sync.failures?.length ? ' Then it stopped on an error.' : ''}
                 </p>
               ) : null}
 
@@ -699,15 +814,8 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 />
               </dl>
 
-              {!sync.applied && sync.leadsToMark > 0 ? (
-                <p className="plain mt-4">
-                  {sync.leadsToMark} lead{sync.leadsToMark === 1 ? '' : 's'} still
-                  {sync.leadsToMark === 1 ? ' reads' : ' read'} pending under an approval.
-                  {sync.toCreate > 0 ? ' Writing' : ' Applying'} this marks{' '}
-                  {sync.leadsToMark === 1 ? 'it' : 'them'} approved in the sheet as well: an
-                  approval is the merchant confirming they signed up, which is what the status is
-                  for.
-                </p>
+              {!sync.applied && leadChangeCount(sync) > 0 ? (
+                <p className="plain mt-4">{leadPlanNote(sync)}</p>
               ) : null}
 
               {sync.failures?.length ? (
@@ -748,10 +856,10 @@ export function ReportRunner({ reportId, app, baseUrl }: { reportId: string; app
                 </div>
               ) : null}
 
-              {!sync.applied && sync.toCreate === 0 && sync.leadsToMark === 0 && sync.issues.length === 0 ? (
+              {!sync.applied && sync.toCreate === 0 && leadChangeCount(sync) === 0 && sync.issues.length === 0 ? (
                 <p className="mt-4 text-[13px] text-ink-soft">
                   Nothing to write. Everything in this report is already in Ledger, and every lead
-                  behind it is already marked approved.
+                  it names already shows its status and card.
                 </p>
               ) : null}
 

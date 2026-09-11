@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { fetchQmpReport, QmpError, qmpConfig } from '@/lib/qmp';
-import { leadsToRegister, planSync } from '@/lib/qmp-sync';
+import {
+  applicationsByLead,
+  leadUpdateKind,
+  leadUpdates,
+  planSync,
+  writeLeadUpdates,
+  type LeadUpdate,
+  type LeadUpdateKind,
+} from '@/lib/qmp-sync';
 import { clientIndex, nameIndex, UNKNOWN_CLIENT } from '@/lib/analytics';
 import { getStore, statusForError } from '@/lib/store';
 import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
@@ -18,9 +26,20 @@ import { forbidden, unauthorized, viewerFromRequest } from '@/lib/api-auth';
  * Nothing is written unless `apply` is true. The default is a plan: what would
  * be created, what was already imported, and what could not be resolved. A
  * sync that writes on the first click is a sync nobody reads the output of.
+ *
+ * The leads come along after the money. One the report shows applying moves to
+ * applied, one an approval names moves to approved, and each gets the card it
+ * applied for. The rules are leadUpdates' in lib/qmp-sync.
  */
 
 export const dynamic = 'force-dynamic';
+
+/** How many of each kind, in the shape both the plan and the result report. */
+function countKinds(updates: LeadUpdate[]): Record<LeadUpdateKind, number> {
+  const counts: Record<LeadUpdateKind, number> = { registered: 0, applied: 0, card: 0 };
+  for (const update of updates) counts[leadUpdateKind(update)] += 1;
+  return counts;
+}
 
 export async function POST(request: Request) {
   const viewer = await viewerFromRequest(request);
@@ -73,9 +92,9 @@ export async function POST(request: Request) {
     [links, existing, submissions] = await Promise.all([
       store.listLinks(),
       store.listConversions(),
-      // Two jobs: a name beside each planned row, and the leads an approval
-      // proves signed up. Nothing about which approvals get written depends on
-      // either.
+      // Two jobs: a name beside each planned row, and the leads the report and
+      // the approvals move along. Nothing about which approvals get written
+      // depends on either.
       store.listSubmissions(),
     ]);
   } catch (error) {
@@ -94,12 +113,19 @@ export async function POST(request: Request) {
   });
 
   /*
-   * The leads that approvals have already vouched for, counting the ones this
-   * run would write as well as everything imported before it. Computed against
-   * the whole picture rather than the new rows, so a run with nothing left to
-   * import still catches up the leads it never marked.
+   * What the report and the approvals say about the leads behind them.
+   *
+   * The approvals are every one on file, the ones this run would write as well
+   * as everything imported before it, so a run with nothing left to import
+   * still catches up the leads it never marked. The applications are read off
+   * every row of the report, including rows whose var2 matches no link: the
+   * money follows var2, but var3 is what names the lead. var3 is text the
+   * visitor could have edited, so what it moves is a label on a lead and never
+   * money; applicationsByLead says what that trust covers and what it cannot.
    */
-  const leadIds = leadsToRegister([...existing, ...plan.create], submissions);
+  const applications = applicationsByLead(report.table.rows);
+  const updates = leadUpdates({ conversions: [...existing, ...plan.create], applications, submissions });
+  const planned = countKinds(updates);
 
   const summary = {
     reportRows: report.table.rowCount,
@@ -113,8 +139,12 @@ export async function POST(request: Request) {
     issues: plan.issues,
     unusable: plan.unusable,
     shape: report.table.shape,
-    /** Leads sitting at pending under an approval. */
-    leadsToMark: leadIds.length,
+    /** Leads moving to approved: an approval names them and they do not read approved yet. */
+    leadsToMark: planned.registered,
+    /** Leads moving to applied: the report shows an application and no approval names them. */
+    leadsToApply: planned.applied,
+    /** Leads whose status stands and which only gain a card. */
+    cardsToRecord: planned.card,
   };
 
   if (apply !== true) {
@@ -143,7 +173,6 @@ export async function POST(request: Request) {
   // these concurrently is how two rows end up on the same line.
   let created = 0;
   const failures: string[] = [];
-  let leadsMarked = 0;
   for (const row of plan.create) {
     try {
       await store.addConversion({
@@ -167,29 +196,41 @@ export async function POST(request: Request) {
 
   /*
    * The leads, after the money. In that order because the approval is the
-   * record that matters: if marking a lead fails, the payout is still written
+   * record that matters: if updating a lead fails, the payout is still written
    * and correct, and the next sync will try the lead again. The reverse would
-   * leave a lead marked registered against an approval that never landed.
+   * leave a lead marked approved against an approval that never landed.
+   *
+   * For the same reason the moves are worked out again from what did land when
+   * the run stopped short. The approvals are written in plan order and the
+   * loop stops at the first failure, so what landed is the first `created` of
+   * them. One that was never written vouches for nobody; its lead keeps what
+   * the report alone says, applied at most, until a sync that writes it.
    *
    * A failure here is collected rather than thrown for the same reason. It is
-   * a status on a row nobody is paid from.
+   * a status on a row nobody is paid from. A store that cannot take the write
+   * at all, such as a database whose migrations are behind the code, is said
+   * once rather than once per lead: see writeLeadUpdates.
    */
-  for (const id of leadIds) {
-    try {
-      await store.updateSubmission(id, { status: 'registered' });
-      leadsMarked += 1;
-    } catch (error) {
-      failures.push(
-        `lead ${id}: ${error instanceof Error ? error.message : 'could not be marked approved'}`,
-      );
-    }
-  }
+  const landed =
+    created === plan.create.length
+      ? updates
+      : leadUpdates({
+          conversions: [...existing, ...plan.create.slice(0, created)],
+          applications,
+          submissions,
+        });
+  const leads = await writeLeadUpdates(landed, (update) =>
+    store.updateSubmission(update.id, { status: update.status, card: update.card }),
+  );
+  failures.push(...leads.failures);
 
   return NextResponse.json({
     applied: true,
     ...summary,
     created,
     failures,
-    leadsMarked,
+    leadsMarked: leads.written.registered,
+    leadsApplied: leads.written.applied,
+    cardsRecorded: leads.written.card,
   });
 }

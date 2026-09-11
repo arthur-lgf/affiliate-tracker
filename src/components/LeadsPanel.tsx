@@ -7,7 +7,8 @@ import { TableScroller } from './TableScroller';
 import { isLeadId } from '@/lib/lead-id';
 import { dropSettled, isCurrent, takeTicket } from '@/lib/optimistic';
 import { PAGE_SIZES, pageSlice } from '@/lib/paging';
-import { displayStatus, statusLabel } from '@/lib/status';
+import { BLANK } from '@/lib/report-table';
+import { LEAD_STATUSES, displayStatus, nextManualStatus, statusLabel } from '@/lib/status';
 import type { LeadStatus } from '@/lib/types';
 
 /**
@@ -29,6 +30,13 @@ export type LeadRow = {
   /** As stored. What is shown may be stronger — see `hasApproval`. */
   status: LeadStatus;
   /**
+   * The card or cards the lead applied for, as the merchant's report names
+   * them, joined with commas; '' until a sync has seen one. Shown, never
+   * edited: it is the merchant's record of the application, and a copy
+   * corrected by hand would be a second version of it.
+   */
+  card: string;
+  /**
    * Whether an approval names this lead. Passed in rather than worked out here
    * because the approvals live on the server beside the leads, and shipping
    * them to the browser a second time to re-derive one boolean per row would be
@@ -40,7 +48,59 @@ export type LeadRow = {
 };
 
 /** Keyed by the stored word; `statusLabel` decides what it is called on screen. */
-type Filter = 'all' | 'pending' | 'registered';
+export type LeadFilter = 'all' | LeadStatus;
+
+/** The filter's options: everything, then the funnel in order. */
+export const LEAD_FILTERS: readonly LeadFilter[] = ['all', ...LEAD_STATUSES];
+
+export function filterLabel(filter: LeadFilter): string {
+  return filter === 'all' ? 'All' : statusLabel(filter);
+}
+
+/**
+ * The state a row is counted and filtered under: its own, except for a value
+ * that is not a status at all, from an untyped row. That reads Pending on its
+ * pill, so it is counted and found there too. Anything else and the three
+ * options stop adding up to All, by exactly the rows nobody can find.
+ */
+function filedUnder(status: LeadStatus): LeadStatus {
+  return (LEAD_STATUSES as readonly string[]).includes(status) ? status : 'pending';
+}
+
+export function matchesFilter(row: { status: LeadStatus }, filter: LeadFilter): boolean {
+  return filter === 'all' || filedUnder(row.status) === filter;
+}
+
+/**
+ * How many rows each option finds. Given the rows as shown, not as stored, so
+ * the number on an option is the number of rows choosing it brings up.
+ */
+export function leadCounts(rows: { status: LeadStatus }[]): Record<LeadFilter, number> {
+  const counts: Record<LeadFilter, number> = { all: rows.length, pending: 0, applied: 0, registered: 0 };
+  for (const row of rows) counts[filedUnder(row.status)] += 1;
+  return counts;
+}
+
+/** What the list says when the chosen state has nobody in it. */
+export function noLeadsText(filter: LeadFilter): string {
+  return filter === 'all'
+    ? 'No leads in this list.'
+    : `No ${statusLabel(filter).toLowerCase()} leads in this list.`;
+}
+
+/**
+ * The rows with the status each is shown with.
+ *
+ * A click this session has made stands in for the stored status until the
+ * server agrees. The approval wins over both, so the counts, the filter and
+ * the pill all read the same thing the approvals panel does.
+ */
+export function withShownStatus(rows: LeadRow[], changed: Record<string, LeadStatus>): LeadRow[] {
+  return rows.map((row) => ({
+    ...row,
+    status: displayStatus(changed[row.id] ?? row.status, row.hasApproval),
+  }));
+}
 
 /**
  * The leads, one to a row.
@@ -86,7 +146,7 @@ export function LeadsPanel({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<LeadFilter>('all');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(PAGE_SIZES[0]);
   const [error, setError] = useState<string | null>(null);
@@ -120,28 +180,13 @@ export function LeadsPanel({
     setChanged((prev) => dropSettled(prev, rows, (row) => row.status));
   }, [rows]);
 
-  const withStatus = useMemo(
-    () =>
-      rows.map((row) => ({
-        ...row,
-        // The approval wins over both the stored status and an optimistic
-        // toggle, so the counts, the filter and the pill all read the same
-        // thing the approvals panel does.
-        status: displayStatus(changed[row.id] ?? row.status, row.hasApproval),
-      })),
-    [rows, changed],
-  );
+  const withStatus = useMemo(() => withShownStatus(rows, changed), [rows, changed]);
 
-  const registeredCount = withStatus.filter((row) => row.status === 'registered').length;
   /** How many of those are approved because an approval says so, not by hand. */
   const fromApprovals = withStatus.filter((row) => row.hasApproval).length;
-  const counts = {
-    all: withStatus.length,
-    registered: registeredCount,
-    pending: withStatus.length - registeredCount,
-  };
+  const counts = leadCounts(withStatus);
 
-  const matching = withStatus.filter((row) => filter === 'all' || row.status === filter);
+  const matching = withStatus.filter((row) => matchesFilter(row, filter));
   const visible = pageSlice(matching, page, perPage);
 
   /*
@@ -157,13 +202,13 @@ export function LeadsPanel({
      running it: a width built by arithmetic is a width Tailwind never emits. */
   const minWidth =
     showAssignee && showRef
-      ? 'min-w-[1080px]'
+      ? 'min-w-[1300px]'
       : showAssignee || showRef
-        ? 'min-w-[940px]'
-        : 'min-w-[800px]';
+        ? 'min-w-[1160px]'
+        : 'min-w-[1020px]';
 
   /** A different set of leads is a different first page, not page 4 of it. */
-  function choose(next: Filter) {
+  function choose(next: LeadFilter) {
     setFilter(next);
     setPage(1);
   }
@@ -231,17 +276,17 @@ export function LeadsPanel({
               Filter leads by status
             </label>
             {/* The counts ride on the options rather than sitting beside them:
-                the three of them are the whole funnel, and they are read at the
-                moment you go looking for one of the three. */}
+                together the options are the whole funnel, and they are read at
+                the moment you go looking for one stage of it. */}
             <select
               id="lead-status"
               value={filter}
-              onChange={(e) => choose(e.target.value as Filter)}
+              onChange={(e) => choose(e.target.value as LeadFilter)}
               className="field w-auto"
             >
-              {(['all', 'pending', 'registered'] as const).map((key) => (
+              {LEAD_FILTERS.map((key) => (
                 <option key={key} value={key}>
-                  {key === 'all' ? 'All' : statusLabel(key)} {counts[key]}
+                  {filterLabel(key)} {counts[key]}
                 </option>
               ))}
             </select>
@@ -256,28 +301,7 @@ export function LeadsPanel({
           {/* Instructions for a control this reader does not have are worse
               than no instructions, so an affiliate gets the reading of the
               statuses instead of the recipe for changing them. */}
-          <p className="plain mt-3">
-            {canEdit ? (
-              <>
-                Every lead starts <strong>pending</strong>. Mark one approved once they have signed
-                up, either here or in column N of the sheet.
-              </>
-            ) : (
-              <>
-                Every lead starts <strong>pending</strong> and is marked approved once they have
-                signed up.
-              </>
-            )}{' '}
-            {/* Said only when it applies. An explanation of something that is
-                not happening on this list is one more line to read past. */}
-            {fromApprovals > 0 ? (
-              <>
-                {fromApprovals === 1 ? 'One of them reads' : `${fromApprovals} of them read`}{' '}
-                approved because there is an approval on file, which is the merchant confirming it
-                went through. Removing the approval is what changes that back.
-              </>
-            ) : null}
-          </p>
+          <StatusNote canEdit={canEdit} fromApprovals={fromApprovals} />
 
           {error ? (
             <p role="alert" className="field-error">
@@ -286,9 +310,7 @@ export function LeadsPanel({
           ) : null}
 
           {matching.length === 0 ? (
-            <p className="py-12 text-center text-[13px] text-ink-soft">
-              No {filter === 'registered' ? 'approved' : filter} leads in this list.
-            </p>
+            <p className="py-12 text-center text-[13px] text-ink-soft">{noLeadsText(filter)}</p>
           ) : (
             <TableScroller className="mt-5" label="Captured leads">
               <table className={`w-full border-collapse text-left ${minWidth}`}>
@@ -300,6 +322,7 @@ export function LeadsPanel({
                     {showAssignee ? <Th>Owner</Th> : null}
                     {showRef ? <Th>Ref</Th> : null}
                     <Th>Status</Th>
+                    <Th>Card</Th>
                     <Th align="right">Captured</Th>
                   </tr>
                 </thead>
@@ -368,15 +391,16 @@ export function LeadsPanel({
                             would write a status the next render overrules,
                             which is a control that lies about what it does. */}
                         {canEdit && !row.hasApproval ? (
-                          <StatusToggle
-                            row={row}
-                            onToggle={() =>
-                              setStatus(row, row.status === 'registered' ? 'pending' : 'registered')
-                            }
-                          />
+                          <StatusToggle row={row} onToggle={(next) => setStatus(row, next)} />
                         ) : (
                           <StatusPill row={row} />
                         )}
+                      </td>
+
+                      {/* Beside the status because it is the detail of it:
+                          applied for what, approved for what. */}
+                      <td className="max-w-[220px] px-5 py-3.5">
+                        <CardName card={row.card} />
                       </td>
 
                       {/* No .tnum here, unlike every other narrow column: "4
@@ -432,12 +456,79 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
 }
 
 /**
+ * What the three states mean, under the heading.
+ *
+ * Exported, like the pieces below it, because the panel calls useRouter and
+ * cannot be rendered outside a Next request, so the wording is checked on its
+ * own. Each state is named by statusLabel, the caption on its pill, so the
+ * note and the table cannot call the same state two different things.
+ */
+export function StatusNote({ canEdit, fromApprovals }: { canEdit: boolean; fromApprovals: number }) {
+  const pending = statusLabel('pending').toLowerCase();
+  const applied = statusLabel('applied').toLowerCase();
+  const approved = statusLabel('registered').toLowerCase();
+  return (
+    <p className="plain mt-3">
+      {canEdit ? (
+        <>
+          Every lead starts <strong>{pending}</strong> and reads <strong>{applied}</strong> once a
+          report sync finds their application, with the card they applied for in the Card column.
+          Mark one <strong>{approved}</strong> once they have signed up, either here or in column N
+          of the sheet.
+        </>
+      ) : (
+        <>
+          Every lead starts <strong>{pending}</strong>, reads <strong>{applied}</strong> once the
+          merchant has their application, and is marked <strong>{approved}</strong> once they have
+          signed up. The Card column says which card they applied for.
+        </>
+      )}{' '}
+      {/* Said only when it applies. An explanation of something that is
+          not happening on this list is one more line to read past. */}
+      {fromApprovals > 0 ? (
+        <>
+          {fromApprovals === 1 ? 'One of them reads' : `${fromApprovals} of them read`}{' '}
+          {approved} because there is an approval on file, which is the merchant confirming it
+          went through. Removing the approval is what changes that back.
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/**
+ * The card or cards a lead applied for, or the blank when no sync has seen
+ * one. Cut to the column with the whole of it on the title, since a lead that
+ * applied for two cards carries both names in the one cell.
+ */
+export function CardName({ card }: { card: string }) {
+  const text = card.trim();
+  if (!text) return <span className="text-[14px] text-ink-dim">{BLANK}</span>;
+  return (
+    <span className="block truncate text-[14px] text-ink-soft" title={text}>
+      {text}
+    </span>
+  );
+}
+
+/**
+ * The dot on each pill. A record, like the captions, so a status added later
+ * cannot reach the table without one. Grey is pending, navy is applied (under
+ * way, waiting on the merchant), green is approved and nothing else. Gold is
+ * not a state: it marks totals.
+ */
+const DOTS: Record<LeadStatus, string> = {
+  pending: 'var(--color-ink-dim)',
+  applied: 'var(--color-navy-hi)',
+  registered: 'var(--color-leaf-live)',
+};
+
+/**
  * The same pill with nothing to press. Not a disabled button: a disabled
  * control reads as "temporarily unavailable, try again", when the truth is that
  * this is simply not yours to change.
  */
-function StatusPill({ row }: { row: LeadRow }) {
-  const registered = row.status === 'registered';
+export function StatusPill({ row }: { row: LeadRow }) {
   return (
     <span
       className="pill-status"
@@ -447,7 +538,7 @@ function StatusPill({ row }: { row: LeadRow }) {
       <span
         aria-hidden
         className="h-2.5 w-2.5 flex-none rounded-full"
-        style={{ background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)' }}
+        style={{ background: DOTS[row.status] ?? DOTS.pending }}
       />
       {statusLabel(row.status)}
     </span>
@@ -461,28 +552,34 @@ function StatusPill({ row }: { row: LeadRow }) {
  * is nothing left to wait for and nothing a spinner could truthfully report. It
  * stays pressable too: pressing again is somebody changing their mind, which is
  * a thing they are allowed to do faster than a spreadsheet can answer.
+ *
+ * Where a press sends the lead is nextManualStatus's call, made once here and
+ * used for both the accessible name and the press, so the name cannot promise
+ * one state while the click writes another.
  */
-function StatusToggle({ row, onToggle }: { row: LeadRow; onToggle: () => void }) {
-  const registered = row.status === 'registered';
+export function StatusToggle({
+  row,
+  onToggle,
+}: {
+  row: LeadRow;
+  onToggle: (next: LeadStatus) => void;
+}) {
+  const next = nextManualStatus(row);
   const who = row.fullName || row.email || 'this lead';
   return (
     <button
       type="button"
       className="pill-status"
       data-status={row.status}
-      onClick={onToggle}
+      onClick={() => onToggle(next)}
       /* The visible word starts the accessible name so "click Pending" still
          works for voice control, and the rest says what clicking will do. */
-      aria-label={`${statusLabel(row.status)}, mark ${who} as ${statusLabel(
-        registered ? 'pending' : 'registered',
-      ).toLowerCase()}`}
+      aria-label={`${statusLabel(row.status)}, mark ${who} as ${statusLabel(next).toLowerCase()}`}
     >
       <span
         aria-hidden
         className="h-2.5 w-2.5 flex-none rounded-full"
-        style={{
-          background: registered ? 'var(--color-leaf-live)' : 'var(--color-ink-dim)',
-        }}
+        style={{ background: DOTS[row.status] ?? DOTS.pending }}
       />
       {statusLabel(row.status)}
     </button>

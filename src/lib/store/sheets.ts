@@ -104,7 +104,8 @@ function normalizeHeaderCell(value: string): string {
  * "it looked right" is not a good enough standard.
  *
  * - `write` — one or more of our columns is blank (a new tab, or an existing
- *   sheet that predates a column we later added, which is how `status` arrives).
+ *   sheet that predates a column we later added, which is how `status` and then
+ *   `card` arrive).
  *   Writing the full row only fills those blanks, since every non-blank cell has
  *   already been checked to match.
  * - `conflict` — a cell holds something else. Somebody has inserted a column or
@@ -171,9 +172,10 @@ async function ensureHeaderRow(tab: TabName): Promise<boolean> {
  * Turn the Status column into a dropdown so marking a lead through in the
  * spreadsheet is a click rather than a guess at the spelling.
  *
- * The values stay the ones already in the column; the dashboard calls the
- * second one "Approved" but renaming the cells would flag every row written
- * before today. `normalizeLeadStatus` reads either word.
+ * The values stay the ones already in the column; the dashboard calls
+ * `registered` "Approved" but renaming the cells would flag every row written
+ * before today. `normalizeLeadStatus` reads either word. `applied` is the one
+ * the report sync writes for a lead with an application and no approval yet.
  *
  * `strict: false` keeps a bulk paste from being rejected outright — anything
  * unrecognised is flagged in the sheet and read back as pending.
@@ -198,10 +200,15 @@ async function applyStatusDropdown(): Promise<void> {
             rule: {
               condition: {
                 type: 'ONE_OF_LIST',
-                values: [{ userEnteredValue: 'pending' }, { userEnteredValue: 'registered' }],
+                values: [
+                  { userEnteredValue: 'pending' },
+                  { userEnteredValue: 'applied' },
+                  { userEnteredValue: 'registered' },
+                ],
               },
               inputMessage:
-                'Set to "registered" once this lead has signed up. The dashboard shows it as Approved.',
+                'Set to "registered" once this lead is approved (the dashboard shows it as Approved). ' +
+                '"applied" means the merchant has the application and has not approved it yet.',
               showCustomUi: true,
               strict: false,
             },
@@ -246,8 +253,10 @@ function ensureTabs(): Promise<void> {
         if (tab === 'submissions') submissionsChanged = written;
       }
 
-      // Only on the run that introduced the column, so an ordinary cold start
+      // Only on a run that changed the header, so an ordinary cold start
       // doesn't pay for an extra write. The rule persists in the spreadsheet.
+      // Adding the card column is such a run, which is also what gives a sheet
+      // set up before `applied` existed the new option in its dropdown.
       if (submissionsChanged) {
         try {
           await applyStatusDropdown();
@@ -401,7 +410,12 @@ function linkToRow(link: AffiliateLink): string[] {
   ];
 }
 
-function submissionFromRow(row: string[]): Submission {
+/**
+ * A sheet row as a lead, and a lead as a sheet row. Exported, like
+ * planHeaderRow, so the column layout can be checked without a spreadsheet: a
+ * cell written one column off files every value under the wrong heading.
+ */
+export function submissionFromRow(row: string[]): Submission {
   const [
     id,
     createdAt,
@@ -417,6 +431,7 @@ function submissionFromRow(row: string[]): Submission {
     userAgent,
     ip,
     status,
+    card,
   ] = row;
   return {
     id,
@@ -434,12 +449,15 @@ function submissionFromRow(row: string[]): Submission {
     ip,
     // Typed by hand as often as it is written by us — whatever is in the cell
     // (including nothing, on rows logged before the column existed) is read as
-    // one of the two statuses.
+    // one of the three statuses.
     status: normalizeLeadStatus(status),
+    // Written by the sync, but it is a cell like any other and may have been
+    // typed into. Rows logged before the column existed have nothing here.
+    card: (card ?? '').trim(),
   };
 }
 
-function submissionToRow(row: Submission): string[] {
+export function submissionToRow(row: Submission): string[] {
   return [
     row.id,
     row.createdAt,
@@ -455,6 +473,7 @@ function submissionToRow(row: Submission): string[] {
     row.userAgent,
     row.ip,
     row.status,
+    row.card,
   ];
 }
 
@@ -464,6 +483,31 @@ function cellRange(tab: TabName, column: string, rowNumber: number): string {
 }
 
 const STATUS_COLUMN = columnLetter(SHEET_HEADERS.submissions.indexOf('status') + 1);
+const CARD_COLUMN = columnLetter(SHEET_HEADERS.submissions.indexOf('card') + 1);
+
+/**
+ * Which cells a lead update writes, and what goes in them.
+ *
+ * Pure and exported for the same reason as planHeaderRow. A status change on
+ * its own writes the status cell and nothing else. One that carries a card
+ * writes status and card as a single two-cell range: one request rather than
+ * two, so the sheet never holds a new status beside an old card. That range is
+ * exactly those two cells only because card sits immediately after status,
+ * which config.ts keeps true and status-checks pins.
+ */
+export function planSubmissionWrite(
+  rowNumber: number,
+  next: Pick<Submission, 'status' | 'card'>,
+  patch: SubmissionPatch,
+): { range: string; values: string[][] } {
+  if (patch.card === undefined) {
+    return { range: cellRange('submissions', STATUS_COLUMN, rowNumber), values: [[next.status]] };
+  }
+  return {
+    range: `${SHEET_TABS.submissions}!${STATUS_COLUMN}${rowNumber}:${CARD_COLUMN}${rowNumber}`,
+    values: [[next.status, next.card]],
+  };
+}
 
 function visitFromRow(row: string[]): Visit {
   const [id, createdAt, slug, usr, referrer, userAgent, ip] = row;
@@ -636,8 +680,10 @@ export function createSheetsStore(): Store {
         // destination URL on this very row.
         id: input.id?.trim() || randomUUID(),
         createdAt: new Date().toISOString(),
-        // Every lead starts pending the moment it is captured.
+        // Every lead starts pending the moment it is captured, with no card
+        // until the report sync sees an application.
         status: DEFAULT_LEAD_STATUS,
+        card: '',
       };
       await appendRow('submissions', submissionToRow(row));
       return row;
@@ -646,17 +692,25 @@ export function createSheetsStore(): Store {
     async updateSubmission(id: string, patch: SubmissionPatch) {
       const { rowNumber, current } = await findSubmissionRow(id);
       if (rowNumber === -1 || !current) throw new StoreNotFoundError('Lead not found');
-      const next: Submission = { ...current, ...patch };
+      // Field by field rather than a spread: a patch that names a field and
+      // leaves it undefined means "leave it", not "write nothing over it".
+      const next: Submission = {
+        ...current,
+        status: patch.status ?? current.status,
+        card: patch.card ?? current.card,
+      };
       const sheets = await getClient();
       await assertRowStillHolds('submissions', rowNumber, id);
-      // Only the status cell is written. The rest of the row is the record of
-      // what the lead actually submitted, and anything else on it may have been
+      // Only the status cell is written, and the card cell beside it when the
+      // patch carries a card. The rest of the row is the record of what the
+      // lead actually submitted, and anything else on it may have been
       // annotated by hand in the sheet — rewriting the row would revert that.
+      const write = planSubmissionWrite(rowNumber, next, patch);
       await sheets.spreadsheets.values.update({
         spreadsheetId: spreadsheetId(),
-        range: cellRange('submissions', STATUS_COLUMN, rowNumber),
+        range: write.range,
         valueInputOption: 'RAW',
-        requestBody: { values: [[next.status]] },
+        requestBody: { values: write.values },
       });
       return next;
     },

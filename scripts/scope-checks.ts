@@ -75,6 +75,7 @@ function submission(usr: string, id: string): Submission {
     userAgent: '',
     ip: '',
     status: 'pending',
+    card: '',
   };
 }
 

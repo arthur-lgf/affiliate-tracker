@@ -34,7 +34,7 @@ function submission(id: string, usr: string, fullName: string, email = ''): Subm
   return {
     id, createdAt: '2026-08-02T00:00:00.000Z', slug: 'best-cards', usr,
     assignee: '', campaign: '', fullName, email, phone: '', destination: '',
-    referrer: '', userAgent: '', ip: '', status: 'pending',
+    referrer: '', userAgent: '', ip: '', status: 'pending', card: '',
   };
 }
 

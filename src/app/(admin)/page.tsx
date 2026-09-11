@@ -21,7 +21,7 @@ import {
 } from '@/lib/analytics';
 import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
-import { approvedLeadIds } from '@/lib/qmp-sync';
+import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
 import { requireViewer } from '@/lib/viewer';
 
 export const dynamic = 'force-dynamic';
@@ -134,6 +134,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // lead reads approved whether the approval was imported this morning or six
   // syncs ago.
   const approvedLeads = approvedLeadIds(conversions);
+  // The card beside each lead. The sync writes it onto the lead; one approved
+  // before leads kept a card has it only on its approvals, read from the same
+  // whole set for the same reason.
+  const cardsApproved = approvedCards(conversions);
 
   const leadRows: LeadRow[] = capture
     ? submissions.slice(0, RECENT_LIMIT).map((row) => ({
@@ -145,6 +149,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         slug: row.slug,
         assignee: row.assignee,
         status: row.status,
+        card: cardForLead(row, cardsApproved),
         hasApproval: approvedLeads.has(row.id),
         age: formatRelative(row.createdAt),
         capturedAt: formatDateTime(row.createdAt),

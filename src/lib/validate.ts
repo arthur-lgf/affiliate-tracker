@@ -101,6 +101,11 @@ export const submissionInputSchema = z.object({
 /**
  * The one field the admin surface may change on a logged lead. Anything a lead
  * actually typed is a record of what happened and stays as captured.
+ *
+ * The card is not here either. It is the merchant's record of what was applied
+ * for and arrives with the report sync; one typed on the dashboard would be a
+ * second version of it. Unknown keys are dropped, so a card sent anyway is
+ * ignored rather than saved.
  */
 export const submissionPatchSchema = z.object({
   status: z.enum(LEAD_STATUSES),

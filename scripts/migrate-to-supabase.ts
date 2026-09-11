@@ -11,11 +11,16 @@
 // Re-running is safe. Rows already present are left alone rather than
 // overwritten: a migration that clobbers is a migration you cannot run twice,
 // and by the second run the database may hold newer data than the source does.
+//
+// Run every migration in supabase/migrations against the destination first
+// (npx supabase db push). Leads are copied with the card column and the
+// applied status that 20260910120000 adds, and PostgREST refuses a write that
+// names a column the table does not have.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createLocalStore } from '../src/lib/store/local';
 import { createSheetsStore } from '../src/lib/store/sheets';
-import { getSupabaseClient, isSupabaseConfigured } from '../src/lib/store/supabase';
+import { getSupabaseClient, isSupabaseConfigured, submissionToRow } from '../src/lib/store/supabase';
 import type { Conversion, Store, Submission, Visit, AffiliateLink } from '../src/lib/types';
 
 function loadEnvLocal() {
@@ -53,7 +58,12 @@ async function insertMissing(
       .from(table)
       .upsert(chunk, { onConflict: conflictColumn, ignoreDuplicates: true })
       .select('id');
-    if (error) throw new Error(`${table}: ${error.message}${error.code ? ` (${error.code})` : ''}`);
+    if (error) {
+      // PGRST204: this copy names a column the table does not have, so the
+      // destination's migrations are behind this code.
+      const hint = error.code === 'PGRST204' ? ' Run every migration first: npx supabase db push' : '';
+      throw new Error(`${table}: ${error.message}${error.code ? ` (${error.code})` : ''}${hint}`);
+    }
     written += data?.length ?? 0;
   }
   return written;
@@ -87,23 +97,14 @@ function linkRow(link: AffiliateLink) {
   };
 }
 
+/**
+ * The adapter's own mapping, so every column the app reads back is a column
+ * this copies. A field left out here would be lost in the move without a
+ * word, because the column default fills the gap. Only a missing timestamp is
+ * this script's to fill in.
+ */
 function submissionRow(row: Submission) {
-  return {
-    id: row.id,
-    created_at: row.createdAt || new Date().toISOString(),
-    slug: row.slug,
-    usr: row.usr,
-    assignee: row.assignee,
-    campaign: row.campaign,
-    full_name: row.fullName,
-    email: row.email,
-    phone: row.phone,
-    destination: row.destination,
-    referrer: row.referrer,
-    user_agent: row.userAgent,
-    ip: row.ip,
-    status: row.status,
-  };
+  return { ...submissionToRow(row), created_at: row.createdAt || new Date().toISOString() };
 }
 
 function visitRow(row: Visit) {

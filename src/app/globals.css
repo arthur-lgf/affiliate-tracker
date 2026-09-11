@@ -67,6 +67,13 @@
   --color-leaf-wash: #eaf4ef;
   --color-leaf-edge: #cfe6da;
 
+  /* Applied: under way, not settled. A navy wash, so the step between
+     pending's grey and approved's green stays in the console's own colour
+     instead of borrowing green before it is earned, or gold, which marks
+     totals and nothing else. Type on it is --color-navy-hi, 11:1. */
+  --color-navy-wash: #e8f0f8;
+  --color-navy-edge: #c6d7e8;
+
   /* Gold */
   --color-gold: #f0b429;
   --color-gold-edge: #d89f16;
@@ -469,6 +476,19 @@
 
   .pill-status[data-status='registered']:hover:not(:disabled) {
     background: #dfeee6;
+  }
+
+  /* Applied: the merchant has the application and has not said yes. Its own
+     look between the two, navy on a navy wash: not green, which would call
+     it settled early, and not gold, which is never a state. */
+  .pill-status[data-status='applied'] {
+    background: var(--color-navy-wash);
+    border-color: var(--color-navy-edge);
+    color: var(--color-navy-hi);
+  }
+
+  .pill-status[data-status='applied']:hover:not(:disabled) {
+    background: #dbe7f3;
   }
 
   .pill-status:disabled {

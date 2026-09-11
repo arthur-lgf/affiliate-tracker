@@ -40,11 +40,13 @@ export type AffiliateLink = {
 export type NewAffiliateLink = Omit<AffiliateLink, 'id' | 'createdAt'>;
 
 /**
- * Where a lead stands. `pending` is stamped automatically on capture. The other
- * state is set by hand, written through by the report sync, or read off an
- * approval at display time — and reads "Approved" on screen. See `lib/status.ts`.
+ * Where a lead stands. `pending` is stamped automatically on capture. `applied`
+ * means the merchant's report shows an application from this lead and no
+ * approval yet; the report sync writes it. `registered` is set by hand, written
+ * through by the report sync, or read off an approval at display time, and
+ * reads "Approved" on screen. See `lib/status.ts`.
  */
-export type LeadStatus = 'pending' | 'registered';
+export type LeadStatus = 'pending' | 'applied' | 'registered';
 
 export type Submission = {
   id: string;
@@ -62,24 +64,34 @@ export type Submission = {
   userAgent: string;
   ip: string;
   status: LeadStatus;
+  /**
+   * The card, or cards, the merchant's report says this lead applied for, as
+   * QMP names them and joined with ", ". '' until a sync sees one. Written by
+   * the sync and never typed on the dashboard: it is the merchant's record.
+   */
+  card: string;
 };
 
 /**
- * Status is absent here on purpose: the capture endpoint never chooses it. The
- * store stamps `pending` on every new row so there is exactly one place that
- * decides what a brand new lead looks like.
+ * Status and card are absent here on purpose: the capture endpoint chooses
+ * neither. The store stamps `pending` and no card on every new row so there is
+ * exactly one place that decides what a brand new lead looks like.
  *
  * `id` is the one exception to the store owning identity, and only because the
  * reference has to exist before the row does: it is embedded in the destination
  * URL that is saved on the row and followed by the visitor. Left out, the store
  * mints one as before.
  */
-export type NewSubmission = Omit<Submission, 'id' | 'createdAt' | 'status'> & {
+export type NewSubmission = Omit<Submission, 'id' | 'createdAt' | 'status' | 'card'> & {
   id?: string;
 };
 
-/** The only part of a logged lead the admin surface may change. */
-export type SubmissionPatch = { status: LeadStatus };
+/**
+ * The parts of a logged lead that can change after capture. The admin surface
+ * sends a status on its own; the report sync sends the status and the card
+ * together. A field left out is left as it is, never cleared.
+ */
+export type SubmissionPatch = { status?: LeadStatus; card?: string };
 
 export type Visit = {
   id: string;

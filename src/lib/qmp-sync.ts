@@ -38,11 +38,19 @@
  *
  * Re-running is safe. Every conversion carries a marker in its notes derived
  * from the row's dimensions, and anything already carrying that marker is left
- * alone. The marker also preserves the card name, which Ledger otherwise does
- * not store anywhere.
+ * alone. The notes also keep the card name, which an approval has no column
+ * for; it is read back out of them onto the lead (see cardFromNotes).
+ *
+ * Applications move leads, never money. A row with an application and no
+ * approval writes nothing here, but the lead its var3 names is marked applied,
+ * with the card, and an approval moves it on to approved. Nothing moves a lead
+ * backwards. See leadUpdates.
  */
 
-import type { AffiliateLink, Conversion, NewConversion } from './types';
+import { isLeadId } from './lead-id';
+import { statusRank } from './status';
+import { StoreConfigError } from './store/errors';
+import type { AffiliateLink, Conversion, LeadStatus, NewConversion } from './types';
 
 /** Strip case, spaces and punctuation so "Total Earnings($)" meets "totalearnings". */
 export function normalizeKey(key: string): string {
@@ -235,6 +243,10 @@ export function approvedLeadIds(conversions: { notes: string }[]): Set<string> {
  * Already-registered leads are left alone rather than rewritten — there is
  * nothing to change, and a write per row would cost a call to the spreadsheet
  * for every lead on every sync.
+ *
+ * The sync itself now asks leadUpdates below, which makes this same move and
+ * the applied one before it. This stays as the narrower question, and the two
+ * are checked against each other.
  */
 export function leadsToRegister(
   conversions: { notes: string }[],
@@ -244,6 +256,300 @@ export function leadsToRegister(
   return submissions
     .filter((row) => row.status !== 'registered' && approved.has(row.id))
     .map((row) => row.id);
+}
+
+/**
+ * A lead reference as it stands, or '' when it is the placeholder the report
+ * puts where there is none.
+ *
+ * The live report writes the word "Unknown" into var3 (and into var2, and the
+ * session URL) on widget traffic that never came through a form here. That is
+ * not a reference to anybody, so it reads as no lead rather than as a lead
+ * nobody can find.
+ */
+function namedLead(ref: string): string {
+  const trimmed = (ref ?? '').trim();
+  return trimmed.toLowerCase() === 'unknown' ? '' : trimmed;
+}
+
+/** Note a lead in a reference → cards map, adding its card once when it has one. */
+function noteCard(byLead: Map<string, string[]>, ref: string, card: string): void {
+  const cards = byLead.get(ref) ?? [];
+  if (card && !cards.includes(card)) cards.push(card);
+  byLead.set(ref, cards);
+}
+
+/**
+ * The leads the report shows applying, and the cards each applied for.
+ *
+ * A row counts when it carries an application or an approval. QMP counts the
+ * two in separate columns, and an approved application was still an
+ * application, so a row with an approval and a blank Applications cell names
+ * its lead all the same. Which of the two a lead has got to is decided by
+ * leadUpdates; this only says who applied, and for what.
+ *
+ * Keyed by var3 as the report wrote it, the same way approvals are matched to
+ * leads, so the two cannot disagree about who a reference is. A lead whose rows
+ * carry no card name is still in here, with no cards: that it applied is the
+ * fact, and the card is a detail on top of it.
+ *
+ * Only a var3 shaped like a reference Ledger mints (lib/lead-id.ts) names a
+ * lead. The report's "Unknown" on widget traffic is not one, and neither is
+ * the id of a lead captured before references existed, which never travelled
+ * in a var3 at all, so no row can honestly name it.
+ *
+ * What this cannot do is prove a reference honest. var3 rides in the URL the
+ * visitor follows to the merchant, and a visitor can edit that URL, so
+ * somebody holding another lead's reference could apply with it and mark that
+ * lead applied, with the card they applied for. It is the trust approvals
+ * already put in var3, bounded the same way: a reference is 12 random
+ * characters that only the lead, an admin and the lead's own affiliate ever
+ * see; each forgery costs a real application at the merchant; the card is
+ * QuinStreet's name for a real product; and nothing here moves money, which
+ * follows var2 through planSync. Checking var2 against the lead's owner would
+ * not close it, because var2 rides in the same editable URL.
+ */
+export function applicationsByLead(rows: Record<string, unknown>[]): Map<string, string[]> {
+  const byLead = new Map<string, string[]>();
+  for (const row of rows) {
+    const applications = parseNumber(readField(row, 'applications')) ?? 0;
+    const approvals = parseNumber(readField(row, 'approvals')) ?? 0;
+    if (applications < 1 && approvals < 1) continue;
+
+    const ref = leadRefOf(row);
+    if (!isLeadId(ref)) continue;
+    noteCard(byLead, ref, asText(readField(row, 'card')));
+  }
+  return byLead;
+}
+
+/** How planSync separates the card, the marker and the lead tag in a note. */
+const NOTE_SEPARATOR = /\s*·\s*/;
+
+/**
+ * The card an approval was for, read off the notes the sync wrote on it.
+ *
+ * planSync writes the card first, then the marker, then the lead tag, so on a
+ * synced approval the card is whatever stands before the first separator. Only
+ * on a synced one: the marker is the proof the sync wrote the notes, and
+ * without it the first words are whatever somebody typed. A synced approval
+ * with no card starts with its marker, and gives nothing back.
+ */
+export function cardFromNotes(notes: string): string {
+  const text = notes ?? '';
+  if (!markerIn(text)) return '';
+  const first = (text.split(NOTE_SEPARATOR)[0] ?? '').trim();
+  if (MARKER_PATTERN.test(first) || LEAD_PATTERN.test(first)) return '';
+  return first;
+}
+
+/**
+ * Lead reference → the cards its approvals were for.
+ *
+ * Every approval on file, the same set approvedLeadIds reads, so a lead that
+ * was approved before leads kept a card still has one to show. An approval
+ * typed in by hand names no lead, so it adds nobody.
+ */
+export function approvedCards(conversions: { notes: string }[]): Map<string, string[]> {
+  const byLead = new Map<string, string[]>();
+  for (const conversion of conversions) {
+    const ref = namedLead(leadRefIn(conversion.notes ?? ''));
+    if (!ref) continue;
+    noteCard(byLead, ref, cardFromNotes(conversion.notes ?? ''));
+  }
+  return byLead;
+}
+
+/**
+ * How much card text one lead carries: five names and 200 characters.
+ *
+ * The card on a lead only grows. Every sync merges what it sees into what is
+ * there and nothing takes a name back out, so without a ceiling a lead could
+ * keep collecting names for as long as syncs run, and one column mis-read as
+ * the card could put a paragraph in it. It is read in a table column on the
+ * leads list and sits in one spreadsheet cell. Five is past what a real person
+ * applies for through one link. A name that would take the text past 200 is
+ * left out rather than cut short: half a card name is a card nobody offers.
+ */
+const MAX_CARDS_PER_LEAD = 5;
+const MAX_CARD_TEXT = 200;
+
+/** How the cards on a lead are joined into one field, and split back apart. */
+const CARD_SEPARATOR = ', ';
+
+/**
+ * The cards on record with the ones just seen added after them.
+ *
+ * A name is added only when it is not there already, compared exactly as QMP
+ * spells it once the spaces are trimmed. When nothing is added the record
+ * comes back exactly as it was, spacing and all, not re-joined: the sync
+ * compares the result with what is stored to decide whether there is anything
+ * to write, and tidying a cell is not a reason to write it on every sync.
+ */
+export function mergeCards(existing: string, incoming: string[]): string {
+  const record = existing ?? '';
+  const names = record
+    .split(CARD_SEPARATOR)
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const kept = [...names];
+  for (const raw of incoming) {
+    const name = (raw ?? '').trim();
+    if (!name) continue;
+    // Looked for as a run of whole names rather than as one of them, so a card
+    // whose own name has a comma in it, which the split above cuts in two, is
+    // still found instead of being added again on every sync.
+    const joined = kept.join(CARD_SEPARATOR);
+    if (`${CARD_SEPARATOR}${joined}${CARD_SEPARATOR}`.includes(`${CARD_SEPARATOR}${name}${CARD_SEPARATOR}`)) {
+      continue;
+    }
+    if (kept.length >= MAX_CARDS_PER_LEAD) break;
+    const length = kept.length === 0 ? name.length : joined.length + CARD_SEPARATOR.length + name.length;
+    if (length > MAX_CARD_TEXT) continue;
+    kept.push(name);
+  }
+  return kept.length === names.length ? record : kept.join(CARD_SEPARATOR);
+}
+
+/**
+ * The card a lead shows on the leads list.
+ *
+ * Its own, when it has one. A lead approved before leads kept a card has none
+ * on record, and its card survives only on the notes of its approvals, so for
+ * that lead it is read from there. Merged the way the sync merges, so the cell
+ * shows what a sync would record from the same approvals, capped the same way,
+ * rather than a second spelling of it that changes when the sync catches up.
+ */
+export function cardForLead(
+  lead: { id: string; card: string },
+  cardsApproved: Map<string, string[]>,
+): string {
+  if ((lead.card ?? '').trim() !== '') return lead.card;
+  return mergeCards('', cardsApproved.get(lead.id) ?? []);
+}
+
+/** What an update does: move a lead to approved, move it to applied, or only add a card. */
+export type LeadUpdateKind = 'registered' | 'applied' | 'card';
+
+/** What a sync writes to one lead. */
+export type LeadUpdate = {
+  id: string;
+  /** The status on record before this sync. */
+  from: LeadStatus;
+  /** The status after it. Never behind `from`. */
+  status: LeadStatus;
+  /** The cards after it: the ones on record with any new ones added. */
+  card: string;
+};
+
+/**
+ * What a sync should write to each lead, for the leads it changes and no others.
+ *
+ * The evidence, strongest first: an approval that names the lead takes it to
+ * approved; failing that, an application on the report takes it to applied.
+ * Every approval on file counts, not only the ones this run writes, for the
+ * reason given on leadsToRegister: a second sync skips what it imported, so the
+ * backlog is only reachable from the whole set.
+ *
+ * Forward only, by statusRank. A report shows an application on the day it was
+ * made and the approval on another, and an approval may be on file by hand with
+ * no application in the range at all; neither is the merchant taking an
+ * approval back. So a lead approved by hand stays approved while its card is
+ * still recorded, and a sync never moves anybody backwards. The toggle on the
+ * leads list is how a person does that.
+ *
+ * One entry per lead, however many rows and approvals name it, and none for a
+ * lead whose status and card would come out as they went in: each entry is a
+ * write to the store, which on the Sheets adapter is a call to the spreadsheet.
+ */
+export function leadUpdates(options: {
+  conversions: { notes: string }[];
+  applications: Map<string, string[]>;
+  submissions: { id: string; status: LeadStatus; card: string }[];
+}): LeadUpdate[] {
+  const { conversions, applications, submissions } = options;
+  const approved = approvedLeadIds(conversions);
+  const cardsApproved = approvedCards(conversions);
+
+  const updates: LeadUpdate[] = [];
+  const seen = new Set<string>();
+  for (const row of submissions) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+
+    const target: LeadStatus = approved.has(row.id)
+      ? 'registered'
+      : applications.has(row.id)
+        ? 'applied'
+        : row.status;
+    const status = statusRank(target) > statusRank(row.status) ? target : row.status;
+
+    const stored = row.card ?? '';
+    const card = mergeCards(stored, [
+      ...(applications.get(row.id) ?? []),
+      ...(cardsApproved.get(row.id) ?? []),
+    ]);
+
+    if (status !== row.status || card !== stored) {
+      updates.push({ id: row.id, from: row.status, status, card });
+    }
+  }
+  return updates;
+}
+
+/**
+ * Which of the three an update is, for counting them. A move carries its card
+ * as well and is counted as the move; only a status that stands is a card.
+ */
+export function leadUpdateKind(update: LeadUpdate): LeadUpdateKind {
+  if (update.status === update.from) return 'card';
+  return update.status === 'registered' ? 'registered' : 'applied';
+}
+
+/** What writing a sync's lead updates came to. */
+export type LeadWriteResult = {
+  /** The updates that landed, by kind. */
+  written: Record<LeadUpdateKind, number>;
+  /** One line per lead that could not be written, or one for all that were left when the store is not set up. */
+  failures: string[];
+};
+
+/**
+ * Write a sync's lead updates one at a time, and count what landed.
+ *
+ * One at a time, like the approvals before them: on the Sheets adapter every
+ * write finds its row by reading the tab, and writes in flight together would
+ * race for it. A lead that fails is noted and the rest are still tried. A row
+ * that moved in the sheet, or a lead deleted since the report was read, says
+ * nothing about the others.
+ *
+ * A store that is not set up for the write is different. A missing column, a
+ * missing table or the wrong key fails every lead the same way, so it is said
+ * once, with how many were left and the fix, and the rest are not tried. The
+ * case that matters is a database whose migrations are behind the code:
+ * without this, every sync would list the same database error once per lead.
+ */
+export async function writeLeadUpdates(
+  updates: LeadUpdate[],
+  write: (update: LeadUpdate) => Promise<unknown>,
+): Promise<LeadWriteResult> {
+  const written: Record<LeadUpdateKind, number> = { registered: 0, applied: 0, card: 0 };
+  const failures: string[] = [];
+  for (let index = 0; index < updates.length; index += 1) {
+    const update = updates[index]!;
+    try {
+      await write(update);
+      written[leadUpdateKind(update)] += 1;
+    } catch (error) {
+      if (error instanceof StoreConfigError) {
+        const left = updates.length - index;
+        failures.push(`${left} lead update${left === 1 ? ' was' : 's were'} not written: ${error.message}`);
+        break;
+      }
+      failures.push(`lead ${update.id}: ${error instanceof Error ? error.message : 'could not be updated'}`);
+    }
+  }
+  return { written, failures };
 }
 
 /**

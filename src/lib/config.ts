@@ -105,6 +105,10 @@ export const SHEET_HEADERS = {
     // the columns above, and inserting a column here would shift every one of
     // them out of alignment with its header.
     'status',
+    // The card the report says the lead applied for. Appended after status for
+    // the same reason, and kept immediately beside it: a sync writes the two
+    // together as one two-cell range, which only works while they touch.
+    'card',
   ],
   visits: ['id', 'created_at', 'slug', 'usr', 'referrer', 'user_agent', 'ip'],
   /**

@@ -131,6 +131,21 @@ async function writeFile<T>(file: string, rows: T[]): Promise<void> {
   }
 }
 
+/**
+ * A lead as the file holds it, with whatever the row predates filled in.
+ *
+ * Rows written before the status column existed have no status at all; they
+ * are pending like any other lead nobody has acted on. Rows written before the
+ * card column have no card, which is what a lead no sync has seen looks like.
+ */
+function submissionFromStored(row: Submission): Submission {
+  return {
+    ...row,
+    status: normalizeLeadStatus(row.status),
+    card: typeof row.card === 'string' ? row.card : '',
+  };
+}
+
 export function createLocalStore(): Store {
   return {
     kind: 'local',
@@ -192,9 +207,7 @@ export function createLocalStore(): Store {
 
     async listSubmissions() {
       const rows = await readFile<Submission>(FILES.submissions);
-      // Rows written before the column existed have no status at all; they are
-      // pending like any other lead nobody has acted on.
-      return rows.map((row) => ({ ...row, status: normalizeLeadStatus(row.status) }));
+      return rows.map(submissionFromStored);
     },
 
     async addSubmission(input: NewSubmission) {
@@ -206,8 +219,10 @@ export function createLocalStore(): Store {
           // destination URL on this very row.
           id: input.id?.trim() || randomUUID(),
           createdAt: new Date().toISOString(),
-          // Every lead starts pending the moment it is captured.
+          // Every lead starts pending the moment it is captured, with no card
+          // until the report sync sees an application.
           status: DEFAULT_LEAD_STATUS,
+          card: '',
         };
         rows.push(row);
         await writeFile(FILES.submissions, rows);
@@ -220,7 +235,14 @@ export function createLocalStore(): Store {
         const rows = await readFile<Submission>(FILES.submissions);
         const index = rows.findIndex((row) => row.id === id);
         if (index === -1) throw new StoreNotFoundError('Lead not found');
-        const next: Submission = { ...rows[index]!, ...patch };
+        const current = submissionFromStored(rows[index]!);
+        // Field by field rather than a spread: a patch that names a field and
+        // leaves it undefined means "leave it", not "write nothing over it".
+        const next: Submission = {
+          ...current,
+          status: patch.status ?? current.status,
+          card: patch.card ?? current.card,
+        };
         rows[index] = next;
         await writeFile(FILES.submissions, rows);
         return next;

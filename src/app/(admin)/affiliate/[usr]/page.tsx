@@ -20,7 +20,7 @@ import {
 } from '@/lib/analytics';
 import { captureFormEnabled } from '@/lib/config';
 import { loadAll } from '@/lib/load';
-import { approvedLeadIds } from '@/lib/qmp-sync';
+import { approvedCards, approvedLeadIds, cardForLead } from '@/lib/qmp-sync';
 import { ownsKey } from '@/lib/scope';
 import { normalizeKey } from '@/lib/validate';
 import { requireViewer } from '@/lib/viewer';
@@ -137,6 +137,9 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
   // cut to the most recent for reading, and a lead should not go back to
   // pending because its approval scrolled off the end.
   const approvedLeads = approvedLeadIds(conversions);
+  // Their cards, by the same reasoning: the one the sync wrote on the lead, or
+  // for a lead approved before leads kept one, the cards its approvals name.
+  const cardsApproved = approvedCards(conversions);
   const leadRows: LeadRow[] = theirLeads.slice(0, RECENT_LEADS).map((row) => ({
     id: row.id,
     fullName: row.fullName,
@@ -146,6 +149,7 @@ export default async function AffiliatePage({ params, searchParams }: PageProps)
     slug: row.slug,
     assignee: row.assignee,
     status: row.status,
+    card: cardForLead(row, cardsApproved),
     hasApproval: approvedLeads.has(row.id),
     // Formatted here rather than in the browser: a relative time computed on
     // the client renders a different string from the one the server sent.
