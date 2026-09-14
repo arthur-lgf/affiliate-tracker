@@ -202,8 +202,8 @@ export async function readOnboarding(userId: string): Promise<OnboardingState> {
 /** One row per affiliate for the admin table: who has done what. */
 export type OnboardingSummary = {
   userId: string;
-  /** When the account was opened. The payout schedule falls back to this for
-   *  somebody waved through without signing: see anchorFor in lib/payout. */
+  /** When the account was opened. Payouts no longer count from it: each
+   *  approval runs on its own clock, see eligibleOn in lib/payout-request. */
   createdAt: string;
   username: string;
   fullName: string;

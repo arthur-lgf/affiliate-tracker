@@ -1,69 +1,164 @@
 import { NextResponse } from 'next/server';
-import { unauthorized, viewerFromRequest } from '@/lib/api-auth';
-import { isDay } from '@/lib/payout';
-import { confirmReceipt } from '@/lib/payout-store';
-import { StoreConfigError } from '@/lib/store/errors';
+import { unauthorized, viewerFromRequest, type Viewer } from '@/lib/api-auth';
+import { loadAll, type LoadResult } from '@/lib/load';
+import { dayOf } from '@/lib/payout';
+import {
+  asBody,
+  candidatesFrom,
+  payslipGate,
+  readConversionIds,
+  readPayslipAction,
+  readRequestId,
+  requestedByFor,
+  requestFailure,
+  storeFailure,
+  type Refusal,
+} from '@/lib/payout-api';
+import { validateRequestedIds } from '@/lib/payout-request';
+import {
+  confirmReceipt,
+  createPayoutRequest,
+  listCommittedConversionIds,
+} from '@/lib/payout-request-store';
 
 /**
- * The affiliate's own half of a payslip: saying the money arrived.
+ * An affiliate's own side of getting paid: asking for it, and saying it
+ * arrived.
  *
- * The one thing on a payout row that is not written by an admin, and the reason
- * it has a route of its own rather than an action on the admin one. Whose
- * payslip it is comes from the session and is never read from the body: an
- * account confirming somebody else's payment would be recording a fact about a
- * bank transfer it has no way of knowing anything about.
+ * Two actions. `request` files a payout request for the ready cards the
+ * affiliate chose; `confirm` marks a recorded payment as received. Both act on
+ * the account in the session and neither reads who it is from the body: the
+ * user id, the tracking key and the audit line all come from the viewer, so a
+ * hand-made POST can only ever ask on behalf of the person who sent it.
  *
- * There is nothing to confirm until a payment has been recorded, and the store
- * enforces that inside the query rather than trusting this route to have
- * checked. What this route adds is a sentence saying so, because "nothing
- * happened" is not an answer anybody can act on.
+ * The card ids are the one thing the body does decide, and they are trusted
+ * for nothing beyond naming a choice. validateRequestedIds holds them against
+ * this viewer's own approvals (loadAll has already cut those down to this
+ * tracking key and priced them at the affiliate's own rate), and
+ * create_payout_request checks all of it again inside the transaction that
+ * writes the request. The first gives a sentence somebody can act on; the
+ * second is the one that cannot be raced.
+ *
+ * An admin in Client View is the affiliate as far as this route is concerned
+ * and may file a request for them, with the audit line naming both. A plain
+ * admin session is refused. The rules for both live in lib/payout-api.ts, with
+ * their checks.
+ *
+ * Nothing this route answers carries an amount. A request's figures are read
+ * back on the payslip page, from the snapshot the database kept.
  */
 
 export const dynamic = 'force-dynamic';
 
+function refuse(refusal: Refusal): NextResponse {
+  const { status, ...body } = refusal;
+  return NextResponse.json(body, { status });
+}
+
 export async function POST(request: Request) {
   const viewer = await viewerFromRequest(request);
   if (!viewer) return unauthorized();
-  if (!viewer.id) {
-    // The environment admin has no database row, so it has no payslips either.
-    return NextResponse.json({ error: 'This account has no payslips of its own.' }, { status: 403 });
-  }
 
   let body: Record<string, unknown>;
   try {
-    body = ((await request.json()) ?? {}) as Record<string, unknown>;
+    body = asBody(await request.json());
   } catch {
-    return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 });
+    return refuse({ status: 400, error: 'Expected a JSON body.' });
   }
 
-  if (body.action !== 'confirm') {
-    return NextResponse.json({ error: 'No such action.', hint: 'Expected confirm.' }, { status: 400 });
+  const action = readPayslipAction(body.action);
+  if (!action) {
+    return refuse({ status: 400, error: 'No such action.', hint: 'Expected request or confirm.' });
   }
 
-  const periodStart = typeof body.periodStart === 'string' ? body.periodStart : '';
-  if (!isDay(periodStart)) {
-    return NextResponse.json({ error: 'That is not a pay period.' }, { status: 400 });
+  const refused = payslipGate(viewer, action);
+  if (refused) return refuse(refused);
+
+  const by = requestedByFor(viewer);
+  return action === 'request'
+    ? requestPayment(viewer, body.conversionIds, by)
+    : confirmPayment(viewer, body.requestId, by);
+}
+
+async function requestPayment(viewer: Viewer, chosen: unknown, requestedBy: string): Promise<NextResponse> {
+  const ids = readConversionIds(chosen);
+  if (!ids.ok) return refuse(ids.refusal);
+
+  let load: LoadResult;
+  let committed: Set<string>;
+  try {
+    // Read side by side: neither depends on the other, and the database checks
+    // both again when the request is written, so a card committed a moment
+    // after this read is still caught.
+    [load, committed] = await Promise.all([loadAll(viewer), listCommittedConversionIds()]);
+  } catch (error) {
+    const refusal = storeFailure(error, 'Your cards could not be read just now.');
+    if (refusal.status >= 500) console.error('reading cards for a payout request', error);
+    return refuse(refusal);
   }
+
+  // loadAll captures its failures rather than throwing, so a storage outage
+  // arrives as a message. Its text is for the logs, not for the affiliate.
+  if (load.error) {
+    console.error('reading approvals for a payout request', load.error);
+    return refuse({
+      status: 503,
+      error: 'Your approvals could not be read just now.',
+      hint: 'Try again in a moment.',
+    });
+  }
+
+  const candidates = candidatesFrom(load);
+  if (!candidates) {
+    console.error('a payout request was about to be priced from merchant amounts', viewer.id);
+    return refuse({ status: 500, error: 'That could not be processed.' });
+  }
+
+  const today = dayOf(new Date().toISOString());
+  const result = validateRequestedIds(ids.ids, candidates, viewer.usr, today, committed);
+  if (!result.ok) return refuse({ status: 422, error: result.reason });
 
   try {
-    const done = await confirmReceipt(viewer.id, periodStart);
+    const requestId = await createPayoutRequest({
+      userId: viewer.id,
+      usr: viewer.usr,
+      requestedBy,
+      items: result.items,
+    });
+    return NextResponse.json({ ok: true, requestId }, { status: 201 });
+  } catch (error) {
+    const refusal = requestFailure(error);
+    if (refusal.status >= 500) console.error('creating a payout request', error);
+    return refuse(refusal);
+  }
+}
+
+/**
+ * Saying the money arrived.
+ *
+ * There is nothing to confirm until a payment has been recorded, and the store
+ * enforces that inside the query, filtered on this viewer's own id, rather
+ * than trusting this route to have checked. Somebody else's request and a
+ * request with no payment yet both match nothing, and both get the same
+ * sentence, so the answer says nothing about requests that are not theirs.
+ */
+async function confirmPayment(viewer: Viewer, rawId: unknown, by: string): Promise<NextResponse> {
+  const id = readRequestId(rawId);
+  if (!id.ok) return refuse(id.refusal);
+
+  try {
+    const done = await confirmReceipt(viewer.id, id.id, by);
     if (!done) {
-      return NextResponse.json(
-        {
-          error: 'There is no payment recorded for that period yet.',
-          hint: 'You can confirm it once the payment shows here.',
-        },
-        { status: 409 },
-      );
+      return refuse({
+        status: 409,
+        error: 'There is no payment recorded for that request yet.',
+        hint: 'You can confirm it once the payment shows here.',
+      });
     }
   } catch (error) {
-    if (error instanceof StoreConfigError) {
-      return NextResponse.json({ error: error.message }, { status: 503 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'That did not save.' },
-      { status: 500 },
-    );
+    const refusal = storeFailure(error, 'That did not save.');
+    if (refusal.status >= 500) console.error('confirming a payment', error);
+    return refuse(refusal);
   }
 
   return NextResponse.json({ ok: true });

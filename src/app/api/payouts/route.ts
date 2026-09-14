@@ -1,119 +1,57 @@
 import { NextResponse } from 'next/server';
 import { requireApiAdmin } from '@/lib/api-auth';
-import { listOnboarding } from '@/lib/onboarding-store';
-import { anchorFor, dayOf, hasAnchor, isDay, periodAt, type Period } from '@/lib/payout';
+import { dayOf } from '@/lib/payout';
 import {
+  asBody,
+  cancelledRefusal,
+  noSuchRequest,
+  readPayment,
+  readPayoutAction,
+  readRequestId,
+  stateRefusal,
+  storeFailure,
+  type Refusal,
+} from '@/lib/payout-api';
+import {
+  cancelPayoutRequest,
   clearPayment,
+  readPayoutRequest,
   recordPayment,
   removeProof,
   saveProof,
-  type PeriodRef,
-} from '@/lib/payout-store';
-import { StoreConfigError } from '@/lib/store/errors';
+} from '@/lib/payout-request-store';
+import { checkReceiptUpload } from '@/lib/receipt-file';
 
 /**
- * Recording what was paid, and the receipt for it.
+ * Recording what was paid against a request, and the receipt for it.
  *
- * Admin only, and everything that decides a figure is re-derived here rather
- * than believed. The cycle in particular: a body naming a window is checked
- * against the schedule that account actually has, so a payment cannot be
- * recorded against a period that is not one of theirs. That is not suspicion of
- * the form, which computes it correctly; it is that the window is the primary
- * key, and a wrong one would file a real payment where nobody looks for it and
- * leave the real cycle reading as unpaid forever.
+ * Admin only. Every action names a request by id, and the request row is its
+ * own authority: what was asked for, by whom and when are all fixed on it, so
+ * there is no schedule to re-derive and nothing in the body is believed about
+ * the request beyond which one it is.
  *
- * Four actions rather than one save, for the same reason the settings route has
+ * Five actions rather than one save, for the same reason the settings route has
  * three: a whole-object write from a page left open since this morning can put
  * back a figure somebody has since corrected.
+ *
+ * A cancelled request is guarded twice. Once up front, from the row just read,
+ * so the usual case gets a plain sentence before anything is validated. And
+ * again inside each write, because a cancel can land between that read and the
+ * update: every store write here refuses to touch a cancelled row and reports
+ * whether it matched, and matching nothing gets the same 409. That second
+ * guard is also what keeps payout_requests_paid_pair_check true, since a paid
+ * status can never be written onto a cancelled request.
+ *
+ * A receipt is checked by its bytes as well as its label before it is stored
+ * (lib/receipt-file.ts). The rules themselves are in lib/payout-api.ts, with
+ * their checks.
  */
 
 export const dynamic = 'force-dynamic';
 
-/** What a receipt may be. A payment is evidenced by a scan or a PDF; anything
- *  else arriving here is somebody testing what this endpoint accepts. */
-const PROOF_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
-
-/*
- * Two and a half megabytes of file, a little over three of base64. Comfortably
- * a phone photo of a transfer screen or a bank PDF, and comfortably under the
- * body limit a serverless platform will accept.
- */
-const MAX_PROOF_BYTES = 2_500_000;
-
-function bad(error: string, hint?: string, status = 422): NextResponse {
-  return NextResponse.json(hint ? { error, hint } : { error }, { status });
-}
-
-function fields(problems: Record<string, string>): NextResponse {
-  return NextResponse.json({ error: 'Please check the highlighted fields.', fields: problems }, { status: 422 });
-}
-
-function str(body: Record<string, unknown>, key: string): string {
-  const value = body[key];
-  return typeof value === 'string' ? value : '';
-}
-
-function storeResponse(error: unknown): NextResponse {
-  if (error instanceof StoreConfigError) {
-    return NextResponse.json({ error: error.message }, { status: 503 });
-  }
-  return NextResponse.json(
-    { error: error instanceof Error ? error.message : 'That did not save.' },
-    { status: 500 },
-  );
-}
-
-/**
- * The cycle this body is talking about, or a refusal.
- *
- * Reads the account's own anchor and asks the schedule which window contains
- * the day that was sent. If that is not the window the body claims, the body is
- * wrong about somebody's calendar and nothing is written.
- */
-async function periodFor(
-  userId: string,
-  periodStart: string,
-  periodEnd: string,
-): Promise<{ ref: PeriodRef; period: Period } | { response: NextResponse }> {
-  if (!isDay(periodStart) || !isDay(periodEnd)) {
-    return { response: bad('That is not a pay period.') };
-  }
-
-  let people;
-  try {
-    people = await listOnboarding();
-  } catch (error) {
-    return { response: storeResponse(error) };
-  }
-
-  const person = people.find((row) => row.userId === userId);
-  if (!person) return { response: bad('No such affiliate account.', undefined, 404) };
-
-  const anchor = anchorFor({
-    agreementSignedAt: person.agreementSignedAt,
-    bypassedAt: person.bypass.at,
-    createdAt: person.createdAt,
-  });
-  if (!hasAnchor(anchor)) {
-    return {
-      response: bad(
-        'This account has no payout schedule yet.',
-        'It starts when they sign the agreement, or when an admin waives it.',
-      ),
-    };
-  }
-
-  const period = periodAt(anchor.day, periodStart);
-  if (!period || period.from !== periodStart || period.to !== periodEnd) {
-    return {
-      response: bad(
-        'That pay period is not one of theirs.',
-        'Reload the page: their schedule is counted from the day they signed.',
-      ),
-    };
-  }
-
-  return { ref: { userId, periodStart: period.from, periodEnd: period.to }, period };
+function refuse(refusal: Refusal): NextResponse {
+  const { status, ...body } = refusal;
+  return NextResponse.json(body, { status });
 }
 
 export async function POST(request: Request) {
@@ -122,99 +60,66 @@ export async function POST(request: Request) {
 
   let body: Record<string, unknown>;
   try {
-    body = ((await request.json()) ?? {}) as Record<string, unknown>;
+    body = asBody(await request.json());
   } catch {
-    return bad('Expected a JSON body.', undefined, 400);
+    return refuse({ status: 400, error: 'Expected a JSON body.' });
   }
 
-  const action = str(body, 'action');
-  const userId = str(body, 'userId');
-  if (!userId) return bad('Which affiliate?', undefined, 400);
+  // Before the request is read, so a body that could never do anything costs
+  // no query.
+  const action = readPayoutAction(body.action);
+  if (!action) {
+    return refuse({
+      status: 400,
+      error: 'No such action.',
+      hint: 'Expected pay, clear, proof, remove-proof or cancel.',
+    });
+  }
 
-  const found = await periodFor(userId, str(body, 'periodStart'), str(body, 'periodEnd'));
-  if ('response' in found) return found.response;
-  const { ref, period } = found;
+  const id = readRequestId(body.requestId);
+  if (!id.ok) return refuse(id.refusal);
+
+  const by = gate.viewer.username;
 
   try {
-    if (action === 'pay') {
-      const amount = Number(body.amount);
-      if (!Number.isFinite(amount) || amount < 0) {
-        return fields({ amount: 'What was sent.' });
-      }
-      if (amount > 1_000_000) {
-        return fields({
-          amount: 'That is larger than any payout this app has made. Check the figure.',
-        });
-      }
+    const found = await readPayoutRequest(id.id);
+    if (!found) return refuse(noSuchRequest());
 
-      /*
-       * A payment is something that happened. Recording one for next Tuesday
-       * would put a date on somebody's payslip that no money matches, and
-       * "we will pay you" is not what this page is for.
-       */
-      const today = dayOf(new Date().toISOString());
-      const paidOn = str(body, 'paidOn') || today;
-      if (!isDay(paidOn) || paidOn > today) {
-        return fields({ paidOn: 'The day it was sent. It cannot be in the future.' });
-      }
-      // Before the cycle opened, so it cannot be a payment for this one.
-      if (paidOn < period.from) {
-        return fields({ paidOn: `This period did not start until ${period.from}.` });
-      }
+    const refused = stateRefusal(action, found.status);
+    if (refused) return refuse(refused);
 
-      await recordPayment(ref, {
-        amount: Math.round(amount * 100) / 100,
-        paidOn,
-        reference: str(body, 'reference'),
-        note: str(body, 'note'),
-        by: gate.viewer.username,
-      });
+    if (action === 'cancel') {
+      // The function re-checks the status under a row lock, so a payment
+      // recorded a moment ago comes back as LG006 and a 409, not a cancelled
+      // paid request.
+      await cancelPayoutRequest(id.id, by);
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === 'pay') {
+      const payment = readPayment(body, dayOf(new Date().toISOString()), found.requestedAt);
+      if (!payment.ok) return refuse(payment.refusal);
+      const matched = await recordPayment(id.id, { ...payment.payment, by });
+      return matched ? NextResponse.json({ ok: true }) : refuse(cancelledRefusal(action));
     }
 
     if (action === 'clear') {
-      await clearPayment(ref);
-      return NextResponse.json({ ok: true });
+      const matched = await clearPayment(id.id);
+      return matched ? NextResponse.json({ ok: true }) : refuse(cancelledRefusal(action));
     }
 
     if (action === 'proof') {
-      const type = str(body, 'type');
-      const data = str(body, 'data');
-      if (!PROOF_TYPES.includes(type)) {
-        return bad(
-          'That file type cannot be attached.',
-          'A photo or a screenshot (PNG, JPEG or WebP), or a PDF.',
-        );
-      }
-      if (!data.startsWith(`data:${type};base64,`)) {
-        return bad('That receipt did not arrive in one piece.', 'Try attaching it again.');
-      }
-      // Base64 is four characters per three bytes, so this is the size of the
-      // file rather than the size of the string carrying it.
-      const bytes = Math.floor((data.length - data.indexOf(',') - 1) * 0.75);
-      if (bytes > MAX_PROOF_BYTES) {
-        return bad(
-          'That receipt is too large.',
-          'Up to about 2.5 MB. A screenshot or a PDF of the transfer is plenty.',
-        );
-      }
-
-      await saveProof(ref, {
-        name: str(body, 'name') || 'receipt',
-        type,
-        data,
-        by: gate.viewer.username,
-      });
-      return NextResponse.json({ ok: true });
+      const upload = checkReceiptUpload({ name: body.name, type: body.type, data: body.data });
+      if (!upload.ok) return refuse({ status: 422, error: upload.error, hint: upload.hint });
+      const matched = await saveProof(id.id, { ...upload.receipt, by });
+      return matched ? NextResponse.json({ ok: true }) : refuse(cancelledRefusal(action));
     }
 
-    if (action === 'remove-proof') {
-      await removeProof(ref);
-      return NextResponse.json({ ok: true });
-    }
+    const matched = await removeProof(id.id);
+    return matched ? NextResponse.json({ ok: true }) : refuse(cancelledRefusal(action));
   } catch (error) {
-    return storeResponse(error);
+    const refusal = storeFailure(error, 'That did not save.', { showUnknown: true });
+    if (refusal.status >= 500) console.error(`payouts: ${action}`, error);
+    return refuse(refusal);
   }
-
-  return bad('No such action.', 'Expected pay, clear, proof or remove-proof.', 400);
 }

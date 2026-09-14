@@ -31,10 +31,11 @@
 export const AGREEMENT_VERSION = '2026-08-27';
 
 /**
- * Net 45, as a number the schedule can count in.
+ * Net 45, as a number the payout screens can count in.
  *
  * The payment term is written into clause 4 and into the summary table below in
- * words, and the payout schedule counts cycles in days. Naming it once means
+ * words, and a card can be requested that many days after its approval (see
+ * lib/payout-request). Naming it once means
  * the wording somebody signed and the day they are actually paid cannot drift
  * apart: changing the term here changes both, and changing only the prose is
  * caught by the check that reads this number back out of the clause.

@@ -1,163 +1,151 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ErrorPanel } from '@/components/ErrorPanel';
-import { PayoutSchedule, type PayoutRow } from '@/components/PayoutSchedule';
+import { LinkPending } from '@/components/LinkPending';
+import { PayoutRequests } from '@/components/PayoutRequests';
+import { PendingApprovals } from '@/components/PendingApprovals';
+import { describeConversions } from '@/lib/analytics';
 import { asAffiliateShare, loadAll } from '@/lib/load';
 import { listOnboarding } from '@/lib/onboarding-store';
+import { dayOf, PAYOUT_DAYS } from '@/lib/payout';
 import {
-  anchorFor,
-  bandOf,
-  BAND_ORDER,
-  hasAnchor,
-  linesIn,
-  PAYOUT_DAYS,
-  periodsThrough,
-  totalOf,
-} from '@/lib/payout';
-import { indexPayouts, listPayouts, payoutKey, payoutsEnabled } from '@/lib/payout-store';
+  buildPending,
+  buildRequestRows,
+  countRequested,
+  indexPeople,
+  tabFrom,
+} from '@/lib/payout-admin';
+import {
+  listCommittedConversionIds,
+  listPayoutRequests,
+  payoutsEnabled,
+} from '@/lib/payout-request-store';
 import { requireAdmin } from '@/lib/viewer';
-import type { Conversion } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Payouts' };
 
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
 /**
- * When everybody gets paid, and what has been paid already.
+ * What affiliates have asked to be paid, and what they could ask for next.
  *
- * The schedule is not stored anywhere. Each person is paid 45 days from the day
- * they signed, so the windows are arithmetic on a date the database already
- * holds, and this page works them out on every render. That is what makes it
- * impossible for the schedule and the contract to disagree: there is one date,
- * and one sum done on it.
+ * There is no payout schedule any more. Every card runs on its own clock, 45
+ * days from the day it was approved, and an affiliate chooses when to ask for
+ * the cards that are ready. So this page is two lists rather than a calendar:
+ * Requests, the payments somebody has asked for, which are the admin's to make;
+ * and Pending, the approved cards nobody has asked for yet, which are not.
  *
- * What is fetched is the three things that cannot be derived — who exists and
- * when they signed, what has been approved, and which payments have been
- * recorded — and each is read once for everybody rather than once per row.
+ * Both tabs are fetched on every render, whichever is open, because each tab's
+ * pill carries the other's count, and a count read from a different moment
+ * than the list beside it is a count that disagrees with it. Four reads, each
+ * once for everybody: the approvals, the requests, the roster that names them,
+ * and which cards are already spoken for.
  */
-export default async function PayoutsPage() {
+export default async function PayoutsPage({ searchParams }: PageProps) {
   const viewer = await requireAdmin();
-  const today = new Date().toISOString().slice(0, 10);
+  const tab = tabFrom((await searchParams).tab);
+  const today = dayOf(new Date().toISOString());
 
   if (!payoutsEnabled()) {
     return (
       <ErrorPanel
         title="Payouts need a database"
         message={
-          'The payout schedule is worked out from the day each affiliate signed, and payments are recorded in Supabase. ' +
+          'Payout requests and the payments made against them are recorded in Supabase. ' +
           'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, then reload this page.'
         }
+        hint=""
       />
     );
   }
 
-  const { conversions, settings, error } = await loadAll(viewer);
+  const { links, submissions, conversions, settings, error } = await loadAll(viewer);
 
   /*
    * An admin reads gross payouts everywhere else in the app. A payout is the
    * other number: what this person is owed, at the rate in force on the day
-   * each approval landed. Converted once, here, so no figure on the page can
-   * be the merchant's money wearing somebody's name.
+   * each approval landed. Converted once, here, and described with gross
+   * switched off, so no figure on the page can be the merchant's money wearing
+   * somebody's name. Request amounts need none of this: they are the shares
+   * recorded when the request was made.
    */
   const owedRows = asAffiliateShare(conversions, settings);
-  const byUsr = new Map<string, Conversion[]>();
-  for (const row of owedRows) {
-    if (!row.usr) continue;
-    const list = byUsr.get(row.usr);
-    if (list) list.push(row);
-    else byUsr.set(row.usr, [row]);
-  }
+  const views = describeConversions(links, owedRows, submissions, {
+    shares: settings.shares,
+    gross: false,
+  });
 
   let people: Awaited<ReturnType<typeof listOnboarding>> = [];
-  let payments = new Map<string, Awaited<ReturnType<typeof listPayouts>>[number]>();
+  let requests: Awaited<ReturnType<typeof listPayoutRequests>> = [];
+  let committed = new Set<string>();
   let readError: string | null = null;
   try {
-    const [roster, recorded] = await Promise.all([listOnboarding(), listPayouts()]);
-    people = roster;
-    payments = indexPayouts(recorded);
+    [people, requests, committed] = await Promise.all([
+      listOnboarding(),
+      listPayoutRequests(),
+      listCommittedConversionIds(),
+    ]);
   } catch (caught) {
-    readError = caught instanceof Error ? caught.message : 'Could not read the payout schedule.';
+    readError = caught instanceof Error ? caught.message : 'Could not read the payout requests.';
   }
 
-  const rows: PayoutRow[] = [];
-  /** Accounts with no clock running. Named rather than silently missing: an
-   *  affiliate who is not on this page is a question, not an absence. */
-  const unscheduled: string[] = [];
-
-  for (const person of people) {
-    const anchor = anchorFor({
-      agreementSignedAt: person.agreementSignedAt,
-      bypassedAt: person.bypass.at,
-      createdAt: person.createdAt,
-    });
-    const name = person.fullName || person.username;
-
-    if (!hasAnchor(anchor)) {
-      unscheduled.push(name);
-      continue;
-    }
-
-    const earned = byUsr.get(person.usr) ?? [];
-    const periods = periodsThrough(anchor.day, today);
-    const current = periods[0]?.index ?? 0;
-
-    for (const period of periods) {
-      const lines = linesIn(period, earned);
-      const amount = totalOf(lines);
-      const record = payments.get(payoutKey(person.userId, period.from)) ?? null;
-
-      /*
-       * A closed cycle that earned nothing and was never paid is not a payment
-       * anybody has to make, and a page listing one row per empty cycle buries
-       * the rows that matter. The cycle running today always shows, because
-       * "when is this person next paid" is the question being asked.
-       */
-      if (amount === 0 && !record && period.index !== current) continue;
-
-      rows.push({
-        userId: person.userId,
-        name,
-        usr: person.usr,
-        anchorDay: anchor.day,
-        anchorSource: anchor.source,
-        period,
-        approvals: lines.length,
-        amount,
-        band: bandOf(period, today, record?.paidAt ?? null),
-        paidAt: record?.paidAt ?? null,
-        paidAmount: record?.amount ?? null,
-        paidBy: record?.paidBy ?? '',
-        reference: record?.reference ?? '',
-        note: record?.note ?? '',
-        proof: record?.proof ? { name: record.proof.name, at: record.proof.at } : null,
-        confirmedAt: record?.confirmedAt ?? null,
-      });
-    }
-  }
+  const { byUserId, byUsr } = indexPeople(people);
+  const rows = buildRequestRows(requests, byUserId, views);
 
   /*
-   * Soonest payday first inside each band, which is what "arranged by upcoming
-   * payments" comes to once the bands have separated the urgent from the merely
-   * scheduled. Paid rows read the other way round: the last thing you did is
-   * the thing you want to see.
+   * Pending needs to know which cards are already on a request. Without that
+   * read, every card an affiliate has already asked for would be drawn as
+   * ready again, which is worse than drawing nothing: it looks like work
+   * nobody has done. Same for the approvals themselves. So a failed read
+   * leaves the tab to its error panel, and its count off the pill.
    */
-  rows.sort((a, b) => {
-    const byBand = BAND_ORDER.indexOf(a.band) - BAND_ORDER.indexOf(b.band);
-    if (byBand !== 0) return byBand;
-    if (a.band === 'paid') return (b.paidAt ?? '').localeCompare(a.paidAt ?? '');
-    if (a.period.to !== b.period.to) return a.period.to.localeCompare(b.period.to);
-    return a.name.localeCompare(b.name);
-  });
+  const pending = readError || error ? null : buildPending(views, byUsr, today, committed);
+  const requestedCount = readError ? null : countRequested(rows);
+  const readyCount = pending ? pending.ready.length : null;
 
   return (
     <div className="w-full">
       <div className="rise">
         <h1 className="font-display text-[26px] leading-[1.05]">Payouts</h1>
         <p className="plain mt-3">
-          Everybody is paid {PAYOUT_DAYS} days from the day they signed, so nobody shares a payday.
-          Sign on 15 August and the first one falls on 29 September. An account an admin waved
-          through is counted from the day it joined instead.
+          Every card is paid on its own clock: {PAYOUT_DAYS} days after it is approved. An affiliate
+          asks to be paid once their cards are ready, which is what shows up here.
         </p>
       </div>
+
+      {/*
+        A status filter within one page, so .pill-filter rather than .pill-tab,
+        which is the site nav's. Named for what it switches, so a screen reader
+        does not hear a second "Sections" landmark beside the real one.
+      */}
+      <nav aria-label="Payout status" className="mt-5 flex flex-wrap gap-3">
+        <Link
+          href="/payouts?tab=requests"
+          className="pill-filter relative"
+          data-active={tab === 'requests'}
+          aria-current={tab === 'requests' ? 'page' : undefined}
+        >
+          Requests
+          {requestedCount === null ? null : <span className="tnum text-[11px]">{requestedCount}</span>}
+          {/* Same page, different query string: no route change, so no
+              skeleton. The pill says it is working instead. */}
+          <LinkPending />
+        </Link>
+        <Link
+          href="/payouts?tab=pending"
+          className="pill-filter relative"
+          data-active={tab === 'pending'}
+          aria-current={tab === 'pending' ? 'page' : undefined}
+        >
+          Pending
+          {readyCount === null ? null : <span className="tnum text-[11px]">{readyCount}</span>}
+          <LinkPending />
+        </Link>
+      </nav>
 
       {error ? (
         <div className="mt-5">
@@ -166,22 +154,16 @@ export default async function PayoutsPage() {
       ) : null}
       {readError ? (
         <div className="mt-5">
-          <ErrorPanel title="Could not read the schedule" message={readError} />
+          <ErrorPanel title="Could not read the payout requests" message={readError} hint="" />
         </div>
       ) : null}
 
-      <PayoutSchedule rows={rows} today={today} />
-
-      {unscheduled.length > 0 ? (
-        <p className="plain-note mt-5">
-          <strong className="font-semibold text-ink">
-            {unscheduled.length === 1
-              ? 'One account has no schedule yet.'
-              : `${unscheduled.length} accounts have no schedule yet.`}
-          </strong>{' '}
-          {unscheduled.join(', ')}. A payout clock starts when somebody signs the agreement, or when
-          an admin waives it for them.
-        </p>
+      {tab === 'requests' ? (
+        readError ? null : (
+          <PayoutRequests rows={rows} today={today} />
+        )
+      ) : pending ? (
+        <PendingApprovals {...pending} />
       ) : null}
     </div>
   );

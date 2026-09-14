@@ -1,5 +1,12 @@
 @import 'tailwindcss';
 
+/* Tailwind reads every file in the project for class names, and writes a rule
+   into this stylesheet for each one it finds. scripts/ holds the checks, which
+   name classes in order to test them, every wrapping class there is for one,
+   and none of that is markup the app draws. Read, it ships rules nothing
+   uses. */
+@source not '../../scripts';
+
 /* ------------------------------------------------------------------
    Ledger — an operations console.
 

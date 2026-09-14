@@ -125,6 +125,22 @@ function fail(context: string, error: PostgrestErrorish): never {
     }
     throw new StoreConflictError('That account is not a shape the database accepts.');
   }
+  /*
+   * 23503 on a delete is a row elsewhere still pointing at this account. The
+   * one refused on purpose is a payout request: public.payout_requests
+   * refuses rather than cascades (migration 20260914120000), so deleting
+   * somebody cannot erase the record that they were paid. Requests are never
+   * deleted, cancelled ones included, so such an account can be disabled but
+   * not removed, and the sentence says so rather than pointing at a step that
+   * would not help. 23001 is the same refusal from an "on delete restrict"
+   * key, which is what the constraint would report if it were ever redeclared
+   * that way.
+   */
+  if ((code === '23503' || code === '23001') && detail.includes('payout_requests_user_id_fkey')) {
+    throw new StoreConflictError(
+      'This account has payout requests on file, so it cannot be removed. Disable it instead.',
+    );
+  }
   if (code === '42P01') {
     throw new StoreConfigError(
       'The users table is missing from this Supabase project. Run: npx supabase db push',

@@ -107,6 +107,16 @@ function fail(context: string, error: PostgrestErrorish): never {
   if (code === '23505') {
     throw new StoreConflictError('A link for that slug and tracking key already exists.');
   }
+  // LG007 is the block_delete_of_committed_conversion trigger (migration
+  // 20260914120000) refusing to delete an approval that is on a live payout
+  // request. Deleting it would pull a card out from under a request somebody
+  // may already have been paid for. Said as a sentence, with the way out,
+  // rather than as the trigger's raw error.
+  if (code === 'LG007') {
+    throw new StoreConflictError(
+      'This approval is part of a payout request and cannot be removed. Cancel the request first if it has not been paid.',
+    );
+  }
   // 42P01 (missing table) and 42501 (permission denied) both mean the project
   // is not set up rather than that the request was wrong, so they are worth
   // saying plainly instead of surfacing as a generic failure.
